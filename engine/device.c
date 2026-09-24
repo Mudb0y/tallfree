@@ -319,6 +319,7 @@ void target_leave(void)
 
 static int g_sleep_sem = -1;
 static int (*g_body)(void);
+static uint64_t g_task_stack[TASK_STACK / 8];
 
 void target_sleep(int ms)
 {
@@ -341,7 +342,10 @@ int target_launch(int (*body)(void))
 
     g_body = body;
     g_sleep_sem = kernel_sem_create("EVVsleep", 0, 1);
-    task = kernel_task_create("EVV", engine_task, 0, TASK_PRIORITY, TASK_STACK);
+    if (g_sleep_sem <= 0)
+        return 0x300 | (g_sleep_sem & 0xFF);
+    task = kernel_task_create("EVV", engine_task, 0, TASK_PRIORITY,
+                              g_task_stack, (int)sizeof g_task_stack);
     if (task <= 0)
         return 0x100 | (task & 0xFF);
     rc = kernel_task_start(task, 0);

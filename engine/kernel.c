@@ -38,14 +38,15 @@ typedef int (*signal_sem_fn)(int sem, int count);
 #define WAIT_SEM    ((wait_sem_fn)   0x800D3253u)
 #define SIGNAL_SEM  ((signal_sem_fn) 0x800D3249u)
 
-/* High-level language, named, uses the FPU: what the firmware's own tasks
-   carry. The engine's arithmetic is mostly fixed point, but the C library
-   and the hard-float calling convention touch the FPU registers. */
-#define TASK_ATTRIBUTES 0x1041u
+/* High-level language, named, uses the FPU, as the firmware's own tasks are,
+   plus a stack we supply: asked to find 8 KB itself, the kernel answered -33,
+   out of memory. The create call accepts attribute bits 0x1361, which include
+   0x20 for a caller's buffer. */
+#define TASK_ATTRIBUTES 0x1061u
 #define SEM_ATTRIBUTES  0x0040u              /* named, first-in first-out */
 
 int kernel_task_create(const char *name, void (*entry)(int, void *), void *arg,
-                       int priority, int stack_size)
+                       int priority, void *stack, int stack_size)
 {
     struct task_record r;
 
@@ -55,6 +56,7 @@ int kernel_task_create(const char *name, void (*entry)(int, void *), void *arg,
     r.entry = entry;
     r.priority = priority;
     r.stack_size = stack_size;
+    r.buffer = stack;
     strncpy(r.name, name, sizeof r.name);
     return CREATE_TASK(&r);
 }
