@@ -20,3 +20,8 @@ work/vectors.bin
 
 # Decompiler dumps: regenerable with work/gscripts/DecompCallers.java
 work/decomp/
+
+# Engine builds and QEMU run leftovers
+engine/build/
+engine/out.raw
+engine/in.txt

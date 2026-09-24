@@ -1,0 +1,66 @@
+/* The engine image: one block at ENGINE_BASE, ENGINE_SIZE long, defined by
+   whichever script includes this. Code, constants and initialised data come
+   first and are what the loader copies; zeroes, the heap and the engine's
+   own stack follow and are only address space. */
+
+ENTRY(engine_start)
+
+STACK_SIZE = 64K;
+
+SECTIONS
+{
+  . = ENGINE_BASE;
+  __image_start = .;
+
+  .text : {
+    KEEP(*(.entry))
+    *(.text .text.*)
+    *(.rodata .rodata.*)
+    . = ALIGN(8);
+  }
+
+  .ARM.exidx : { *(.ARM.exidx* .gnu.linkonce.armexidx.*) }
+
+  .init_array : {
+    . = ALIGN(4);
+    __init_array_start = .;
+    KEEP(*(SORT(.init_array.*)))
+    KEEP(*(.init_array))
+    __init_array_end = .;
+  }
+
+  .data : {
+    . = ALIGN(8);
+    *(.data .data.*)
+    . = ALIGN(8);
+  }
+
+  .tdata : {
+    __tdata_start = .;
+    *(.tdata .tdata.*)
+    __tdata_end = .;
+  }
+
+  .tbss : { *(.tbss .tbss.*) }
+  __tbss_size = SIZEOF(.tbss);
+  __tls_align = MAX(ALIGNOF(.tdata), ALIGNOF(.tbss));
+
+  __image_end = .;
+
+  .bss (NOLOAD) : {
+    . = ALIGN(8);
+    __bss_start = .;
+    *(.bss .bss.*)
+    *(COMMON)
+    . = ALIGN(8);
+    __bss_end = .;
+  }
+
+  __heap_start = ALIGN(8);
+  __stack_top = ENGINE_BASE + ENGINE_SIZE;
+  __heap_end = __stack_top - STACK_SIZE;
+
+  ASSERT(__heap_end > __heap_start + 1024K, "engine image leaves under a megabyte of heap")
+
+  /DISCARD/ : { *(.ARM.attributes) *(.comment) }
+}
