@@ -30,8 +30,18 @@ __attribute__((naked, noreturn)) void qemu_reset(void)
         ".ltorg\n");
 }
 
+extern char __image_end[], __stack_top[];
+
+/* The instrument hands the engine memory full of whatever was there before;
+   QEMU's starts as zeroes, which hides anything that relies on that. So fill
+   everything past the image with junk first, the stack included. */
 __attribute__((used)) static void qemu_main(void)
 {
+    uint32_t *p = (uint32_t *)(((uintptr_t)__image_end + 3) & ~3u);
+    uint32_t *end = (uint32_t *)((uintptr_t)__stack_top - 256);
+
+    while (p < end)
+        *p++ = 0xA5A5A5A5u;
     sh_exit(engine_start());
 }
 

@@ -39,16 +39,16 @@ __asm__(
 
 int call_on_stack(void *top, int (*fn)(void));
 
-static int started;
-
 __attribute__((section(".entry"), used))
 int engine_start(void)
 {
-    if (!started) {
+    /* Every entry follows a fresh load, and the memory past the image holds
+       whatever was there before, so this runs every time. A flag saying it had
+       already run would itself live in that memory and read as set. */
+    {
         void (**f)(void);
 
         memset(__bss_start, 0, (size_t)(__bss_end - __bss_start));
-        started = 1;
         for (f = __init_array_start; f < __init_array_end; f++)
             (*f)();
     }
