@@ -17,3 +17,6 @@ work/sdram_code.bin
 work/itcm_code.bin
 work/seg_*.bin
 work/vectors.bin
+
+# Decompiler dumps: regenerable with work/gscripts/DecompCallers.java
+work/decomp/
