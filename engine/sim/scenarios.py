@@ -6,10 +6,22 @@ import os
 
 WHITE, POPUP, BLACK, TITLE = '!', '~', '_', '^'
 
-def main_screen(t, surf, bank_pad):
-    return [f'{t} s{surf} 12 2 !P-2', f'{t} s{surf} 34 2 !{bank_pad}',
-            f'{t} s{surf} 56 2 !BUS-1', f'{t} s{surf} 84 2 !Fix',
-            f'{t} s{surf} 104 2 ! DC ', f'{t} s{surf} 53 14 _9 4 ']
+# The main screen's status fields, each from its own drawing site.
+PATTERN, PAD, BUS, FIXVEL = '=80149DC7:', '=80149DD5:', '=80149DE5:', '=80149DF5:'
+TOAST = '=8006BECD:'
+
+def main_screen(t, surf, bank_pad, bus='BUS-1', big='9 4 '):
+    bx = 56 if bus == 'BUS-1' else 60
+    return [f'{t} s{surf} 12 2 !{PATTERN}P-2', f'{t} s{surf} 34 2 !{PAD}{bank_pad}',
+            f'{t} s{surf} {bx} 2 !{BUS}{bus}', f'{t} s{surf} 84 2 !{FIXVEL}Fix',
+            f'{t} s{surf} 104 2 ! DC ',
+            f'{t} s{surf} {53 if big == "9 4 " else 24} 14 _{big}']
+
+# A pad hit on the main screen: the status line and the big field wiped and
+# redrawn, the pad's bus changing with it.
+def pad_hit(t, surf, bank_pad, bus, big):
+    return [f'{t} s{surf} FILL 0 9 128 64', f'{t} s{surf} FILL 0 0 128 8'] + \
+        main_screen(t, surf, bank_pad, bus, big)
 
 def write(name, draws, expect, say='#mode changed\n'):
     os.makedirs(name, exist_ok=True)
@@ -125,9 +137,55 @@ def record():
           '7000 VALUE']
     write('record', d, ['A 13', 'Select PAD for RECORDING', 'A 1', 'A 2', 'B 2'])
 
+# The main screen as the last run drew it: pad hits wipe and redraw the
+# status line, changing the bus and the big field; then a bank change; then
+# a STOP message; then the SD menu, which must not read the old message.
+def mainpads():
+    d = main_screen(0, 0, 'A-13')
+    d += pad_hit(1000, 0, 'A-14', 'DRY', '- - - ')
+    d += pad_hit(2000, 0, 'A-13', 'BUS-1', '9 4 ')
+    d += pad_hit(3000, 0, 'A-10', 'DRY', '- - - ')
+    d += pad_hit(4000, 0, 'B-10', 'DRY', '- - - ')
+    d += [f'5000 s1 9 4 ~{TOAST}STOP']
+    d += pad_hit(5000, 0, 'B-10', 'DRY', '- - - ')
+    d += ['9000 s0 CLEAR', '9000 s2 5 2 ^_IMPORT/EXPORT MENU',
+          '9000 s0 17 22 !IMPORT from SD-CARD', '9000 s0 17 30 EXPORT to SD-CARD',
+          '10000 VALUE']
+    write('mainpads', d, ['A 13', 'B 10', 'STOP',
+                          'IMPORT/EXPORT MENU | IMPORT from SD-CARD'])
+
+# Entering the EXPORT submenu as the unit draws it: the focused item first,
+# the title from its own site a moment later, the other items after that.
+def submenu():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 s0 CLEAR', '1000 s0 17 22 !SAMPLE',
+          '1010 s2 3 2 _=80151801:EXPORT SAMPLE/PROJ./MULTIPAD',
+          '1100 s0 17 30 PROJECT', '1150 s0 17 38 MULTIPAD', '1200 s0 17 46 CANCEL',
+          '2000 s0 17 22 SAMPLE', '2000 s0 17 30 !PROJECT',
+          '3000 VALUE']
+    write('submenu', d, ['A 13', 'EXPORT SAMPLE/PROJ./MULTIPAD | SAMPLE', 'PROJECT'])
+
+# The recording screen drawing its meter's scale after it appears, and the
+# pad named without a dash; the doubled title of the pad link groups page.
+def recscale():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 s0 CLEAR', '1000 s0 21 16 _R E C',
+          '1000 s1 9 4 ~=8006BECD:Select PAD\\nfor RECORDING',
+          '1300 s0 121 14 _L', '1300 s0 125 14 _R', '1300 s0 118 24 _0',
+          '1300 s0 114 40 _-6', '1300 s0 114 59 _dB',
+          '3000 s0 110 2 !=80177A75:A14',
+          '5000 s0 CLEAR', '5000 s3 14 3 ~=8013FE3D:PAD LINK GROUPS',
+          '5000 s3 13 2 ~=80195269:PAD LINK GROUPS', '5000 s0 20 30 !GROUP 1',
+          '7000 VALUE']
+    write('recscale', d, ['A 13', 'Select PAD for RECORDING', 'A 14',
+                          'PAD LINK GROUPS | GROUP 1'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
 popup()
 grid()
 record()
+mainpads()
+submenu()
+recscale()

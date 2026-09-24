@@ -1,8 +1,8 @@
 # The main screen; a pad hit; a bank change.
-0 s0 12 2 !P-2
-0 s0 34 2 !A-13
-0 s0 56 2 !BUS-1
-0 s0 84 2 !Fix
+0 s0 12 2 !=80149DC7:P-2
+0 s0 34 2 !=80149DD5:A-13
+0 s0 56 2 !=80149DE5:BUS-1
+0 s0 84 2 !=80149DF5:Fix
 0 s0 104 2 ! DC 
 0 s0 53 14 _9 4 
 1000 s0 34 2 !A-1
@@ -515,10 +515,10 @@
 # EXIT to the main screen.
 8000 s0 CLEAR
 8000 s2 CLEAR
-8000 s3 12 2 !P-2
-8000 s3 34 2 !B-1
-8000 s3 56 2 !BUS-1
-8000 s3 84 2 !Fix
+8000 s3 12 2 !=80149DC7:P-2
+8000 s3 34 2 !=80149DD5:B-1
+8000 s3 56 2 !=80149DE5:BUS-1
+8000 s3 84 2 !=80149DF5:Fix
 8000 s3 104 2 ! DC 
 8000 s3 53 14 _9 4 
 9000 VALUE

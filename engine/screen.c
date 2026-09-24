@@ -81,6 +81,36 @@ static const uint32_t vt_base[] = {
 #define WRAP_PLAIN   0x800EE06Fu            /* FUN_800EE048, seven */
 #define TITLE_SITE   0x80081011u
 
+/* What particular drawing code is for, by the return address the hook reads
+   one level up, from what the unit's logs recorded. Anything else is judged
+   by how it is drawn. */
+enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE };
+static const struct { uint32_t site; uint8_t role; } sites[] = {
+    { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
+    { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
+    { 0x801120A1u, ROLE_TITLE },            /* CHROMATIC MODE */
+    { 0x80146135u, ROLE_TITLE },            /* an effect's name, over its grid or page */
+    { 0x80195269u, ROLE_TITLE },            /* 16 VELOCITY, PAD LINK GROUPS, MUTE GROUP */
+    { 0x8013FE3Du, ROLE_IGNORE },           /* a second copy of those, a pixel over */
+    { 0x8006BECDu, ROLE_TOAST },            /* STOP, RECORDING, METRO MODE ON */
+    { 0x80149DD5u, ROLE_PAD },              /* the main screen's bank and pad */
+    { 0x80149DC7u, ROLE_MAIN },             /* its pattern */
+    { 0x80149DE5u, ROLE_MAIN },             /* the pad's bus, DRY or BUS-1 */
+    { 0x80149DF5u, ROLE_MAIN },             /* fixed velocity, Fix or Vel */
+    { 0x8017388Bu, ROLE_IGNORE },           /* LEVEL meters */
+    { 0x801779C9u, ROLE_IGNORE },
+};
+
+static uint8_t role_of(uint32_t site)
+{
+    unsigned i;
+
+    for (i = 0; i < sizeof sites / sizeof sites[0]; i++)
+        if (sites[i].site == site)
+            return sites[i].role;
+    return ROLE_NONE;
+}
+
 static volatile int key_hooked, unload_flag, screen_hooked, screen_mode;
 
 static int key_handler(void *page, int key)
@@ -260,7 +290,7 @@ struct item {
     uint32_t surf, lr, site, last_drawn, last_change, erased, draws, seq;
     int32_t  mark;
     int16_t  x, y;
-    uint8_t  used, changed, rapid, task, title, fresh;
+    uint8_t  used, changed, rapid, task, title, fresh, role;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -269,17 +299,20 @@ static int burst[64], nburst;
 static uint32_t settle_ticks, batches, evicted, change_seq;
 static uint32_t last_change, first_pending, last_popup_change;
 static const struct item *last_label;
-static int pending;
+static int pending, wiped;
 
 /* The background colour: white, 0xFFFFFF, on the status bar and on the
    focused item of a menu or grid, 0 or 0x1000000 elsewhere, -1 on the
    pop-up layers. */
 #define WHITE 0xFFFFFF
 #define STEADY 900u                          /* ticks, 1.2 s */
+#define POPUP_LIFE 2250u                     /* ticks, 3 s */
 
-/* The draw log: every change of text or background, and every clear that
-   took something off the screen, in full; at the end a count of each item's
-   redraws, so a screen that redraws continually costs a line per item. */
+/* The draw log: every change of text or background in full; at the end a
+   count of each item's redraws, so a screen that redraws continually costs
+   a line per item.
+   Text leaving the screen is logged when it is taken off the model, not at
+   each clear: some screens clear and redraw twenty-five times a second. */
 #define LOG_CAP  (384u * 1024u)
 #define SUMMARY  (48u * 1024u)
 static char draw_log[LOG_CAP];
@@ -352,7 +385,7 @@ static int live(const struct item *it)
 {
     const char *t = it->text;
 
-    if (!it->used || it->erased || text_len(it) == 0)
+    if (!it->used || it->erased || text_len(it) == 0 || it->role == ROLE_IGNORE)
         return 0;
     while (*t == ' ')
         t++;
@@ -360,10 +393,11 @@ static int live(const struct item *it)
 }
 
 /* The item a draw belongs to: the one at its surface and position, or a new
-   one. A string drawn over the space an old one took, on the same line, is
-   that item moved, as a centred title or a right-aligned value moves when
-   its text changes length, unless the old one was drawn in this same frame
-   and is simply its neighbour. */
+   one. A string drawn by the same code over the space an old one took, on
+   the same line, is that item moved, as a centred title or a right-aligned
+   value moves when its text changes length, unless the old one was drawn
+   in this same frame and is simply its neighbour. Drawn by other code, it
+   is new text in the old one's place, as a new screen's is. */
 static struct item *find(const struct draw *d)
 {
     struct item *free_one = NULL, *oldest = NULL;
@@ -376,7 +410,7 @@ static struct item *find(const struct draw *d)
     }
     for (i = 0; i < ITEMS; i++) {
         struct item *it = &items[i];
-        if (it->used && it->surf == d->surf && it->y == d->y
+        if (it->used && it->surf == d->surf && it->y == d->y && it->site == d->site
             && d->tick - it->last_drawn > 2u && overlaps(it, d)) {
             if (free_one == NULL) {
                 free_one = it;
@@ -432,7 +466,7 @@ static int is_lit(const struct item *it)
 
 static int is_popup(const struct item *it)
 {
-    return it->mark == -1;
+    return (it->mark == -1 || it->role == ROLE_TOAST) && !it->title;
 }
 
 /* The main screen's bank and pad, "A-13", banks A to J: its bank changing
@@ -442,6 +476,8 @@ static int is_pad_field(const struct item *it)
     const char *t = it->text;
     int digits = 0;
 
+    if (it->role == ROLE_PAD)
+        return 1;
     if (!is_status(it) || t[0] < 'A' || t[0] > 'J' || t[1] != '-')
         return 0;
     for (t += 2; *t >= '0' && *t <= '9'; t++)
@@ -449,14 +485,15 @@ static int is_pad_field(const struct item *it)
     return *t == 0 && digits >= 1 && digits <= 3;
 }
 
-/* A pad as the screens name it, "A-13" or "A 1", banks A to J. */
+/* A pad as the screens name it, "A-13", "A 1" or "A14", banks A to J. */
 static int padlike(const char *t)
 {
     int digits = 0;
 
-    if (t[0] < 'A' || t[0] > 'J' || (t[1] != '-' && t[1] != ' '))
+    if (t[0] < 'A' || t[0] > 'J')
         return 0;
-    for (t += 2; *t >= '0' && *t <= '9'; t++)
+    t += t[1] == '-' || t[1] == ' ' ? 2 : 1;
+    for (; *t >= '0' && *t <= '9'; t++)
         digits++;
     return *t == 0 && digits >= 1 && digits <= 3;
 }
@@ -465,6 +502,9 @@ static void erase(uint32_t surf, int x0, int y0, int x1, int y1, int whole, uint
 {
     int i, n = 0;
 
+    /* Half the screen or more: the kind of wipe a new screen starts with. */
+    if (whole || (x1 - x0 + 1) * (y1 - y0 + 1) >= 128 * 64 / 2)
+        wiped = 1;
     for (i = 0; i < ITEMS; i++) {
         struct item *it = &items[i];
         if (!it->used || it->erased || it->surf != surf)
@@ -474,13 +514,7 @@ static void erase(uint32_t surf, int x0, int y0, int x1, int y1, int whole, uint
             n++;
         }
     }
-    if (n > 0) {
-        if (whole)
-            log_line("%lu clear %08lx: %d items\n", (unsigned long)tick, (unsigned long)surf, n);
-        else
-            log_line("%lu fill %08lx %d %d %d %d: %d items\n", (unsigned long)tick,
-                     (unsigned long)surf, x0, y0, x1, y1, n);
-    }
+    (void)n;
 }
 
 /* Folds one event into the model and answers whether it is a change worth
@@ -509,7 +543,8 @@ static int take(const struct draw *d)
     it->lr = d->lr;
     it->site = d->site;
     it->task = d->task;
-    it->title = d->site == TITLE_SITE;
+    it->role = role_of(d->site);
+    it->title = it->role == ROLE_TITLE;
     text_changed = strcmp(it->text, d->text) != 0;
     if (text_changed || it->mark != d->mark)
         log_line("%lu %u %08lx %d %d %ld %u %08lx %08lx |%s|\n", (unsigned long)d->tick,
@@ -521,9 +556,11 @@ static int take(const struct draw *d)
         /* A first change is said at once. One that follows another within
            STEADY neither interrupts nor is said until the item has held still
            that long: a value being turned is heard where it stops, and a
-           meter or a clock that never stops is not heard at all. A pad
-           changes when one is hit, however quickly, so it is said at once. */
-        if (it->last_change != 0 && d->tick - it->last_change < STEADY && !padlike(d->text)) {
+           meter or a clock that never stops is not heard at all. A pad, and
+           the main screen's status, change only when something is done,
+           however quickly, so they are dealt with at once. */
+        if (it->last_change != 0 && d->tick - it->last_change < STEADY && !padlike(d->text)
+            && it->role != ROLE_MAIN && it->role != ROLE_PAD) {
             if (it->rapid < 255)
                 it->rapid++;
         } else {
@@ -672,7 +709,16 @@ static int say_pad(const struct item *it)
     char t[ITEM_TEXT];
     size_t n = strlen(it->text);
 
-    memcpy(t, it->text, n + 1);
+    if (n + 2 > sizeof t)
+        return 0;
+    if (it->text[1] == '-' || it->text[1] == ' ') {
+        memcpy(t, it->text, n + 1);
+    } else {
+        t[0] = it->text[0];
+        memcpy(t + 1, it->text, n + 1);
+        t[1] = ' ';
+        n++;
+    }
     t[1] = ' ';
     if (in_batch(t))
         return 2;
@@ -776,6 +822,10 @@ static int say_value(const struct item *v)
 static int want_title(const struct item *it) { return is_title(it); }
 static int want_lit(const struct item *it) { return is_lit(it); }
 static int want_popup(const struct item *it) { return is_popup(it); }
+static int want_new_popup(const struct item *it)
+{
+    return is_popup(it) && (it->fresh || it->changed == 1);
+}
 static int want_changed(const struct item *it) { return it->changed != 0; }
 static int want_fresh(const struct item *it)
 {
@@ -833,7 +883,7 @@ static void new_screen(struct item **order)
         for (i = 0; i < ITEMS; i++)
             if (live(&items[i]) && is_pad_field(&items[i]))
                 focus += say_pad(&items[i]) == 1;
-    popups = in_order(order, ITEMS, want_popup);
+    popups = in_order(order, ITEMS, want_new_popup);
     for (i = 0; i < popups; i++)
         say(order[i]);
     if (focus == 0 && popups == 0) {
@@ -872,19 +922,28 @@ static int mirrors_focus(const struct item *it)
     return 0;
 }
 
-/* What to say about a change on the same screen: a pop-up that has just
-   appeared, whole; the newly focused item; values that changed; the bank
-   changing; other status changes, unless they only echo a pop-up. */
+/* What to say about a change on the same screen: a message, whenever it is
+   drawn; a pop-up that has just appeared, whole; the newly focused item;
+   values that changed. On the main screen a pad hit says nothing, and nor
+   do the other status fields it changes, but a bank change says the bank
+   and pad; elsewhere a pad is named whenever it changes. Text that has
+   only appeared, with nothing changed, stays quiet: a screen drawing the
+   rest of itself, a meter's scale. */
 static void same_screen(struct item **order)
 {
     static struct item *pop[ITEMS];
-    int n, i, k, m;
+    int n, i, k, m, pad_hit = 0;
     uint32_t popup_surf = 0;
 
     n = in_order(order, ITEMS, want_changed);
     for (i = 0; i < n; i++) {
         struct item *it = order[i];
-        if (is_popup(it) && popup_surf != it->surf && layer_is_new(it->surf)) {
+        if (!is_popup(it) || it->changed != 1)
+            continue;
+        if (it->role == ROLE_TOAST) {
+            say(it);
+            it->changed = 0;
+        } else if (popup_surf != it->surf && layer_is_new(it->surf)) {
             popup_surf = it->surf;
             m = in_order(pop, ITEMS, want_popup);
             for (k = 0; k < m; k++)
@@ -900,6 +959,9 @@ static void same_screen(struct item **order)
     for (i = 0; i < n; i++)
         if (order[i]->changed && is_lit(order[i]) && say(order[i]))
             order[i]->changed = 0;
+    for (i = 0; i < n; i++)
+        if (order[i]->changed == 1 && is_pad_field(order[i]))
+            pad_hit = 1;
     for (i = 0; i < n; i++) {
         struct item *it = order[i];
         if (it->changed != 1 || is_lit(it) || is_title(it))
@@ -910,15 +972,16 @@ static void same_screen(struct item **order)
         }
         if (it->rapid > 0 && b_now - it->last_change < STEADY)
             continue;
-        if (is_status(it)) {
-            if (is_pad_field(it)) {
-                if (it->prev0 != it->text[0])
-                    say_pad(it);
-            } else if (padlike(it->text)) {
+        if (is_pad_field(it)) {
+            if (it->prev0 != it->text[0])
                 say_pad(it);
-            } else if (b_now - last_popup_change >= 750u) {
+        } else if (padlike(it->text) && is_status(it)) {
+            say_pad(it);
+        } else if (it->fresh) {
+            /* appeared, not changed */
+        } else if (it->role == ROLE_MAIN || is_status(it)) {
+            if (!(it->role == ROLE_MAIN && pad_hit) && b_now - last_popup_change >= 750u)
                 say(it);
-            }
         } else {
             say_value(it);
         }
@@ -926,9 +989,16 @@ static void same_screen(struct item **order)
     }
 }
 
+/* A new screen: its title changed; or a surface that was not showing
+   anything is now showing three strings or more; or after a wipe of half
+   the screen or more, at least three strings are new and they make up half
+   of what is showing. A pad hit wipes and redraws the status line, which
+   changes but is not new; a screen drawing the rest of itself a moment
+   later, with no wipe, is not a new screen. */
 static int screen_changed(void)
 {
-    int i, alive = 0, fresh = 0;
+    uint32_t surf[16];
+    int nsurf = 0, i, k, alive = 0, fresh = 0;
 
     for (i = 0; i < ITEMS; i++) {
         const struct item *it = &items[i];
@@ -937,10 +1007,24 @@ static int screen_changed(void)
         if (is_title(it) && it->changed == 1)
             return 1;
         alive++;
-        if (it->fresh || it->changed == 1)
+        if (it->fresh || (it->changed == 1 && !is_status(it)))
             fresh++;
+        for (k = 0; k < nsurf && surf[k] != it->surf; k++)
+            ;
+        if (k == nsurf && nsurf < 16)
+            surf[nsurf++] = it->surf;
     }
-    return fresh >= 3 && fresh * 2 >= alive;
+    for (k = 0; k < nsurf; k++) {
+        int n = 0;
+        if (!layer_is_new(surf[k]))
+            continue;
+        for (i = 0; i < ITEMS; i++)
+            if (live(&items[i]) && items[i].surf == surf[k])
+                n++;
+        if (n >= 3)
+            return 1;
+    }
+    return wiped && fresh >= 3 && fresh * 2 >= alive;
 }
 
 /* Drains what the hooks caught. Once there has been no change for the
@@ -951,7 +1035,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
 {
     static struct item *order[ITEMS];
     uint32_t now = device_ticks();
-    int i, due = 0;
+    int i, due = 0, kind = 0;
 
     while (draw_rd != draw_wr) {
         if (take(&draws[draw_rd % DRAWS])) {
@@ -971,10 +1055,21 @@ int screen_poll(char *phrases, size_t cap, int *count)
             due = 1;
     if (!due)
         return 0;
-    /* What was erased and not drawn again is gone. */
-    for (i = 0; i < ITEMS; i++)
-        if (items[i].used && items[i].erased && now - items[i].erased > 2u)
-            items[i].used = 0;
+    /* What was erased and not drawn again is gone, and so is a pop-up not
+       drawn for three seconds: a pop-up's layer is not cleared when it
+       closes, so its text would otherwise stay on the model for good. */
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        if (!it->used)
+            continue;
+        if ((it->erased && now - it->erased > 2u)
+            || (is_popup(it) && now - it->last_drawn > POPUP_LIFE)) {
+            if (text_len(it) > 0)
+                log_line("%lu gone %08lx %d %d |%s|\n", (unsigned long)now,
+                         (unsigned long)it->surf, it->x, it->y, it->text);
+            it->used = 0;
+        }
+    }
     pending = 0;
     b_out = phrases;
     b_cap = cap;
@@ -987,7 +1082,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
         nburst = 0;
         for (i = 0; i < ITEMS; i++)
             items[i].changed = 0;
-    } else if (screen_changed()) {
+    } else if ((kind = screen_changed()) != 0) {
         new_screen(order);
         for (i = 0; i < ITEMS; i++)
             items[i].changed = 0;
@@ -999,6 +1094,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
     }
     for (i = 0; i < ITEMS; i++)
         items[i].fresh = 0;
+    wiped = 0;
     *count = b_count;
 #ifdef SIM
     sim_batch(phrases, b_count);
@@ -1006,7 +1102,8 @@ int screen_poll(char *phrases, size_t cap, int *count)
     if (b_count == 0)
         return 0;
     batches++;
-    log_line("%lu say %d:", (unsigned long)now, b_count);
+    log_line("%lu say %s %d:", (unsigned long)now,
+             screen_mode == SCREEN_ALL ? "all" : kind ? "new" : "same", b_count);
     {
         const char *p = phrases;
         for (i = 0; i < b_count; i++) {

@@ -12,7 +12,8 @@
    or after the start with @ before it, and sN picks surface N, 0 to 3:
      MS [sN] X Y TEXT          drawn; TEXT may start with flags:
                                ! on white, ~ on a pop-up layer, _ on black,
-                               ^ drawn by the page-title setter
+                               ^ drawn by the page-title setter,
+                               =XXXXXXXX: drawn from that site
      MS [sN] CLEAR             the surface cleared
      MS [sN] FILL X0 Y0 X1 Y1  a rectangle cleared
      MS VALUE                  VALUE pressed
@@ -282,7 +283,10 @@ static void fire(int i)
                 colour_now = 0;
             else if (*t == '^')
                 sim_site = TITLE_SITE;
-            else
+            else if (*t == '=' && strlen(t) > 9 && t[9] == ':') {
+                sim_site = (uint32_t)strtoul(t + 1, NULL, 16);
+                t += 9;
+            } else
                 break;
         }
         ((int (*)(void *, int, int, const char *, int))vt[0x12C / 4])(
