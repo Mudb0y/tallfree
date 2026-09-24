@@ -99,3 +99,4 @@ void target_enter(void) { }
 void target_leave(void) { }
 
 void target_probe_slots(void) { }
+void target_volume(uint32_t percent) { (void)percent; }

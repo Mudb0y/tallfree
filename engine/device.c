@@ -3,10 +3,12 @@
 
    Files go through the firmware's own file calls. Playback hooks the eDMA
    channel-3 vector exactly as work/ext/isr.c proved: note whether the event
-   is ours, call the original handler, re-read the four descriptors every
-   interrupt, write 64 samples into all 16 slots of each frame, below 2^19.
-   The engine speaks at 11025 Hz and the interrupt raises it to 48000 by
-   linear interpolation as it goes, so no upsampled copy is ever held.
+   is ours, call the original handler, re-read the descriptors every
+   interrupt. Speech is added, clamped, to line 3 words 0 and 1, the one
+   left-right pair of the main outputs the slot probe found, so it mixes with
+   the instrument instead of replacing it. The engine speaks at 11025 Hz and
+   the interrupt raises it to 48000 by linear interpolation as it goes, so no
+   upsampled copy is ever held.
 
    engine_main waits for playback to finish and puts the vector back before
    returning. The handler lives in the engine image, and the next press loads
@@ -78,6 +80,19 @@ const char *target_input(void)
    set it also writes the speech. */
 static volatile uint32_t g_ticks, g_playing, g_hooked, g_probe;
 
+/* Speech level: a 16-bit sample times g_gain / 32. 128 is the old <<3 into
+   one pair; the default, 64, is half of that. Set from "#vol N" (percent of
+   128) at the head of SAY.TXT. */
+static volatile uint32_t g_gain = 64;
+
+void target_volume(uint32_t percent)
+{
+    if (percent > 100)
+        percent = 100;
+    g_gain = percent * 128u / 100u;
+    printf("volume %lu%%, gain %lu/32\n", (unsigned long)percent, (unsigned long)g_gain);
+}
+
 /* The slot probe: a quiet sine in every one of the 64 slots (four SAI lines
    of sixteen), each at its own frequency, added to what the firmware put
    there. Recording the main outputs then names every slot in one run. */
@@ -125,8 +140,13 @@ static void our_isr(void)
     g_irqs++;
     if ((g_pos >> 16) >= g_n)
         return;
-    for (b = 0; b < 4u; b++) {
-        volatile int32_t *q = (volatile int32_t *)*(volatile uint32_t *)(0x400E9000u + b * 32u);
+    {
+        /* Line 3 is the only line that reaches the main outputs, and words 0
+           and 1 of its frames are one left-right pair there (measured with the
+           slot probe). Speech is added to what the firmware put in them and
+           clamped to the 20-bit field, so a loud mix saturates instead of
+           wrapping round. */
+        volatile int32_t *q = (volatile int32_t *)*(volatile uint32_t *)(0x400E9000u + 3u * 32u);
         uint32_t pos = g_pos;
         for (f = 0; f < SAMPLES; f++) {
             uint32_t i = pos >> 16, frac = pos & 0xFFFFu;
@@ -136,16 +156,21 @@ static void our_isr(void)
                 int32_t c = i + 1 < g_n ? g_pcm[i + 1] : 0;
                 v = a + (((c - a) * (int32_t)frac) >> 16);
             }
-            v <<= 3;
-            for (s = 0; s < SLOTS; s++)
-                q[f * SLOTS + s] = v;
+            v = (v * (int32_t)g_gain) >> 5;
+            for (s = 0; s < 2u; s++) {
+                int32_t m = q[f * SLOTS + s] + v;
+                if (m > 524287)
+                    m = 524287;
+                else if (m < -524288)
+                    m = -524288;
+                q[f * SLOTS + s] = m;
+            }
             pos += STEP;
         }
+        (void)b;
     }
     g_pos += STEP * SAMPLES;
 }
-
-static void context_report(const char *when);
 
 static void hook_audio(void)
 {

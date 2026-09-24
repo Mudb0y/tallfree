@@ -34,6 +34,7 @@ void target_output(const short *samples, size_t n);
 void target_done(int rc);
 void target_stage(const char *what);
 void target_probe_slots(void);
+void target_volume(uint32_t percent);
 const char *target_input(void);
 
 #define FRAME 2048
@@ -82,6 +83,14 @@ static int say_main(void)
 
     if (text == NULL)
         text = say_text;
+    /* "#vol N" on the first line sets the speech level in percent. */
+    if (strncmp(text, "#vol ", 5) == 0) {
+        target_volume((uint32_t)strtoul(text + 5, NULL, 10));
+        while (*text && *text != '\n')
+            text++;
+        while (*text == '\n' || *text == '\r')
+            text++;
+    }
     /* SAY.TXT beginning "#slots" runs the slot probe instead of speaking. */
     if (strncmp(text, "#slots", 6) == 0) {
         target_stage("slot probe");
