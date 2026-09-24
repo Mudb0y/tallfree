@@ -31,12 +31,18 @@ typedef int (*start_task_fn)(int task, int code);
 typedef int (*create_sem_fn)(const struct sem_record *);
 typedef int (*wait_sem_fn)(int sem, int count, int timeout);
 typedef int (*signal_sem_fn)(int sem, int count);
+typedef int (*delete_sem_fn)(int sem);
+typedef void (*exit_delete_task_fn)(void);
 
 #define CREATE_TASK ((create_task_fn)0x800D31A9u)
 #define START_TASK  ((start_task_fn) 0x800D31B3u)
 #define CREATE_SEM  ((create_sem_fn) 0x800D30FFu)
 #define WAIT_SEM    ((wait_sem_fn)   0x800D3253u)
 #define SIGNAL_SEM  ((signal_sem_fn) 0x800D3249u)
+#define DELETE_SEM  ((delete_sem_fn) 0x800D2FDDu)
+/* The firmware never exits and deletes a task, so there is no stub for it;
+   this is the kernel's own entry in ITCM. */
+#define EXIT_DELETE_TASK ((exit_delete_task_fn)0x00003407u)
 
 /* High-level language, named, uses the FPU, as the firmware's own tasks are,
    plus a stack we supply: asked to find 8 KB itself, the kernel answered -33,
@@ -86,4 +92,18 @@ int kernel_sem_wait(int sem, int timeout_ms)
 int kernel_sem_signal(int sem)
 {
     return SIGNAL_SEM(sem, 1);
+}
+
+int kernel_sem_delete(int sem)
+{
+    return DELETE_SEM(sem);
+}
+
+/* Ends the calling task and frees its record. A stack the caller supplied is
+   left alone, so the task can be running on it when it goes. */
+void kernel_task_exit_delete(void)
+{
+    EXIT_DELETE_TASK();
+    for (;;)
+        ;
 }

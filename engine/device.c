@@ -327,13 +327,20 @@ void target_sleep(int ms)
         kernel_sem_wait(g_sleep_sem, ms);
 }
 
+/* The task has to be gone before the next press loads a fresh image over
+   its code and zeroes its stack, and the kernel has only 32 semaphores, so
+   it gives back both on the way out. */
 static void engine_task(int code, void *arg)
 {
+    int sem;
+
     (void)code;
     (void)arg;
     g_body();
-    for (;;)
-        target_sleep(1000);
+    sem = g_sleep_sem;
+    g_sleep_sem = -1;
+    kernel_sem_delete(sem);
+    kernel_task_exit_delete();
 }
 
 int target_launch(int (*body)(void))
