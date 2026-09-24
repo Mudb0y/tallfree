@@ -9,6 +9,9 @@ WHITE, POPUP, BLACK, TITLE = '!', '~', '_', '^'
 # The main screen's status fields, each from its own drawing site.
 PATTERN, PAD, BUS, FIXVEL = '=80149DC7:', '=80149DD5:', '=80149DE5:', '=80149DF5:'
 TOAST = '=8006BECD:'
+LABEL = '=801463F7:'                    # a parameter page's labels
+CELL, FXNAME = '=80145EDF:', '=80146135:'   # the effects grid's cells and title
+ROWLABEL, TABS = '=80148AFD:', '=80121751:' # the SYSTEM page's rows and tabs
 
 def main_screen(t, surf, bank_pad, bus='BUS-1', big='9 4 '):
     bx = 56 if bus == 'BUS-1' else 60
@@ -62,9 +65,9 @@ def menu():
 def params():
     d = main_screen(0, 0, 'A-13')
     d += ['1000 s0 CLEAR',
-          '1000 s0 9 3 _CUTOFF', '1000 s0 23 33 _Hz ', '1000 s0 11 18 _637',
-          '1000 s0 44 3 _RESONANCE', '1000 s0 73 33 _ ', '1000 s0 54 18 _   1',
-          '1000 s0 95 3 _DRIVE', '1000 s0 115 33 _ ', '1000 s0 96 18 _   0',
+          f'1000 s0 9 3 _{LABEL}CUTOFF', '1000 s0 23 33 _Hz ', '1000 s0 11 18 _637',
+          f'1000 s0 44 3 _{LABEL}RESONANCE', '1000 s0 73 33 _ ', '1000 s0 54 18 _   1',
+          f'1000 s0 95 3 _{LABEL}DRIVE', '1000 s0 115 33 _ ', '1000 s0 96 18 _   0',
           '1000 s0 53 47 _Filter+Drive']
     t = 3000
     for v, x in [('827', 11), ('1914', 7), ('4202', 7), ('8308', 7), ('14035', 4),
@@ -107,9 +110,9 @@ def grid():
     def page(t, names, fulls, sel, n):
         d.append(f'{t} s0 FILL 0 5 127 60')
         for k, c in enumerate(names):
-            d.append(f'{t} s0 {pos[k][0]} {pos[k][1]} {"!" if k == sel else "_"}{c}')
+            d.append(f'{t} s0 {pos[k][0]} {pos[k][1]} {"!" if k == sel else "_"}{CELL}{c}')
         name = fulls.get(names[sel], names[sel])
-        d.append(f'{t} s0 {64 - 2 * len(name)} 5 _{name}')
+        d.append(f'{t} s0 {64 - 2 * len(name)} 5 _{FXNAME}{name}')
         d.append(f'{t} s0 111 5 _{n}/3')
     d += main_screen(0, 0, 'A-13')
     d.append('1000 s0 CLEAR')
@@ -180,6 +183,37 @@ def recscale():
     write('recscale', d, ['A 13', 'Select PAD for RECORDING', 'A 14',
                           'PAD LINK GROUPS | GROUP 1'])
 
+# The UTILITY menu, its title on a layer never wiped, then the SYSTEM page:
+# rows of a setting's name and its value, a tab strip, a page count. The
+# menu's title must not be read again on the SYSTEM page; each value is read
+# with the name on its own row; a value turned is read alone.
+def system():
+    d = main_screen(0, 0, 'A-13')
+    items = [(20, 30, 'SYSTEM'), (51, 30, 'PAD SET'), (83, 30, 'EFX SET'),
+             (20, 56, 'IMPORT'), (53, 56, 'BACKUP'), (83, 56, 'FACTORY')]
+    d += ['1000 s0 CLEAR', '1000 s2 5 2 ^_UTILITY MENU']
+    for k, (x, y, t) in enumerate(items):
+        d.append(f'1000 s2 {x} {y} ={0x8013E92B + 0x4E * k:08X}:{t}')
+    rows = [('Edit Knob Mode', 93, 'Direct'), ('EFX Knob Mode', 93, 'Direct'),
+            ('Load Project', 100, 'Last'), ('Sub Pad Mode', 93, 'Retrig'),
+            ('Auto Trig Level', 102, '   5'), ('Scrn Saver Time', 97, '1 min')]
+    d += ['3000 s0 CLEAR']
+    for k, (name, x, value) in enumerate(rows):
+        y = 13 + 8 * k
+        d += [f'3000 s0 6 {y} _{ROWLABEL}{name}', f'3000 s0 {x} {y} {value}']
+    d += ['3000 s0 103 2  1/ 5']
+    for k, t in enumerate(['GENERAL', 'CLICK', 'MIDI', 'GAIN', 'VERSION']):
+        d.append(f'3000 s0 {5 + 25 * k} 2 {TABS}{t}')
+    d += ['5000 s0 FILL 90 29 127 36', '5000 s0 100 29 Prev',
+          '6000 s0 FILL 90 29 127 36', '6000 s0 100 29 Last',
+          '8000 VALUE']
+    write('system', d, ['A 13',
+                        'UTILITY MENU | SYSTEM | PAD SET | EFX SET | IMPORT | BACKUP | FACTORY',
+                        '1 of 5 | Edit Knob Mode Direct | EFX Knob Mode Direct | '
+                        'Load Project Last | Sub Pad Mode Retrig | Auto Trig Level 5 | '
+                        'Scrn Saver Time 1 min',
+                        'Load Project Prev', 'Last'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -189,3 +223,4 @@ record()
 mainpads()
 submenu()
 recscale()
+system()

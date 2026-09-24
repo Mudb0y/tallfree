@@ -75,7 +75,7 @@ static const uint32_t vt_base[] = {
 /* What particular drawing code is for, by the return address the hook reads
    one level up, from what the unit's logs recorded. Anything else is judged
    by how it is drawn. */
-enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE };
+enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -88,6 +88,7 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80149DC7u, ROLE_MAIN },             /* its pattern */
     { 0x80149DE5u, ROLE_MAIN },             /* the pad's bus, DRY or BUS-1 */
     { 0x80149DF5u, ROLE_MAIN },             /* fixed velocity, Fix or Vel */
+    { 0x80121751u, ROLE_TABS },             /* a page's tabs, GENERAL CLICK MIDI */
     { 0x8017388Bu, ROLE_IGNORE },           /* LEVEL meters */
     { 0x801779C9u, ROLE_IGNORE },
 };
@@ -255,7 +256,7 @@ void screen_remove(void)
 #define ITEMS 512
 #define ITEM_TEXT DRAW_TEXT
 struct item {
-    uint32_t surf, lr, site, last_drawn, last_change, erased, draws, seq;
+    uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq;
     int32_t  mark;
     int16_t  x, y;
     uint8_t  used, changed, rapid, task, title, fresh, role;
@@ -409,6 +410,7 @@ static struct item *find(const struct draw *d)
     memset(free_one, 0, sizeof *free_one);
     free_one->used = 1;
     free_one->fresh = 1;
+    free_one->first_drawn = d->tick;
     free_one->surf = d->surf;
     free_one->x = d->x;
     free_one->y = d->y;
@@ -583,6 +585,31 @@ static size_t clean(char *out, size_t cap, const char *in)
         out[n -= 2] = 0;
     while (n > 0 && out[n - 1] == ' ')
         out[--n] = 0;
+    /* A page count, "1/ 5", as "1 of 5". */
+    {
+        size_t d1 = 0, j;
+        while (d1 < n && out[d1] >= '0' && out[d1] <= '9')
+            d1++;
+        if (d1 > 0 && d1 < n && out[d1] == '/') {
+            j = d1 + 1;
+            while (j < n && out[j] == ' ')
+                j++;
+            if (j < n && out[j] >= '0' && out[j] <= '9') {
+                size_t k2 = j;
+                while (k2 < n && out[k2] >= '0' && out[k2] <= '9')
+                    k2++;
+                if (k2 == n && n + 4 < cap) {
+                    char tail[16];
+                    size_t tl = n - j < sizeof tail - 1 ? n - j : sizeof tail - 1;
+                    memcpy(tail, out + j, tl);
+                    tail[tl] = 0;
+                    memcpy(out + d1, " of ", 4);
+                    memcpy(out + d1 + 4, tail, tl + 1);
+                    return strlen(out);
+                }
+            }
+        }
+    }
     for (i = 0; i < n; i++)
         if ((i % 2 == 1) != (out[i] == ' '))
             spaced = 0;
@@ -617,7 +644,7 @@ static const struct item *full_name(const struct item *it)
 static char *b_out;
 static size_t b_cap, b_used;
 static int b_count;
-static uint32_t b_now;
+static uint32_t b_now, b_prev;
 
 static int in_batch(const char *text)
 {
@@ -735,20 +762,42 @@ static int horizontally_near(const struct item *a, const struct item *b)
 
 static int plain(const struct item *it)
 {
-    return !is_title(it) && !is_status(it) && !is_lit(it);
+    return !is_title(it) && !is_status(it) && !is_lit(it) && it->role != ROLE_TABS;
 }
 
-/* A value's label is the plain text just above it in its column, as the
-   parameter pages set CUTOFF over 827; its unit, short text just below. */
-static const struct item *label_of(const struct item *v)
+/* A value's label is plain text drawn by other code: on its own line to
+   its left and on another background, as the SYSTEM page sets "Edit Knob
+   Mode" beside "Direct", or else just above it in its column, as the
+   parameter pages set CUTOFF over 827. Text drawn by the same code is a
+   neighbour, as a grid's cells are, and so is text beside it on the same
+   background, as a menu's items are; neither is a label. */
+static const struct item *row_label(const struct item *v)
 {
     const struct item *best = NULL;
     int i;
 
     for (i = 0; i < ITEMS; i++) {
         const struct item *o = &items[i];
-        if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->y >= v->y
-            || v->y - o->y > 20 || !horizontally_near(v, o))
+        if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->site == v->site
+            || o->mark == v->mark || o->x >= v->x || o->y - v->y > 2 || v->y - o->y > 2)
+            continue;
+        if (best == NULL || o->x > best->x)
+            best = o;
+    }
+    return best;
+}
+
+static const struct item *label_of(const struct item *v)
+{
+    const struct item *best = row_label(v);
+    int i;
+
+    if (best != NULL)
+        return best;
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *o = &items[i];
+        if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->site == v->site
+            || o->y >= v->y - 2 || v->y - o->y > 20 || !horizontally_near(v, o))
             continue;
         if (best == NULL || o->y > best->y)
             best = o;
@@ -756,8 +805,12 @@ static const struct item *label_of(const struct item *v)
     return best;
 }
 
+/* A value's unit is short text just below it in its column, "Hz" under
+   827; only a value with a label has one, and a value named on its own
+   row, the next setting down, is not a unit. */
 static const struct item *unit_of(const struct item *v)
 {
+    const struct item *best = NULL;
     char t[ITEM_TEXT];
     int i;
 
@@ -768,10 +821,12 @@ static const struct item *unit_of(const struct item *v)
         if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->y <= v->y
             || o->y - v->y > 20 || !horizontally_near(v, o))
             continue;
-        if (clean(t, sizeof t, o->text) > 0 && strlen(t) <= 4 && label_of(o) == v)
-            return o;
+        if (clean(t, sizeof t, o->text) == 0 || strlen(t) > 4 || row_label(o) != NULL)
+            continue;
+        if (best == NULL || o->y < best->y)
+            best = o;
     }
-    return NULL;
+    return best;
 }
 
 /* A value with its label the first time it is heard, alone after that. */
@@ -787,7 +842,12 @@ static int say_value(const struct item *v)
     return say3(v->text, NULL, NULL);
 }
 
-static int want_title(const struct item *it) { return is_title(it); }
+/* A title drawn since the last batch. A title's layer may never be wiped,
+   and UTILITY MENU read itself before every screen after it. */
+static int want_title(const struct item *it)
+{
+    return is_title(it) && (int32_t)(it->last_drawn - b_prev) > 0;
+}
 static int want_lit(const struct item *it) { return is_lit(it); }
 static int want_popup(const struct item *it) { return is_popup(it); }
 static int want_new_popup(const struct item *it)
@@ -797,7 +857,8 @@ static int want_new_popup(const struct item *it)
 static int want_changed(const struct item *it) { return it->changed != 0; }
 static int want_fresh(const struct item *it)
 {
-    return !is_status(it) && !is_title(it) && (it->fresh || it->changed == 1);
+    return !is_status(it) && !is_title(it) && it->role != ROLE_TABS
+        && (it->fresh || it->changed == 1);
 }
 
 /* A screen with no title and no focus: what it shows, each value read with
@@ -843,10 +904,12 @@ static void new_screen(struct item **order)
     for (i = 0; i < n; i++)
         say(order[i]);
     titles = b_count;
-    n = in_order(order, ITEMS, want_lit);
-    for (i = 0; i < n; i++)
+    (void)titles;
+    /* The focus counts when it is there, even when the title has already
+       said its words, as a grid's title names the focused cell. */
+    focus = in_order(order, ITEMS, want_lit);
+    for (i = 0; i < focus; i++)
         say(order[i]);
-    focus = b_count - titles;
     if (focus == 0)
         for (i = 0; i < ITEMS; i++)
             if (live(&items[i]) && is_pad_field(&items[i]))
@@ -1032,7 +1095,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
             continue;
         if ((it->erased && now - it->erased > 2u)
             || (is_popup(it) && now - it->last_drawn > POPUP_LIFE)) {
-            if (text_len(it) > 0)
+            if (text_len(it) > 0 && it->last_drawn - it->first_drawn >= 750u)
                 log_line("%lu gone %08lx %d %d |%s|\n", (unsigned long)now,
                          (unsigned long)it->surf, it->x, it->y, it->text);
             it->used = 0;
@@ -1063,6 +1126,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
     for (i = 0; i < ITEMS; i++)
         items[i].fresh = 0;
     wiped = 0;
+    b_prev = now;
     *count = b_count;
 #ifdef SIM
     sim_batch(phrases, b_count);
