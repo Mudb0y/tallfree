@@ -40,7 +40,7 @@ struct fault {
 };
 
 volatile struct fault fault_record;
-static uint32_t saved_vectors[4];
+__attribute__((used)) uint32_t saved_vectors[4];
 static volatile uint32_t stage_count;
 
 static int hexout(char *p, uint32_t v)
@@ -127,6 +127,18 @@ __attribute__((used)) static uint32_t fault_c(uint32_t *frame, uint32_t exc_retu
     return exc_return;
 }
 
+/* Only faults in the engine's own code are ours. Anything else is the
+   firmware's, and some of its code faults on purpose and expects its own
+   handler; those go straight to the saved vector with every register as the
+   fault left it. */
+extern char __image_start[], __image_end[];
+
+__attribute__((used)) static uint32_t fault_is_ours(uint32_t *frame)
+{
+    uint32_t pc = frame[6];
+    return pc >= (uint32_t)__image_start && pc < (uint32_t)__image_end;
+}
+
 #define FAULT_ENTRY(name, num)                                   \
     __attribute__((naked)) static void name(void)                \
     {                                                            \
@@ -135,12 +147,22 @@ __attribute__((used)) static uint32_t fault_c(uint32_t *frame, uint32_t exc_retu
             "ite   eq\n"                                         \
             "mrseq r0, msp\n"                                    \
             "mrsne r0, psp\n"                                    \
+            "push  {r0, lr}\n"                                   \
+            "bl    fault_is_ours\n"                              \
+            "mov   r3, r0\n"                                     \
+            "pop   {r0, lr}\n"                                   \
+            "cbnz  r3, 1f\n"                                     \
+            "ldr   r3, =saved_vectors\n"                         \
+            "ldr   r3, [r3, #(" #num " - 3) * 4]\n"              \
+            "bx    r3\n"                                         \
+            "1:\n"                                               \
             "mov   r1, lr\n"                                     \
             "movs  r2, #" #num "\n"                              \
             "push  {r1, lr}\n"                                   \
             "bl    fault_c\n"                                    \
             "pop   {r1, lr}\n"                                   \
-            "bx    lr\n");                                       \
+            "bx    lr\n"                                         \
+            ".ltorg\n");                                         \
     }
 
 FAULT_ENTRY(hard_fault, 3)
