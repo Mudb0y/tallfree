@@ -160,7 +160,6 @@ static void play(const int16_t *pcm, size_t n)
             break;
     }
     g_playing = 0;
-    context_report("after play");
     printf("play: %u samples, %u interrupts, reached sample %u, %u ticks, loop %u\n",
            (unsigned)n, (unsigned)g_irqs, (unsigned)(g_pos >> 16),
            (unsigned)(g_ticks - t0), (unsigned)guard);
@@ -188,7 +187,7 @@ void diag_remove(void);
 /* What the processor says about the context the engine was entered in, and
    whether the audio interrupt can reach us from it. Named registers only:
    the peripheral windows are sparse and a sweep has faulted this core. */
-static void context_report(const char *when)
+__attribute__((unused)) static void context_report(const char *when)
 {
     uint32_t ipsr, primask, basepri, faultmask, control, sa, sb;
     volatile uint32_t spin;
@@ -223,7 +222,6 @@ void target_enter(void)
     diag_install();
     hook_audio();
     target_stage("engine entered");
-    context_report("entry");
 }
 
 void target_leave(void)

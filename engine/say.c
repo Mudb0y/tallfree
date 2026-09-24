@@ -57,8 +57,8 @@ static int STDCALL on_message(OldInst *h, int msg, long param, void *data)
         }
         memcpy(samples + nsamples, frame, n * sizeof *frame);
         nsamples += n;
-        if ((nsamples / FRAME) % 8 == 0)
-            target_stage("synthesis buffers arriving");
+        if (nsamples == n)
+            target_stage("first audio buffer");
     }
     return eciDataProcessed;
 }

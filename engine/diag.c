@@ -13,6 +13,7 @@
    cannot be walked back like that; it records and stops. */
 
 #include <stdint.h>
+#include <stdio.h>
 
 typedef int (*open_fn) (const char *path, int mode);
 typedef int (*write_fn)(int h, const void *buf, int len);
@@ -62,21 +63,15 @@ static void write_text(const char *path, const char *s, int n)
     }
 }
 
+/* Each stage goes into the log with its time in audio interrupts (750 a
+   second); nothing is written to the card mid-run, since a file write costs
+   tens of milliseconds and would be timed along with the engine. A fault
+   still reports the last stage reached, through FAULT.TXT. */
 void target_stage(const char *what)
 {
-    char line[80];
-    int n = 0;
-
     stage_count++;
-    n += hexout(line, stage_count);
-    line[n++] = ' ';
-    n += hexout(line + n, device_ticks());
-    line[n++] = ' ';
-    while (*what && n < 76)
-        line[n++] = *what++;
-    line[n++] = '\r';
-    line[n++] = '\n';
-    write_text("A:/EVV/STAGE.TXT", line, n);
+    printf("stage %2lu at %5lu ticks: %s\n", (unsigned long)stage_count,
+           (unsigned long)device_ticks(), what);
 }
 
 static void fault_recover(void)
