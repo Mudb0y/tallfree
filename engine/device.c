@@ -115,6 +115,8 @@ static void our_isr(void)
     g_pos += STEP * SAMPLES;
 }
 
+static void context_report(const char *when);
+
 static void hook_audio(void)
 {
     uint32_t installed = (uint32_t)(void *)our_isr | 1u;
@@ -154,6 +156,7 @@ static void play(const int16_t *pcm, size_t n)
             break;
     }
     g_playing = 0;
+    context_report("after play");
     printf("play: %u samples, %u interrupts, reached sample %u, %u ticks, loop %u\n",
            (unsigned)n, (unsigned)g_irqs, (unsigned)(g_pos >> 16),
            (unsigned)(g_ticks - t0), (unsigned)guard);
@@ -178,11 +181,45 @@ void target_done(int rc)
 void diag_install(void);
 void diag_remove(void);
 
+/* What the processor says about the context the engine was entered in, and
+   whether the audio interrupt can reach us from it. Named registers only:
+   the peripheral windows are sparse and a sweep has faulted this core. */
+static void context_report(const char *when)
+{
+    uint32_t ipsr, primask, basepri, faultmask, control, sa, sb;
+    volatile uint32_t spin;
+
+    __asm__ volatile("mrs %0, ipsr" : "=r"(ipsr));
+    __asm__ volatile("mrs %0, primask" : "=r"(primask));
+    __asm__ volatile("mrs %0, basepri" : "=r"(basepri));
+    __asm__ volatile("mrs %0, faultmask" : "=r"(faultmask));
+    __asm__ volatile("mrs %0, control" : "=r"(control));
+    sa = *(volatile uint32_t *)0x400E9000u;
+    for (spin = 0; spin < 2000000u; spin++)
+        ;
+    sb = *(volatile uint32_t *)0x400E9000u;
+    printf("%s: ipsr %lx primask %lx basepri %lx faultmask %lx control %lx\n",
+           when, (unsigned long)ipsr, (unsigned long)primask, (unsigned long)basepri,
+           (unsigned long)faultmask, (unsigned long)control);
+    printf("%s: vtor %lx iser0 %lx ispr0 %lx iabr0 %lx ipr3 %lx vec19 %lx\n", when,
+           (unsigned long)*(volatile uint32_t *)0xE000ED08u,
+           (unsigned long)*(volatile uint32_t *)0xE000E100u,
+           (unsigned long)*(volatile uint32_t *)0xE000E200u,
+           (unsigned long)*(volatile uint32_t *)0xE000E300u,
+           (unsigned long)*(volatile uint8_t *)0xE000E403u,
+           (unsigned long)*VEC_DMA3);
+    printf("%s: edma erq %lx int %lx, tcd0 saddr %lx then %lx, ticks %lu\n", when,
+           (unsigned long)*(volatile uint32_t *)0x400E800Cu,
+           (unsigned long)EDMA_INT, (unsigned long)sa, (unsigned long)sb,
+           (unsigned long)g_ticks);
+}
+
 void target_enter(void)
 {
     diag_install();
     hook_audio();
     target_stage("engine entered");
+    context_report("entry");
 }
 
 void target_leave(void)
