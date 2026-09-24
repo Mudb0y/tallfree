@@ -199,6 +199,8 @@ static int pending;
    log is there to confirm. */
 #define HIGHLIGHT 0xFFFFFF
 
+#define STEADY 900u                          /* ticks, 1.2 s */
+
 /* The draw log: every change of text or background in full, and at the end
    a count of each item's redraws, so a screen that redraws continually costs
    a line per item, not thousands. */
@@ -249,11 +251,41 @@ int screen_install(int mode, int settle_ms)
     return 0;
 }
 
+/* A string's horizontal extent, at four pixels a character: the grid's
+   seven-character cells sit thirty pixels apart, so the narrowest font is no
+   wider than that. */
+static int overlaps(const struct item *it, const struct draw *d)
+{
+    int a0 = it->x, a1 = it->x + 4 * (int)strlen(it->text);
+    int b0 = d->x, b1 = d->x + 4 * (int)(d->len ? d->len : strlen(d->text));
+
+    return a0 < b1 && b0 < a1;
+}
+
+/* The item a draw belongs to: the one at its surface and position, or a new
+   one. A new string drawn over the space an old one took, on the same line,
+   replaces it, as a centred title does when its text changes length, unless
+   the old one was drawn in this same frame and is simply its neighbour. */
 static struct item *find(const struct draw *d)
 {
-    struct item *free_one = NULL, *oldest = NULL;
+    struct item *free_one = NULL, *oldest = NULL, *at = NULL;
     int i;
 
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        if (it->used && it->surf == d->surf && it->x == d->x && it->y == d->y) {
+            at = it;
+            break;
+        }
+    }
+    if (at != NULL)
+        return at;
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        if (it->used && it->surf == d->surf && it->y == d->y
+            && d->tick - it->last_drawn > 2u && overlaps(it, d))
+            it->used = 0;
+    }
     for (i = 0; i < ITEMS; i++) {
         struct item *it = &items[i];
         if (!it->used) {
@@ -261,8 +293,6 @@ static struct item *find(const struct draw *d)
                 free_one = it;
             continue;
         }
-        if (it->surf == d->surf && it->x == d->x && it->y == d->y)
-            return it;
         if (oldest == NULL || (int32_t)(it->last_drawn - oldest->last_drawn) < 0)
             oldest = it;
     }
@@ -279,6 +309,13 @@ static struct item *find(const struct draw *d)
     return free_one;
 }
 
+/* The status bar across the top is drawn on white too; a highlight is white
+   below it. */
+static int lit(int32_t mark, int y)
+{
+    return mark == HIGHLIGHT && y >= 10;
+}
+
 /* Folds one draw into the model and answers whether it is a change worth
    waiting for: new text, or an item newly highlighted, and not an item that
    is changing so fast it has been muted. A redraw that changes nothing is
@@ -287,7 +324,7 @@ static struct item *find(const struct draw *d)
 static int take(const struct draw *d)
 {
     struct item *it = find(d);
-    int was_lit = it->mark == HIGHLIGHT, lit = d->mark == HIGHLIGHT;
+    int was_lit = lit(it->mark, it->y), now_lit = lit(d->mark, d->y);
     int text_changed = strcmp(it->text, d->text) != 0;
     int counts = 0;
 
@@ -301,9 +338,11 @@ static int take(const struct draw *d)
                  (unsigned)d->len, (unsigned long)d->lr, d->text);
     it->mark = d->mark;
     if (text_changed) {
-        /* Something that keeps changing, a meter or a clock, is muted from
-           its second change less than a second after the one before. */
-        if (it->last_change != 0 && d->tick - it->last_change < 750u) {
+        /* A first change is said at once. One that follows another within
+           STEADY neither interrupts nor is said until the item has held still
+           that long: a value being turned is heard where it stops, and a
+           meter or a clock that never stops is not heard at all. */
+        if (it->last_change != 0 && d->tick - it->last_change < STEADY) {
             if (it->rapid < 255)
                 it->rapid++;
         } else {
@@ -313,9 +352,9 @@ static int take(const struct draw *d)
         memcpy(it->text, d->text, ITEM_TEXT);
         it->changed = 1;
         it->seq = ++change_seq;
-        counts = it->rapid < 2;
-    } else if (lit && !was_lit) {
-        it->changed = 1;
+        counts = it->rapid == 0 || now_lit;
+    } else if (now_lit && !was_lit) {
+        it->changed = 2;
         it->seq = ++change_seq;
         counts = 1;
     }
@@ -329,12 +368,13 @@ static int take(const struct draw *d)
     return counts;
 }
 
-/* A string worth saying: runs of spaces closed up, the ends trimmed, and at
-   least one letter or digit in it. */
+/* A string worth saying: runs of spaces closed up, the ends trimmed, a
+   trailing ".." of truncation dropped, text spaced out a letter at a time
+   ("9 4", "R E C") closed up, and at least one letter or digit in it. */
 static size_t clean(char *out, size_t cap, const char *in)
 {
-    size_t n = 0;
-    int alnum = 0, space = 0;
+    size_t n = 0, i, k;
+    int alnum = 0, space = 0, spaced = 1;
 
     for (; *in && n + 1 < cap; in++) {
         unsigned char c = (unsigned char)*in;
@@ -350,84 +390,112 @@ static size_t clean(char *out, size_t cap, const char *in)
         out[n++] = (char)c;
     }
     out[n] = 0;
+    while (n >= 3 && out[n - 1] == '.' && out[n - 2] == '.')
+        out[n -= 2] = 0;
+    while (n > 0 && out[n - 1] == ' ')
+        out[--n] = 0;
+    for (i = 0; i < n; i++)
+        if ((i % 2 == 1) != (out[i] == ' '))
+            spaced = 0;
+    if (spaced && n >= 3) {
+        for (i = 0, k = 0; i < n; i += 2)
+            out[k++] = out[i];
+        out[n = k] = 0;
+    }
     return alnum ? n : 0;
 }
 
-/* Adds one item's text, unless it says nothing or repeats the phrase just
-   before it: some values are drawn twice, a pixel or two apart. */
+/* A grid cell cut short ("Crush..") whose full name ("Crusher") is also on
+   the screen, as the title, answers the full name. */
+static const struct item *full_name(const struct item *it)
+{
+    size_t n = strlen(it->text);
+    int i;
+
+    if (n < 3 || it->text[n - 1] != '.' || it->text[n - 2] != '.')
+        return it;
+    n -= 2;
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *o = &items[i];
+        if (o->used && o != it && o->surf == it->surf && strlen(o->text) > n
+            && strncmp(o->text, it->text, n) == 0 && o->text[n] != '.')
+            return o;
+    }
+    return it;
+}
+
+/* Adds a phrase unless it says nothing, or is already in the batch: some
+   values are drawn twice, and a full name may stand in for a cell. */
 static int add_phrase(char *phrases, size_t cap, size_t *used, int *count, const struct item *it)
 {
     char *at = phrases + *used;
-    size_t n = clean(at, cap - *used, it->text);
-    const char *prev = NULL;
+    size_t n = clean(at, cap - *used, full_name(it)->text);
+    const char *p = phrases;
+    int i;
 
-    if (n == 0 || *used + n + 1 >= cap || *count >= 24)
+    if (n == 0)
         return 0;
-    if (*count > 0) {
-        prev = at - 1;
-        while (prev > phrases && prev[-1])
-            prev--;
-        if (strcmp(prev, at) == 0)
-            return 0;
-    }
+    for (i = 0; i < *count; i++, p += strlen(p) + 1)
+        if (strcmp(p, at) == 0)
+            return 2;
+    if (*used + n + 1 >= cap || *count >= 24)
+        return 0;
     *used += n + 1;
     (*count)++;
     return 1;
 }
 
-/* Changed items in reading order: each surface as a group, the groups in
-   the order they first changed, so a pop-up is read after the screen under
-   it rather than threaded through it; within a group, top to bottom, then
-   left to right. */
+static int popup(const struct item *it)
+{
+    return it->mark == -1;
+}
+
+/* Reading order: the screen before any pop-up over it, then top to bottom,
+   then left to right. */
+static int before(const struct item *a, const struct item *b)
+{
+    if (popup(a) != popup(b))
+        return !popup(a);
+    if (a->y != b->y)
+        return a->y < b->y;
+    return a->x < b->x;
+}
+
 static int changed_in_order(struct item **out, int max)
 {
-    uint32_t surf[16], first[16];
-    int nsurf = 0, n = 0, i, j, k;
+    int n = 0, i, j;
 
     for (i = 0; i < ITEMS && n < max; i++) {
         struct item *it = &items[i];
-        if (!it->used || !it->changed)
+        /* Newly highlighted and already left again: scrolled past. */
+        if (!it->used || !it->changed || (it->changed == 2 && !lit(it->mark, it->y)))
             continue;
-        out[n++] = it;
-        for (k = 0; k < nsurf && surf[k] != it->surf; k++)
-            ;
-        if (k == nsurf && nsurf < 16) {
-            surf[nsurf] = it->surf;
-            first[nsurf++] = it->seq;
-        } else if (k < nsurf && it->seq < first[k]) {
-            first[k] = it->seq;
-        }
-    }
-    for (i = 1; i < n; i++) {
-        struct item *it = out[i];
-        uint32_t fi = 0;
-        for (k = 0; k < nsurf; k++)
-            if (surf[k] == it->surf)
-                fi = first[k];
-        for (j = i; j > 0; j--) {
-            struct item *o = out[j - 1];
-            uint32_t fo = 0;
-            for (k = 0; k < nsurf; k++)
-                if (surf[k] == o->surf)
-                    fo = first[k];
-            if (fo < fi || (fo == fi && (o->y < it->y || (o->y == it->y && o->x <= it->x))))
-                break;
-            out[j] = o;
-        }
+        for (j = n; j > 0 && before(it, out[j - 1]); j--)
+            out[j] = out[j - 1];
         out[j] = it;
+        n++;
     }
     return n;
 }
 
+static int steady(const struct item *it, uint32_t now)
+{
+    return it->rapid == 0 || now - it->last_change >= STEADY;
+}
+
 /* Drains what the hook caught. Once there has been no change for the
-   settle time, or changes have kept coming for a second, fills phrases with
-   the strings to say and answers 1. */
+   settle time, or changes have kept coming for a second, or a value that was
+   changing quickly has held still, fills phrases with the strings to say and
+   answers 1: the highlighted item first, then the rest of what changed in
+   reading order. A value still changing quickly waits for a later batch,
+   unless the batch already says its text. */
 int screen_poll(char *phrases, size_t cap, int *count)
 {
     static struct item *order[ITEMS];
+    static char said[ITEMS];
     uint32_t now = device_ticks();
     size_t used = 0;
-    int i, n;
+    int i, n, due = 0;
 
     while (draw_rd != draw_wr) {
         if (take(&draws[draw_rd % DRAWS])) {
@@ -439,9 +507,13 @@ int screen_poll(char *phrases, size_t cap, int *count)
         __asm__ volatile("dmb" ::: "memory");
         draw_rd++;
     }
-    if (!pending)
-        return 0;
-    if (now - last_change < settle_ticks && now - first_pending < 750u)
+    if (pending && (now - last_change >= settle_ticks || now - first_pending >= 750u))
+        due = 1;
+    for (i = 0; i < ITEMS && !due; i++)
+        if (items[i].used && items[i].changed == 1 && items[i].rapid > 0
+            && now - items[i].last_change >= STEADY)
+            due = 1;
+    if (!due)
         return 0;
     pending = 0;
     *count = 0;
@@ -449,14 +521,37 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < nburst; i++)
             add_phrase(phrases, cap, &used, count, &items[burst[i]]);
         nburst = 0;
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = 0;
     } else {
         n = changed_in_order(order, ITEMS);
+        for (i = 0; i < n; i++) {
+            said[i] = 0;
+            if (lit(order[i]->mark, order[i]->y))
+                said[i] = (char)add_phrase(phrases, cap, &used, count, order[i]);
+        }
         for (i = 0; i < n; i++)
-            if (order[i]->rapid < 2 || order[i]->mark == HIGHLIGHT)
-                add_phrase(phrases, cap, &used, count, order[i]);
+            if (!lit(order[i]->mark, order[i]->y) && steady(order[i], now))
+                said[i] = (char)add_phrase(phrases, cap, &used, count, order[i]);
+        for (i = 0; i < n; i++) {
+            struct item *it = order[i];
+            if (!said[i] && !steady(it, now)) {
+                char text[ITEM_TEXT];
+                const char *p = phrases;
+                int k, dup = 0;
+                clean(text, sizeof text, full_name(it)->text);
+                for (k = 0; k < *count; k++, p += strlen(p) + 1)
+                    if (strcmp(p, text) == 0)
+                        dup = 1;
+                if (!dup)
+                    continue;
+            }
+            it->changed = 0;
+        }
+        for (i = 0; i < ITEMS; i++)
+            if (items[i].changed == 2 || !items[i].used)
+                items[i].changed = 0;
     }
-    for (i = 0; i < ITEMS; i++)
-        items[i].changed = 0;
     if (*count == 0)
         return 0;
     batches++;

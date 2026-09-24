@@ -5,7 +5,7 @@
    SAY.TXT holds settings and a script, one per line:
      #vol N      speech level, percent; 50 by default
      #mode M     screen reading: changed (the default), all, or off
-     #settle N   ms of quiet drawing before speaking what changed; 150
+     #settle N   ms without a change before speaking what changed; 40
      #frame N    samples per synthesised buffer; 512
      #wait N     the next line is said N ms after the one before it started,
                  cutting that one off; without it, a line waits for the one
@@ -25,7 +25,7 @@
 #include "device.h"
 #include "say.h"
 
-static int mode = SCREEN_CHANGED, settle_ms = 150, frame = 512, slots;
+static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots;
 
 #define SCRIPT 64
 static struct { const char *text; int wait_ms; } script[SCRIPT];
