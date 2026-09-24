@@ -10,6 +10,7 @@
 #   make sim       run the instrument's resident service under QEMU against
 #                  a scenario, sim/basic unless SIM= names another directory
 #                  holding sim_say.txt and sim_draws.txt
+#   make sims      every scenario in sim/, one line each: PASS or FAIL
 
 OPENEVV ?= /home/stas/Projects/openevv-sp404
 CC      := arm-none-eabi-gcc
@@ -29,7 +30,7 @@ COMMON := port_coop.c sys.c start.c say.c say.h
 
 TEXT ?= Hello, I am the SP four oh four, and I can talk now.
 
-.PHONY: qemu device check sim lib clean
+.PHONY: qemu device check sim sims lib clean
 qemu: $(BUILD)/qemu.elf
 device: $(BUILD)/ENGINE.BIN
 
@@ -69,6 +70,12 @@ SIM ?= sim/basic
 sim: $(BUILD)/sim.elf
 	cd $(SIM) && rm -f sim.raw sim_*.TXT && qemu-system-arm -M mps2-an500 -nographic -monitor none \
 	  -serial none -semihosting-config enable=on,target=native -kernel $(CURDIR)/$(BUILD)/sim.elf
+
+sims: $(BUILD)/sim.elf
+	@for d in sim/*/; do \
+	  printf '%-8s ' $$(basename $$d); \
+	  $(MAKE) -s sim SIM=$$d 2>&1 | grep -E '^(PASS|FAIL)' || echo 'no expectations'; \
+	done
 
 clean:
 	rm -rf $(BUILD) out.raw

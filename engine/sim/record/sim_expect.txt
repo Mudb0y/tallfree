@@ -1,0 +1,5 @@
+A 13
+Select PAD for RECORDING
+A 1
+A 2
+B 2

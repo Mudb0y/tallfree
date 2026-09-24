@@ -1,141 +1,179 @@
-# The effects grid as the unit draws it: a centred title at the top, sixteen
-# cells cut short, the selected one on white. The knob moves the highlight
-# every 50 ms through six cells, and the title follows each move.
-0 111 5 2/3
-0 7 16 Reverb
-0 37 16 Chorus
-0 67 16 JUNO ..
-0 97 16 Flang..
-0 7 27 Phaser
-0 37 27 Wah
-0 67 27 !Slicer
-0 97 27 Trem..
-0 7 38 Chro..
-0 37 38 Hyper..
-0 67 38 Ring ..
-0 97 38 Crush..
-0 7 49 Overd..
-0 37 49 Disto..
-0 67 49 Equal..
-0 97 49 Comp..
-0 52 5 Slicer
-2000 7 16 Reverb
-2000 37 16 Chorus
-2000 67 16 JUNO ..
-2000 97 16 Flang..
-2000 7 27 Phaser
-2000 37 27 Wah
-2000 67 27 Slicer
-2000 97 27 Trem..
-2000 7 38 Chro..
-2000 37 38 Hyper..
-2000 67 38 Ring ..
-2000 97 38 Crush..
-2000 7 49 Overd..
-2000 37 49 Disto..
-2000 67 49 !Equal..
-2000 97 49 Comp..
-2000 46 5 Equalizer
-2050 7 16 Reverb
-2050 37 16 Chorus
-2050 67 16 JUNO ..
-2050 97 16 Flang..
-2050 7 27 Phaser
-2050 37 27 Wah
-2050 67 27 Slicer
-2050 97 27 Trem..
-2050 7 38 Chro..
-2050 37 38 Hyper..
-2050 67 38 Ring ..
-2050 97 38 !Crush..
-2050 7 49 Overd..
-2050 37 49 Disto..
-2050 67 49 Equal..
-2050 97 49 Comp..
-2050 50 5 Crusher
-2100 7 16 Reverb
-2100 37 16 Chorus
-2100 67 16 JUNO ..
-2100 97 16 Flang..
-2100 7 27 Phaser
-2100 37 27 Wah
-2100 67 27 Slicer
-2100 97 27 Trem..
-2100 7 38 Chro..
-2100 37 38 !Hyper..
-2100 67 38 Ring ..
-2100 97 38 Crush..
-2100 7 49 Overd..
-2100 37 49 Disto..
-2100 67 49 Equal..
-2100 97 49 Comp..
-2100 44 5 Hyper-Reso
-2150 7 16 Reverb
-2150 37 16 Chorus
-2150 67 16 JUNO ..
-2150 97 16 Flang..
-2150 7 27 Phaser
-2150 37 27 Wah
-2150 67 27 Slicer
-2150 97 27 Trem..
-2150 7 38 !Chro..
-2150 37 38 Hyper..
-2150 67 38 Ring ..
-2150 97 38 Crush..
-2150 7 49 Overd..
-2150 37 49 Disto..
-2150 67 49 Equal..
-2150 97 49 Comp..
-2150 40 5 Chromatic PS
-2200 7 16 Reverb
-2200 37 16 Chorus
-2200 67 16 JUNO ..
-2200 97 16 Flang..
-2200 7 27 Phaser
-2200 37 27 Wah
-2200 67 27 Slicer
-2200 97 27 !Trem..
-2200 7 38 Chro..
-2200 37 38 Hyper..
-2200 67 38 Ring ..
-2200 97 38 Crush..
-2200 7 49 Overd..
-2200 37 49 Disto..
-2200 67 49 Equal..
-2200 97 49 Comp..
-2200 42 5 Tremolo/Pan
-2250 7 16 Reverb
-2250 37 16 Chorus
-2250 67 16 JUNO ..
-2250 97 16 Flang..
-2250 7 27 Phaser
-2250 37 27 Wah
-2250 67 27 !Slicer
-2250 97 27 Trem..
-2250 7 38 Chro..
-2250 37 38 Hyper..
-2250 67 38 Ring ..
-2250 97 38 Crush..
-2250 7 49 Overd..
-2250 37 49 Disto..
-2250 67 49 Equal..
-2250 97 49 Comp..
-2250 52 5 Slicer
-4000 7 16 Reverb
-4000 37 16 Chorus
-4000 67 16 JUNO ..
-4000 97 16 Flang..
-4000 7 27 Phaser
-4000 37 27 Wah
-4000 67 27 Slicer
-4000 97 27 Trem..
-4000 7 38 Chro..
-4000 37 38 Hyper..
-4000 67 38 Ring ..
-4000 97 38 !Crush..
-4000 7 49 Overd..
-4000 37 49 Disto..
-4000 67 49 Equal..
-4000 97 49 Comp..
-4000 50 5 Crusher
-6000 VALUE
+0 s0 12 2 !P-2
+0 s0 34 2 !A-13
+0 s0 56 2 !BUS-1
+0 s0 84 2 !Fix
+0 s0 104 2 ! DC 
+0 s0 53 14 _9 4 
+1000 s0 CLEAR
+1000 s0 FILL 0 5 127 60
+1000 s0 7 16 _Reverb
+1000 s0 37 16 _Chorus
+1000 s0 67 16 _JUNO ..
+1000 s0 97 16 _Flang..
+1000 s0 7 27 _Phaser
+1000 s0 37 27 _Wah
+1000 s0 67 27 !Slicer
+1000 s0 97 27 _Trem..
+1000 s0 7 38 _Chro..
+1000 s0 37 38 _Hyper..
+1000 s0 67 38 _Ring ..
+1000 s0 97 38 _Crush..
+1000 s0 7 49 _Overd..
+1000 s0 37 49 _Disto..
+1000 s0 67 49 _Equal..
+1000 s0 97 49 _Comp..
+1000 s0 52 5 _Slicer
+1000 s0 111 5 _2/3
+3000 s0 FILL 0 5 127 60
+3000 s0 7 16 _Reverb
+3000 s0 37 16 _Chorus
+3000 s0 67 16 _JUNO ..
+3000 s0 97 16 _Flang..
+3000 s0 7 27 _Phaser
+3000 s0 37 27 _Wah
+3000 s0 67 27 _Slicer
+3000 s0 97 27 _Trem..
+3000 s0 7 38 _Chro..
+3000 s0 37 38 _Hyper..
+3000 s0 67 38 _Ring ..
+3000 s0 97 38 _Crush..
+3000 s0 7 49 _Overd..
+3000 s0 37 49 _Disto..
+3000 s0 67 49 !Equal..
+3000 s0 97 49 _Comp..
+3000 s0 46 5 _Equalizer
+3000 s0 111 5 _2/3
+3050 s0 FILL 0 5 127 60
+3050 s0 7 16 _Reverb
+3050 s0 37 16 _Chorus
+3050 s0 67 16 _JUNO ..
+3050 s0 97 16 _Flang..
+3050 s0 7 27 _Phaser
+3050 s0 37 27 _Wah
+3050 s0 67 27 _Slicer
+3050 s0 97 27 _Trem..
+3050 s0 7 38 _Chro..
+3050 s0 37 38 _Hyper..
+3050 s0 67 38 _Ring ..
+3050 s0 97 38 !Crush..
+3050 s0 7 49 _Overd..
+3050 s0 37 49 _Disto..
+3050 s0 67 49 _Equal..
+3050 s0 97 49 _Comp..
+3050 s0 50 5 _Crusher
+3050 s0 111 5 _2/3
+3100 s0 FILL 0 5 127 60
+3100 s0 7 16 _Reverb
+3100 s0 37 16 _Chorus
+3100 s0 67 16 _JUNO ..
+3100 s0 97 16 _Flang..
+3100 s0 7 27 _Phaser
+3100 s0 37 27 _Wah
+3100 s0 67 27 _Slicer
+3100 s0 97 27 _Trem..
+3100 s0 7 38 _Chro..
+3100 s0 37 38 !Hyper..
+3100 s0 67 38 _Ring ..
+3100 s0 97 38 _Crush..
+3100 s0 7 49 _Overd..
+3100 s0 37 49 _Disto..
+3100 s0 67 49 _Equal..
+3100 s0 97 49 _Comp..
+3100 s0 44 5 _Hyper-Reso
+3100 s0 111 5 _2/3
+3150 s0 FILL 0 5 127 60
+3150 s0 7 16 _Reverb
+3150 s0 37 16 _Chorus
+3150 s0 67 16 _JUNO ..
+3150 s0 97 16 _Flang..
+3150 s0 7 27 _Phaser
+3150 s0 37 27 _Wah
+3150 s0 67 27 _Slicer
+3150 s0 97 27 _Trem..
+3150 s0 7 38 !Chro..
+3150 s0 37 38 _Hyper..
+3150 s0 67 38 _Ring ..
+3150 s0 97 38 _Crush..
+3150 s0 7 49 _Overd..
+3150 s0 37 49 _Disto..
+3150 s0 67 49 _Equal..
+3150 s0 97 49 _Comp..
+3150 s0 40 5 _Chromatic PS
+3150 s0 111 5 _2/3
+3200 s0 FILL 0 5 127 60
+3200 s0 7 16 _Reverb
+3200 s0 37 16 _Chorus
+3200 s0 67 16 _JUNO ..
+3200 s0 97 16 _Flang..
+3200 s0 7 27 _Phaser
+3200 s0 37 27 _Wah
+3200 s0 67 27 _Slicer
+3200 s0 97 27 !Trem..
+3200 s0 7 38 _Chro..
+3200 s0 37 38 _Hyper..
+3200 s0 67 38 _Ring ..
+3200 s0 97 38 _Crush..
+3200 s0 7 49 _Overd..
+3200 s0 37 49 _Disto..
+3200 s0 67 49 _Equal..
+3200 s0 97 49 _Comp..
+3200 s0 42 5 _Tremolo/Pan
+3200 s0 111 5 _2/3
+3250 s0 FILL 0 5 127 60
+3250 s0 7 16 _Reverb
+3250 s0 37 16 _Chorus
+3250 s0 67 16 _JUNO ..
+3250 s0 97 16 _Flang..
+3250 s0 7 27 _Phaser
+3250 s0 37 27 _Wah
+3250 s0 67 27 !Slicer
+3250 s0 97 27 _Trem..
+3250 s0 7 38 _Chro..
+3250 s0 37 38 _Hyper..
+3250 s0 67 38 _Ring ..
+3250 s0 97 38 _Crush..
+3250 s0 7 49 _Overd..
+3250 s0 37 49 _Disto..
+3250 s0 67 49 _Equal..
+3250 s0 97 49 _Comp..
+3250 s0 52 5 _Slicer
+3250 s0 111 5 _2/3
+5000 s0 FILL 0 5 127 60
+5000 s0 7 16 _Reverb
+5000 s0 37 16 _Chorus
+5000 s0 67 16 _JUNO ..
+5000 s0 97 16 _Flang..
+5000 s0 7 27 _Phaser
+5000 s0 37 27 _Wah
+5000 s0 67 27 _Slicer
+5000 s0 97 27 _Trem..
+5000 s0 7 38 _Chro..
+5000 s0 37 38 _Hyper..
+5000 s0 67 38 _Ring ..
+5000 s0 97 38 !Crush..
+5000 s0 7 49 _Overd..
+5000 s0 37 49 _Disto..
+5000 s0 67 49 _Equal..
+5000 s0 97 49 _Comp..
+5000 s0 50 5 _Crusher
+5000 s0 111 5 _2/3
+7000 s0 FILL 0 5 127 60
+7000 s0 7 16 _SX Re..
+7000 s0 37 16 _SX De..
+7000 s0 67 16 _Cloud..
+7000 s0 97 16 _Back ..
+7000 s0 7 27 !D.DJFX
+7000 s0 37 27 _Filte..
+7000 s0 67 27 _Reson..
+7000 s0 97 27 _Sync ..
+7000 s0 7 38 _Isola..
+7000 s0 37 38 _DJFX ..
+7000 s0 67 38 _-
+7000 s0 97 38 _-
+7000 s0 7 49 _-
+7000 s0 37 49 _-
+7000 s0 67 49 _-
+7000 s0 97 49 _-
+7000 s0 52 5 _D.DJFX
+7000 s0 111 5 _3/3
+9000 VALUE

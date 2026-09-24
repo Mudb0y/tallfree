@@ -1,18 +1,25 @@
 /* The resident service under QEMU, with the instrument simulated round it.
 
    Time is virtual and moves only when the service sleeps, 0.75 audio ticks
-   and 11.025 samples of playback to the millisecond. Draws and VALUE presses
-   come from sim_draws.txt at their times, through the same table words the
-   instrument's interface would call through, so the hook, the model, the
-   cut-offs and the unload path all run as they would on the unit. Settings
-   and the script come from sim_say.txt, files the service writes land beside
-   the run as sim_*.TXT, and what was played goes to sim.raw.
+   and 11.025 samples of playback to the millisecond. Draws, clears and VALUE
+   presses come from sim_draws.txt at their times, through the same vtable
+   words the instrument's interface would call through, so the hooks, the
+   model, the cut-offs and the unload path all run as they would on the unit.
+   Settings and the script come from sim_say.txt, files the service writes
+   land beside the run as sim_*.TXT, and what was played goes to sim.raw.
 
-   sim_draws.txt, one event a line:
-     MS X Y TEXT   drawn MS ms after screen reading goes live; TEXT
-                   beginning ! is drawn highlighted, on white
-     MS VALUE      VALUE pressed then
-     @MS VALUE     VALUE pressed MS ms after the start */
+   sim_draws.txt, one event a line; MS is ms after screen reading goes live,
+   or after the start with @ before it, and sN picks surface N, 0 to 3:
+     MS [sN] X Y TEXT          drawn; TEXT may start with flags:
+                               ! on white, ~ on a pop-up layer, _ on black,
+                               ^ drawn by the page-title setter
+     MS [sN] CLEAR             the surface cleared
+     MS [sN] FILL X0 Y0 X1 Y1  a rectangle cleared
+     MS VALUE                  VALUE pressed
+
+   sim_expect.txt, if present, holds what each spoken batch should be, one
+   batch a line, phrases separated by " | "; the run ends by saying whether
+   they matched. */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -27,30 +34,33 @@ int  sh_close(int fd);
 int  sh_read(int fd, void *buf, int len);
 int  sh_flen(int fd);
 
-volatile uint32_t sim_vtable[7], sim_key_word = 0x60308001u;
+#define TITLE_SITE 0x80081011u
+
+volatile uint32_t sim_vtables[7][0x130 / 4], sim_key_word = 0x60308001u, sim_site;
 static unsigned sim_drawn, sim_loader_presses;
 
 int sim_draw_string(void *surface, int x, int y, const char *text, int len)
 {
-    (void)surface;
-    (void)x;
-    (void)y;
-    (void)text;
-    (void)len;
+    (void)surface; (void)x; (void)y; (void)text; (void)len;
     sim_drawn++;
     return 0;
 }
 
-static int32_t mark_now = 0x1000000;
+void sim_clear(void *surface, int colour) { (void)surface; (void)colour; }
+void sim_fill(void *surface, const int32_t *rect) { (void)surface; (void)rect; }
+
+static int32_t colour_now = 0x1000000;
 
 static int32_t sim_mark(void *surface)
 {
     (void)surface;
-    return mark_now;
+    return colour_now;
 }
 
 static uint32_t surface_vtable[0x140 / 4];
-static struct { const uint32_t *vtable; } surface = { surface_vtable };
+static struct { const uint32_t *vtable; } surfaces[4] = {
+    { surface_vtable }, { surface_vtable }, { surface_vtable }, { surface_vtable },
+};
 
 static char *slurp(const char *name)
 {
@@ -70,8 +80,13 @@ static char *slurp(const char *name)
     return t;
 }
 
-#define EVENTS 2048
-static struct { uint32_t ms; int absolute, key, x, y; const char *text; int done; } ev[EVENTS];
+enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL };
+#define EVENTS 4096
+static struct {
+    uint32_t ms;
+    int absolute, kind, surf, x, y, x1, y1, done;
+    const char *text;
+} ev[EVENTS];
 static int nev;
 
 static void load_events(void)
@@ -92,17 +107,91 @@ static void load_events(void)
         ev[nev].ms = (uint32_t)strtoul(p, &p, 10);
         while (*p == ' ')
             p++;
+        if (p[0] == 's' && p[1] >= '0' && p[1] <= '3' && p[2] == ' ') {
+            ev[nev].surf = p[1] - '0';
+            p += 3;
+        }
         if (strncmp(p, "VALUE", 5) == 0) {
-            ev[nev].key = 1;
+            ev[nev].kind = E_VALUE;
+        } else if (strncmp(p, "CLEAR", 5) == 0) {
+            ev[nev].kind = E_CLEAR;
+        } else if (strncmp(p, "FILL", 4) == 0) {
+            ev[nev].kind = E_FILL;
+            p += 4;
+            ev[nev].x = (int)strtol(p, &p, 10);
+            ev[nev].y = (int)strtol(p, &p, 10);
+            ev[nev].x1 = (int)strtol(p, &p, 10);
+            ev[nev].y1 = (int)strtol(p, &p, 10);
         } else {
+            ev[nev].kind = E_TEXT;
             ev[nev].x = (int)strtol(p, &p, 10);
             ev[nev].y = (int)strtol(p, &p, 10);
             if (*p == ' ')
                 p++;
             ev[nev].text = p;
+            for (; *p; p++)
+                if (p[0] == '\\' && p[1] == 'n') {
+                    p[0] = '\n';
+                    memmove(p + 1, p + 2, strlen(p + 2) + 1);
+                }
         }
         nev++;
     }
+}
+
+/* What the reader said, batch by batch, and what it should have. */
+#define BATCHES 256
+static char *said[BATCHES];
+static int nsaid;
+
+void sim_batch(const char *phrases, int count)
+{
+    char line[1024];
+    size_t n = 0;
+    int i;
+
+    if (count == 0 || nsaid >= BATCHES)
+        return;
+    line[0] = 0;
+    for (i = 0; i < count; i++) {
+        n += (size_t)snprintf(line + n, sizeof line - n, "%s%s", i ? " | " : "", phrases);
+        phrases += strlen(phrases) + 1;
+    }
+    said[nsaid] = malloc(n + 1);
+    memcpy(said[nsaid++], line, n + 1);
+}
+
+static void check_expected(void)
+{
+    char *t = slurp("sim_expect.txt"), *line, *end;
+    int k = 0, bad = 0;
+
+    if (t == NULL)
+        return;
+    for (line = t; *line; line = end) {
+        end = strchr(line, '\n');
+        if (end)
+            *end++ = 0;
+        else
+            end = line + strlen(line);
+        if (*line == 0 || *line == '#')
+            continue;
+        if (k >= nsaid) {
+            printf("EXPECTED batch %d: %s\n     said nothing more\n", k + 1, line);
+            bad = 1;
+            break;
+        }
+        if (strcmp(line, said[k]) != 0) {
+            printf("EXPECTED batch %d: %s\n     said: %s\n", k + 1, line, said[k]);
+            bad = 1;
+        }
+        k++;
+    }
+    for (; k < nsaid; k++) {
+        printf("UNEXPECTED batch %d: %s\n", k + 1, said[k]);
+        bad = 1;
+    }
+    printf("%s\n", bad ? "FAIL" : "PASS: every batch as expected");
 }
 
 /* Virtual time. */
@@ -158,8 +247,12 @@ static void play_one_ms(void)
 
 static void fire(int i)
 {
+    void *s = &surfaces[ev[i].surf];
+    volatile uint32_t *vt = sim_vtables[i % 7];
+
     ev[i].done = 1;
-    if (ev[i].key) {
+    switch (ev[i].kind) {
+    case E_VALUE:
         printf("sim %lu ms: VALUE\n", (unsigned long)now_ms);
         if (sim_key_word == 0x60308001u) {
             printf("sim: VALUE went to the loader, which would load over a running engine\n");
@@ -167,15 +260,34 @@ static void fire(int i)
         } else {
             ((int (*)(void *, int))sim_key_word)(NULL, 0x31);
         }
-        return;
+        break;
+    case E_CLEAR:
+        ((void (*)(void *, int))vt[0x08 / 4])(s, 0);
+        break;
+    case E_FILL: {
+        int32_t r[4] = { ev[i].x, ev[i].y, ev[i].x1, ev[i].y1 };
+        ((void (*)(void *, const int32_t *))vt[0xC0 / 4])(s, r);
+        break;
     }
-    {
+    default: {
         const char *t = ev[i].text;
-        mark_now = *t == '!' ? 0xFFFFFF : 0x1000000;
-        if (*t == '!')
-            t++;
-        ((int (*)(void *, int, int, const char *, int))sim_vtable[i % 7])(
-            &surface, ev[i].x, ev[i].y, t, (int)strlen(t) + 4);
+        colour_now = 0x1000000;
+        sim_site = 0;
+        for (;; t++) {
+            if (*t == '!')
+                colour_now = 0xFFFFFF;
+            else if (*t == '~')
+                colour_now = -1;
+            else if (*t == '_')
+                colour_now = 0;
+            else if (*t == '^')
+                sim_site = TITLE_SITE;
+            else
+                break;
+        }
+        ((int (*)(void *, int, int, const char *, int))vt[0x12C / 4])(
+            s, ev[i].x, ev[i].y, t, (int)strlen(t));
+    }
     }
 }
 
@@ -191,7 +303,7 @@ void target_sleep(int ms)
         ticks += tick_acc / 4;
         tick_acc %= 4;
         play_one_ms();
-        if (!live && sim_vtable[0] != (uint32_t)(uintptr_t)sim_draw_string) {
+        if (!live && sim_vtables[0][0x12C / 4] != (uint32_t)(uintptr_t)sim_draw_string) {
             live = 1;
             live_ms = now_ms;
             printf("sim %lu ms: screen hook live\n", (unsigned long)now_ms);
@@ -210,8 +322,8 @@ void target_sleep(int ms)
 }
 
 void target_wake(void) { }
-void target_checkpoint(void) { printf("sim %lu ms: checkpoint\n", (unsigned long)now_ms); }
-void target_volume(uint32_t percent) { printf("volume %lu%%\n", (unsigned long)percent); }
+void target_checkpoint(void) { }
+void target_volume(uint32_t percent) { (void)percent; }
 void target_probe_slots(void) { }
 int engine_task_id(void) { return 1; }
 int kernel_task_self(void) { return 1; }
@@ -247,8 +359,11 @@ void target_enter(void)
 {
     unsigned i;
 
-    for (i = 0; i < 7; i++)
-        sim_vtable[i] = (uint32_t)(uintptr_t)sim_draw_string;
+    for (i = 0; i < 7; i++) {
+        sim_vtables[i][0x12C / 4] = (uint32_t)(uintptr_t)sim_draw_string;
+        sim_vtables[i][0x08 / 4] = (uint32_t)(uintptr_t)sim_clear;
+        sim_vtables[i][0xC0 / 4] = (uint32_t)(uintptr_t)sim_fill;
+    }
     surface_vtable[0x18 / 4] = (uint32_t)(uintptr_t)sim_mark;
     load_events();
 }
@@ -261,13 +376,18 @@ int target_launch(int (*body)(void))
 
     key_remove();
     for (i = 0; i < 7; i++)
-        if (sim_vtable[i] != (uint32_t)(uintptr_t)sim_draw_string)
+        if (sim_vtables[i][0x12C / 4] != (uint32_t)(uintptr_t)sim_draw_string
+            || sim_vtables[i][0x08 / 4] != (uint32_t)(uintptr_t)sim_clear
+            || sim_vtables[i][0xC0 / 4] != (uint32_t)(uintptr_t)sim_fill)
             restored = 0;
     printf("sim %lu ms: done, code %d; tables %s, key %s, %u draws reached DrawString, "
            "%u presses went to the loader, %lu flushes, %lu samples played\n",
            (unsigned long)now_ms, rc, restored ? "restored" : "NOT RESTORED",
            sim_key_word == 0x60308001u ? "back to the loader" : "NOT RESTORED",
            sim_drawn, sim_loader_presses, (unsigned long)flushes, (unsigned long)nplayed);
+    for (i = 0; i < nsaid; i++)
+        printf("said %d: %s\n", i + 1, said[i]);
+    check_expected();
     fd = sh_open("sim.raw", 4 | 1);
     if (fd >= 0) {
         sh_write(fd, played, (int)(nplayed * sizeof *played));
