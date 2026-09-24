@@ -1,0 +1,19 @@
+# Ghidra project: 42 MB and fully regenerable from firmware/ via the
+# unpack + import steps in notes.md
+work/ghidra_proj/
+
+# Built images: regenerable from firmware/SP404MKII_APP1.bin by the
+# work/make_patchNN.py scripts
+work/patched*/
+
+# Build artefacts
+work/**/*.o
+work/**/*.elf
+work/__pycache__/
+work/**/__pycache__/
+
+# Decompressed firmware segments: regenerable by work/unpack.py
+work/sdram_code.bin
+work/itcm_code.bin
+work/seg_*.bin
+work/vectors.bin
