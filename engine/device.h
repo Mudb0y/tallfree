@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 /* device.c */
+void engine_install(void);
 uint32_t device_ticks(void);                 /* audio interrupts, 750 a second */
 void target_sleep(int ms);
 void target_wake(void);
@@ -22,8 +23,7 @@ int  audio_hooked(void);
 
 /* screen.c */
 enum { SCREEN_OFF, SCREEN_CHANGED, SCREEN_ALL };
-int  key_install(void);
-void key_remove(void);
+void request_unload(void);
 int  unload_requested(void);
 int  screen_install(int mode, int settle_ms);
 void screen_remove(void);

@@ -1,5 +1,4 @@
-/* What the screen draws, as a screen reader would speak it, and VALUE handed
-   from the loader to the resident engine and back.
+/* What the screen draws, as a screen reader would speak it.
 
    Every string on the normal screens goes through one DrawString,
    FUN_800EE530(surface, x, y, string, length), and every clear through one
@@ -16,11 +15,7 @@
    off it. When the screen settles it decides what is worth saying:
    entering a screen, its title and the focused item; moving the focus, the
    new item; turning a value, the value, with its label the first time; a
-   pop-up, its text. The rest stays silent.
-
-   The reboot page's key handler jumps to the loader through the literal
-   word at 0x80142C24, read as data. Pointing that at key_handler makes VALUE
-   ask the engine to unload instead of loading a second copy over it. */
+   pop-up, its text. The rest stays silent. */
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -45,10 +40,9 @@ static const uint32_t vt_base[] = {
     0x8021D1A4u, 0x8021D340u, 0x8021D4DCu, 0x8021D678u,
     0x8021E2A4u, 0x8021E438u, 0x8021E5D4u,
 };
-#define KEY_WORD (*(volatile uint32_t *)0x80142C24u)
 #else
 /* The simulator's stand-ins, from sim.c. */
-extern volatile uint32_t sim_vtables[7][0x130 / 4], sim_key_word, sim_site;
+extern volatile uint32_t sim_vtables[7][0x130 / 4], sim_site;
 void sim_draw_string(void);
 void sim_clear(void);
 void sim_fill(void);
@@ -65,10 +59,7 @@ static const uint32_t vt_base[] = {
     (uint32_t)(uintptr_t)sim_vtables[4], (uint32_t)(uintptr_t)sim_vtables[5],
     (uint32_t)(uintptr_t)sim_vtables[6],
 };
-#define KEY_WORD sim_key_word
 #endif
-#define LOADER    0x60308001u
-#define KEY_VALUE 0x31
 #define VTABLES   (sizeof vt_base / sizeof vt_base[0])
 #define VT(i, slot) (*(volatile uint32_t *)(vt_base[i] + (slot)))
 
@@ -111,37 +102,14 @@ static uint8_t role_of(uint32_t site)
     return ROLE_NONE;
 }
 
-static volatile int key_hooked, unload_flag, screen_hooked, screen_mode;
+static volatile int unload_flag, screen_hooked, screen_mode;
 
-static int key_handler(void *page, int key)
+/* The engine runs from boot until the instrument is switched off; nothing
+   on the unit asks it to stop. The simulator does, to end a run. */
+void request_unload(void)
 {
-    (void)page;
-    if (key == KEY_VALUE) {
-        unload_flag = 1;
-        target_wake();
-    }
-    return 0;
-}
-
-int key_install(void)
-{
-    if (KEY_WORD != LOADER) {
-        printf("key: loader word reads %08lx, not the loader\n", (unsigned long)KEY_WORD);
-        return -1;
-    }
-    KEY_WORD = (uint32_t)(uintptr_t)key_handler | 1u;
-    __asm__ volatile("dsb" ::: "memory");
-    key_hooked = 1;
-    return 0;
-}
-
-void key_remove(void)
-{
-    if (key_hooked) {
-        KEY_WORD = LOADER;
-        __asm__ volatile("dsb" ::: "memory");
-        key_hooked = 0;
-    }
+    unload_flag = 1;
+    target_wake();
 }
 
 int unload_requested(void)

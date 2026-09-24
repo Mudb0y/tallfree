@@ -1,6 +1,7 @@
-/* The resident engine on the instrument: VALUE loads it and it says "speech
-   on", speaks the script in A:/EVV/SAY.TXT, then reads the screen until
-   VALUE again, when it says "speech off" and unloads.
+/* The resident engine on the instrument: the boot loader starts it, and it
+   says "speech on", speaks any script in A:/EVV/SAY.TXT, reads the screen
+   from then until the instrument is switched off, and copies itself to the
+   eMMC if that has an older copy or none.
 
    SAY.TXT holds settings and a script, one per line:
      #vol N      speech level, percent; 50 by default
@@ -206,19 +207,18 @@ static void start_screen(void)
     target_checkpoint();
     if (mode == SCREEN_OFF)
         return;
-    if (screen_install(mode, settle_ms) == 0) {
+    if (screen_install(mode, settle_ms) == 0)
         screen_live = 1;
-        batch_one("screen reading on");
-    } else {
+    else
         batch_one("no screen hook");
-    }
 }
 
 int target_main(void)
 {
     const char *text = read_text("A:/EVV/SAY.TXT");
     static char config[4096];
-    uint32_t last_flush = 0;
+    uint32_t last_flush = 0, started = device_ticks();
+    int installed = 0;
 
     if (text != NULL) {
         strncpy(config, text, sizeof config - 1);
@@ -230,10 +230,6 @@ int target_main(void)
     }
     if (!audio_hooked())
         printf("audio hook not installed\n");
-    /* Without the key, a second VALUE would load a fresh engine over this
-       one while it runs. */
-    if (key_install())
-        return 2;
     if (speech_open(frame))
         return 1;
     batch_one("speech on");
@@ -255,6 +251,11 @@ int target_main(void)
         } else if (!screen_started && script_next >= nscript && idle()) {
             start_screen();
             continue;
+        }
+        /* Five seconds in, with the start-up quiet, once. */
+        if (!installed && screen_started && idle() && device_ticks() - started >= 3750u) {
+            installed = 1;
+            engine_install();
         }
         /* The draw log goes to the card every ten seconds while nothing is
            being said, so a hang still leaves most of it behind. */

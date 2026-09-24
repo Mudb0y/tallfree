@@ -16,7 +16,7 @@
                                =XXXXXXXX: drawn from that site
      MS [sN] CLEAR             the surface cleared
      MS [sN] FILL X0 Y0 X1 Y1  a rectangle cleared
-     MS VALUE                  VALUE pressed
+     MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
    batch a line, phrases separated by " | "; the run ends by saying whether
@@ -37,8 +37,8 @@ int  sh_flen(int fd);
 
 #define TITLE_SITE 0x80081011u
 
-volatile uint32_t sim_vtables[7][0x130 / 4], sim_key_word = 0x60308001u, sim_site;
-static unsigned sim_drawn, sim_loader_presses;
+volatile uint32_t sim_vtables[7][0x130 / 4], sim_site;
+static unsigned sim_drawn;
 
 int sim_draw_string(void *surface, int x, int y, const char *text, int len)
 {
@@ -254,13 +254,8 @@ static void fire(int i)
     ev[i].done = 1;
     switch (ev[i].kind) {
     case E_VALUE:
-        printf("sim %lu ms: VALUE\n", (unsigned long)now_ms);
-        if (sim_key_word == 0x60308001u) {
-            printf("sim: VALUE went to the loader, which would load over a running engine\n");
-            sim_loader_presses++;
-        } else {
-            ((int (*)(void *, int))sim_key_word)(NULL, 0x31);
-        }
+        printf("sim %lu ms: VALUE, which ends the run\n", (unsigned long)now_ms);
+        request_unload();
         break;
     case E_CLEAR:
         ((void (*)(void *, int))vt[0x08 / 4])(s, 0);
@@ -326,6 +321,7 @@ void target_sleep(int ms)
 }
 
 void target_wake(void) { }
+void engine_install(void) { }
 void target_checkpoint(void) { }
 void target_volume(uint32_t percent) { (void)percent; }
 void target_probe_slots(void) { }
@@ -378,17 +374,15 @@ int target_launch(int (*body)(void))
 {
     int rc = body(), i, fd, restored = 1;
 
-    key_remove();
     for (i = 0; i < 7; i++)
         if (sim_vtables[i][0x12C / 4] != (uint32_t)(uintptr_t)sim_draw_string
             || sim_vtables[i][0x08 / 4] != (uint32_t)(uintptr_t)sim_clear
             || sim_vtables[i][0xC0 / 4] != (uint32_t)(uintptr_t)sim_fill)
             restored = 0;
-    printf("sim %lu ms: done, code %d; tables %s, key %s, %u draws reached DrawString, "
-           "%u presses went to the loader, %lu flushes, %lu samples played\n",
+    printf("sim %lu ms: done, code %d; tables %s, %u draws reached DrawString, "
+           "%lu flushes, %lu samples played\n",
            (unsigned long)now_ms, rc, restored ? "restored" : "NOT RESTORED",
-           sim_key_word == 0x60308001u ? "back to the loader" : "NOT RESTORED",
-           sim_drawn, sim_loader_presses, (unsigned long)flushes, (unsigned long)nplayed);
+           sim_drawn, (unsigned long)flushes, (unsigned long)nplayed);
     for (i = 0; i < nsaid; i++)
         printf("said %d: %s\n", i + 1, said[i]);
     check_expected();

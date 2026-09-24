@@ -259,8 +259,110 @@ void target_probe_slots(void)
     printf("probe: ran %lu ticks\n", (unsigned long)(g_ticks - t0));
 }
 
-/* The engine runs in a task of its own at low priority, so VALUE returns to
-   the firmware at once and the interface keeps going while it speaks. The
+/* The engine copies itself to the eMMC, so the boot loader finds it there
+   when no card is in. Only the card's file can be copied: the image in
+   memory has been running, and its data is no longer what was loaded. So
+   the copy happens when the eMMC's is missing or differs and the card holds
+   exactly the image that is running, and it is read back and checked. A
+   copy cut short by switching off fails the loader's own check, which then
+   says there is no engine rather than running it. */
+#define ENGINE_CARD "A:/EVV/ENGINE.BIN"
+#define ENGINE_EMMC "B:/TALLFREE.BIN"
+
+extern char __image_start[];
+struct image_header {
+    uint32_t magic, length, entry, crc;
+};
+
+static uint32_t crc_more(uint32_t c, const uint8_t *p, size_t n)
+{
+    uint32_t k;
+
+    while (n--) {
+        c ^= *p++;
+        for (k = 0; k < 8; k++)
+            c = (c >> 1) ^ (0xEDB88320u & -(c & 1u));
+    }
+    return c;
+}
+
+static int read_header(const char *path, struct image_header *h)
+{
+    int f = F_OPEN(path, 0), n;
+
+    if (f < 0)
+        return 0;
+    n = F_READ(f, h, (int)sizeof *h);
+    F_CLOSE(f);
+    return n == (int)sizeof *h && h->magic == 0x31565645u;
+}
+
+static int same_image(const struct image_header *a, const struct image_header *b)
+{
+    return a->crc == b->crc && a->length == b->length;
+}
+
+/* The CRC of everything after the header, as mkimage.py and the loader
+   compute it, over a whole file; zero if its length is wrong. */
+static int file_matches(const char *path, const struct image_header *want, uint8_t *buf)
+{
+    int f = F_OPEN(path, 0), n;
+    uint32_t total = 0, c = 0xFFFFFFFFu;
+
+    if (f < 0)
+        return 0;
+    while ((n = F_READ(f, buf, 0x10000)) > 0) {
+        uint32_t skip = total < sizeof *want ? sizeof *want - total : 0;
+        if (skip < (uint32_t)n)
+            c = crc_more(c, buf + skip, (size_t)n - skip);
+        total += (uint32_t)n;
+    }
+    F_CLOSE(f);
+    return total == want->length && ~c == want->crc;
+}
+
+void engine_install(void)
+{
+    const struct image_header *own = (const struct image_header *)(void *)__image_start;
+    struct image_header card, emmc;
+    uint8_t *buf;
+    uint32_t total = 0;
+    int from, to, n;
+
+    if (read_header(ENGINE_EMMC, &emmc) && same_image(&emmc, own)) {
+        printf("install: the eMMC's engine is this one\n");
+        return;
+    }
+    if (!read_header(ENGINE_CARD, &card) || !same_image(&card, own)) {
+        printf("install: the card does not hold this engine, nothing copied\n");
+        return;
+    }
+    buf = malloc(0x10000);
+    if (buf == NULL) {
+        printf("install: no memory for the copy\n");
+        return;
+    }
+    from = F_OPEN(ENGINE_CARD, 0);
+    to = F_OPEN(ENGINE_EMMC, 0x601);
+    if (from >= 0 && to >= 0)
+        while ((n = F_READ(from, buf, 0x10000)) > 0) {
+            if (F_WRITE(to, buf, n) <= 0)
+                break;
+            total += (uint32_t)n;
+        }
+    if (from >= 0)
+        F_CLOSE(from);
+    if (to >= 0)
+        F_CLOSE(to);
+    printf("install: %lu of %lu bytes to %s, %s\n", (unsigned long)total,
+           (unsigned long)own->length, ENGINE_EMMC,
+           file_matches(ENGINE_EMMC, own, buf) ? "read back and checked" : "CHECK FAILED");
+    free(buf);
+}
+
+/* The engine runs in a task of its own at low priority, so the boot loader
+   returns to the firmware at once and the interface keeps going while it
+   speaks. The
    task's own stack only has to carry it into engine_run, which moves onto
    the engine's. */
 #define TASK_PRIORITY 30
@@ -345,11 +447,9 @@ void target_wake(void)
         kernel_sem_signal(g_sleep_sem);
 }
 
-/* The task has to be gone before the next press loads a fresh image over
-   its code and zeroes its stack, and the kernel has only 32 semaphores, so
-   it gives back both on the way out. The loader gets VALUE back last of all,
-   above the interface's priority, so no press can reach the loader while
-   any of this is still running. */
+/* The engine runs until the instrument is switched off. Should it ever
+   return, after a fault it caught, the task gives back its semaphore, one
+   of the kernel's 32, and itself. */
 static void engine_task(int code, void *arg)
 {
     int sem;
@@ -362,8 +462,6 @@ static void engine_task(int code, void *arg)
     sem = g_sleep_sem;
     g_sleep_sem = -1;
     kernel_sem_delete(sem);
-    kernel_task_priority(0, 1);
-    key_remove();
     kernel_task_exit_delete();
 }
 
