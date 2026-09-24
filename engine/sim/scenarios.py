@@ -94,8 +94,9 @@ def popup():
     write('popup', d, ['A 13', 'FIXED VELOCITY | OFF', 'ON', 'OFF'])
 
 # The effects grid: sixteen cells cut short, the selected one on white, the
-# centred title naming it in full; the knob swept through six cells in 50 ms
-# steps, then one slow step, then the page turned.
+# centred title naming it in full; the knob swept through six cells in 100 ms
+# steps, each heard (a faster sweep merges steps, skipping names passed over),
+# then one slow step, then the page turned.
 def grid():
     cells = ['Reverb', 'Chorus', 'JUNO ..', 'Flang..', 'Phaser', 'Wah', 'Slicer',
              'Trem..', 'Chro..', 'Hyper..', 'Ring ..', 'Crush..', 'Overd..',
@@ -120,7 +121,7 @@ def grid():
     t = 3000
     for sel in [14, 11, 9, 8, 7, 6]:
         page(t, cells, full, sel, 2)
-        t += 50
+        t += 100
     page(5000, cells, full, 11, 2)
     page(7000, page2, full2, 4, 3)
     d.append('9000 VALUE')
@@ -191,9 +192,17 @@ def system():
     d = main_screen(0, 0, 'A-13')
     items = [(20, 30, 'SYSTEM'), (51, 30, 'PAD SET'), (83, 30, 'EFX SET'),
              (20, 56, 'IMPORT'), (53, 56, 'BACKUP'), (83, 56, 'FACTORY')]
-    d += ['1000 s0 CLEAR', '1000 s2 5 2 ^_UTILITY MENU']
-    for k, (x, y, t) in enumerate(items):
-        d.append(f'1000 s2 {x} {y} ={0x8013E92B + 0x4E * k:08X}:{t}')
+    icons = [(24, 11), (56, 11), (88, 11), (24, 37), (56, 37), (88, 37)]
+    def utility(t, sel):
+        out = [f'{t} s2 5 2 ^_UTILITY MENU']
+        for k, (x, y, name) in enumerate(items):
+            out.append(f'{t} s2 ICON {icons[k][0]} {icons[k][1]} {int(k == sel)} '
+                       f'G:/xpage/work1/pages/icon{k}_pos_30')
+            out.append(f'{t} s2 {x} {y} ={0x8013E92B + 0x4E * k:08X}:{name}')
+        return out
+    d += ['1000 s0 CLEAR'] + utility(1000, 0)
+    # the knob: the selection moves to PAD SET, then EFX SET, redrawing all
+    d += utility(1600, 1) + utility(2200, 2)
     rows = [('Edit Knob Mode', 93, 'Direct'), ('EFX Knob Mode', 93, 'Direct'),
             ('Load Project', 100, 'Last'), ('Sub Pad Mode', 93, 'Retrig'),
             ('Auto Trig Level', 102, '   5'), ('Scrn Saver Time', 97, '1 min')]
@@ -208,7 +217,7 @@ def system():
           '6000 s0 FILL 90 29 127 36', '6000 s0 100 29 Last',
           '8000 VALUE']
     write('system', d, ['A 13',
-                        'UTILITY MENU | SYSTEM | PAD SET | EFX SET | IMPORT | BACKUP | FACTORY',
+                        'UTILITY MENU | SYSTEM', 'PAD SET', 'EFX SET',
                         '1 of 5 | Edit Knob Mode Direct | EFX Knob Mode Direct | '
                         'Load Project Last | Sub Pad Mode Retrig | Auto Trig Level 5 | '
                         'Scrn Saver Time 1 min',

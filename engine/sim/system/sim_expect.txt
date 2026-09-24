@@ -1,5 +1,7 @@
 A 13
-UTILITY MENU | SYSTEM | PAD SET | EFX SET | IMPORT | BACKUP | FACTORY
+UTILITY MENU | SYSTEM
+PAD SET
+EFX SET
 1 of 5 | Edit Knob Mode Direct | EFX Knob Mode Direct | Load Project Last | Sub Pad Mode Retrig | Auto Trig Level 5 | Scrn Saver Time 1 min
 Load Project Prev
 Last

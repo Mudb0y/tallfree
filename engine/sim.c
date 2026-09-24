@@ -16,6 +16,7 @@
                                =XXXXXXXX: drawn from that site
      MS [sN] CLEAR             the surface cleared
      MS [sN] FILL X0 Y0 X1 Y1  a rectangle cleared
+     MS [sN] ICON X Y SEL NAME an icon menu's icon, selected if SEL is 1
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
@@ -38,7 +39,17 @@ int  sh_flen(int fd);
 #define TITLE_SITE 0x80081011u
 
 volatile uint32_t sim_vtables[7][0x130 / 4], sim_site;
+volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
 static unsigned sim_drawn;
+
+/* The global drawing context icons land on: the surface first, the origin
+   at 0x14 and 0x18. */
+static uint32_t icon_ctx[8];
+
+void sim_draw_icon(void *page, int x, int y, int sel, const char *pos, const char *neg)
+{
+    (void)page; (void)x; (void)y; (void)sel; (void)pos; (void)neg;
+}
 
 int sim_draw_string(void *surface, int x, int y, const char *text, int len)
 {
@@ -81,7 +92,7 @@ static char *slurp(const char *name)
     return t;
 }
 
-enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL };
+enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -116,6 +127,15 @@ static void load_events(void)
             ev[nev].kind = E_VALUE;
         } else if (strncmp(p, "CLEAR", 5) == 0) {
             ev[nev].kind = E_CLEAR;
+        } else if (strncmp(p, "ICON", 4) == 0) {
+            ev[nev].kind = E_ICON;
+            p += 4;
+            ev[nev].x = (int)strtol(p, &p, 10);
+            ev[nev].y = (int)strtol(p, &p, 10);
+            ev[nev].x1 = (int)strtol(p, &p, 10);
+            while (*p == ' ')
+                p++;
+            ev[nev].text = p;
         } else if (strncmp(p, "FILL", 4) == 0) {
             ev[nev].kind = E_FILL;
             p += 4;
@@ -260,6 +280,11 @@ static void fire(int i)
     case E_CLEAR:
         ((void (*)(void *, int))vt[0x08 / 4])(s, 0);
         break;
+    case E_ICON:
+        icon_ctx[0] = (uint32_t)(uintptr_t)s;
+        ((void (*)(void *, int, int, int, const char *, const char *))sim_icon_slots[i % 2])(
+            s, ev[i].x, ev[i].y, ev[i].x1, ev[i].text, ev[i].text);
+        break;
     case E_FILL: {
         int32_t r[4] = { ev[i].x, ev[i].y, ev[i].x1, ev[i].y1 };
         ((void (*)(void *, const int32_t *))vt[0xC0 / 4])(s, r);
@@ -365,6 +390,8 @@ void target_enter(void)
         sim_vtables[i][0xC0 / 4] = (uint32_t)(uintptr_t)sim_fill;
     }
     surface_vtable[0x18 / 4] = (uint32_t)(uintptr_t)sim_mark;
+    sim_icon_slots[0] = sim_icon_slots[1] = (uint32_t)(uintptr_t)sim_draw_icon;
+    sim_icon_ctx = (uint32_t)(uintptr_t)icon_ctx;
     load_events();
 }
 

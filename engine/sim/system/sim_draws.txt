@@ -6,12 +6,44 @@
 0 s0 53 14 _9 4 
 1000 s0 CLEAR
 1000 s2 5 2 ^_UTILITY MENU
+1000 s2 ICON 24 11 1 G:/xpage/work1/pages/icon0_pos_30
 1000 s2 20 30 =8013E92B:SYSTEM
+1000 s2 ICON 56 11 0 G:/xpage/work1/pages/icon1_pos_30
 1000 s2 51 30 =8013E979:PAD SET
+1000 s2 ICON 88 11 0 G:/xpage/work1/pages/icon2_pos_30
 1000 s2 83 30 =8013E9C7:EFX SET
+1000 s2 ICON 24 37 0 G:/xpage/work1/pages/icon3_pos_30
 1000 s2 20 56 =8013EA15:IMPORT
+1000 s2 ICON 56 37 0 G:/xpage/work1/pages/icon4_pos_30
 1000 s2 53 56 =8013EA63:BACKUP
+1000 s2 ICON 88 37 0 G:/xpage/work1/pages/icon5_pos_30
 1000 s2 83 56 =8013EAB1:FACTORY
+1600 s2 5 2 ^_UTILITY MENU
+1600 s2 ICON 24 11 0 G:/xpage/work1/pages/icon0_pos_30
+1600 s2 20 30 =8013E92B:SYSTEM
+1600 s2 ICON 56 11 1 G:/xpage/work1/pages/icon1_pos_30
+1600 s2 51 30 =8013E979:PAD SET
+1600 s2 ICON 88 11 0 G:/xpage/work1/pages/icon2_pos_30
+1600 s2 83 30 =8013E9C7:EFX SET
+1600 s2 ICON 24 37 0 G:/xpage/work1/pages/icon3_pos_30
+1600 s2 20 56 =8013EA15:IMPORT
+1600 s2 ICON 56 37 0 G:/xpage/work1/pages/icon4_pos_30
+1600 s2 53 56 =8013EA63:BACKUP
+1600 s2 ICON 88 37 0 G:/xpage/work1/pages/icon5_pos_30
+1600 s2 83 56 =8013EAB1:FACTORY
+2200 s2 5 2 ^_UTILITY MENU
+2200 s2 ICON 24 11 0 G:/xpage/work1/pages/icon0_pos_30
+2200 s2 20 30 =8013E92B:SYSTEM
+2200 s2 ICON 56 11 0 G:/xpage/work1/pages/icon1_pos_30
+2200 s2 51 30 =8013E979:PAD SET
+2200 s2 ICON 88 11 1 G:/xpage/work1/pages/icon2_pos_30
+2200 s2 83 30 =8013E9C7:EFX SET
+2200 s2 ICON 24 37 0 G:/xpage/work1/pages/icon3_pos_30
+2200 s2 20 56 =8013EA15:IMPORT
+2200 s2 ICON 56 37 0 G:/xpage/work1/pages/icon4_pos_30
+2200 s2 53 56 =8013EA63:BACKUP
+2200 s2 ICON 88 37 0 G:/xpage/work1/pages/icon5_pos_30
+2200 s2 83 56 =8013EAB1:FACTORY
 3000 s0 CLEAR
 3000 s0 6 13 _=80148AFD:Edit Knob Mode
 3000 s0 93 13 Direct

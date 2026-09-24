@@ -40,6 +40,28 @@ static const uint32_t vt_base[] = {
     0x8021D1A4u, 0x8021D340u, 0x8021D4DCu, 0x8021D678u,
     0x8021E2A4u, 0x8021E438u, 0x8021E5D4u,
 };
+/* Icon menus draw each icon through FUN_80133E70(page, x, y, selected,
+   selected picture, unselected picture), the page vtable slot 0x144 of all
+   76 page classes that have one; each draws through the base picture drawer
+   FUN_80135D00, on the display's global drawing context at 0x80591B48. */
+#define ICON_DRAW       0x80133E71u
+#define ICON_DRAW_ASM   "0x80133E71"
+#define ICON_CTX        (*(volatile uint32_t *)0x80591B48u)
+static const uint32_t icon_slots[] = {
+    0x8021CF38u, 0x8021DA78u, 0x8021DC38u, 0x8021DDFCu, 0x8021DFBCu, 0x8021E8B4u,
+    0x8021EA40u, 0x8021EBCCu, 0x8021ED58u, 0x8021EEE4u, 0x8021F1F8u, 0x8021F9ACu,
+    0x8021FCC8u, 0x8021FE54u, 0x8021FFE0u, 0x8022016Cu, 0x802202FCu, 0x80220488u,
+    0x80220614u, 0x802207A0u, 0x80220A04u, 0x80220B90u, 0x80221220u, 0x802213ACu,
+    0x80221538u, 0x8022191Cu, 0x80221AA8u, 0x80221C34u, 0x802227ACu, 0x8022293Cu,
+    0x80222AC8u, 0x80222C5Cu, 0x80223298u, 0x80223424u, 0x802235B0u, 0x8022373Cu,
+    0x80223A30u, 0x80223C2Cu, 0x80223EE4u, 0x802249BCu, 0x80224B48u, 0x80224E98u,
+    0x80225028u, 0x802251B4u, 0x80225344u, 0x802254F8u, 0x802259A4u, 0x80226184u,
+    0x802263D8u, 0x80226568u, 0x802266F4u, 0x80226880u, 0x802275E4u, 0x80227770u,
+    0x80227A8Cu, 0x80227C18u, 0x80227DA4u, 0x80227F30u, 0x802280BCu, 0x8022824Cu,
+    0x80228F30u, 0x802290BCu, 0x80229248u, 0x802293D4u, 0x80229560u, 0x802296ECu,
+    0x80229878u, 0x80229EF0u, 0x8022A07Cu, 0x8022AADCu, 0x8022AC6Cu, 0x8022AE2Cu,
+    0x8022B1C0u, 0x8022C404u, 0x8022CFA0u, 0x8022D1ECu,
+};
 #else
 /* The simulator's stand-ins, from sim.c. */
 extern volatile uint32_t sim_vtables[7][0x130 / 4], sim_site;
@@ -47,6 +69,14 @@ void sim_draw_string(void);
 void sim_clear(void);
 void sim_fill(void);
 void sim_batch(const char *phrases, int count);
+extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
+void sim_draw_icon(void);
+#define ICON_DRAW       ((uint32_t)(uintptr_t)sim_draw_icon)
+#define ICON_DRAW_ASM   "sim_draw_icon"
+#define ICON_CTX        sim_icon_ctx
+static const uint32_t icon_slots[] = {
+    (uint32_t)(uintptr_t)&sim_icon_slots[0], (uint32_t)(uintptr_t)&sim_icon_slots[1],
+};
 #define DRAW_STRING     ((uint32_t)(uintptr_t)sim_draw_string)
 #define DRAW_STRING_ASM "sim_draw_string"
 #define CLEAR_ALL       ((uint32_t)(uintptr_t)sim_clear)
@@ -61,6 +91,8 @@ static const uint32_t vt_base[] = {
 };
 #endif
 #define VTABLES   (sizeof vt_base / sizeof vt_base[0])
+#define ICON_SLOTS (sizeof icon_slots / sizeof icon_slots[0])
+#define ICON_SLOT(i) (*(volatile uint32_t *)icon_slots[i])
 #define VT(i, slot) (*(volatile uint32_t *)(vt_base[i] + (slot)))
 
 /* Where DrawString's callers keep their own return address: the three text
@@ -103,7 +135,7 @@ static uint8_t role_of(uint32_t site)
     return ROLE_NONE;
 }
 
-static volatile int unload_flag, screen_hooked, screen_mode;
+static volatile int unload_flag, screen_hooked, icons_hooked, screen_mode;
 
 /* The engine runs from boot until the instrument is switched off; nothing
    on the unit asks it to stop. The simulator does, to end a run. */
@@ -119,7 +151,7 @@ int unload_requested(void)
 }
 
 /* One call as a hook saw it. */
-enum { EV_TEXT, EV_CLEAR, EV_FILL };
+enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON };
 #define DRAW_TEXT 64
 struct draw {
     uint32_t tick, surf, lr, site;
@@ -136,6 +168,7 @@ static volatile uint32_t draw_wr, draw_rd, draw_lost, draw_seen;
 void text_hook(void);
 void clear_hook(void);
 void fill_hook(void);
+void icon_hook(void);
 /* Eight words keep the stack 8-byte aligned for the C call, and leave the
    caller's fifth argument at sp + 32. */
 #define HOOK(name, record, target)                                        \
@@ -151,6 +184,7 @@ void fill_hook(void);
 HOOK(text_hook, text_record, DRAW_STRING_ASM);
 HOOK(clear_hook, clear_record, CLEAR_ALL_ASM);
 HOOK(fill_hook, fill_record, FILL_RECT_ASM);
+HOOK(icon_hook, icon_record, ICON_DRAW_ASM);
 
 static void push(const struct draw *d)
 {
@@ -236,6 +270,36 @@ __attribute__((used)) static void fill_record(const uint32_t *f)
     push(&d);
 }
 
+/* An icon: where it lands, from the global context's surface and origin,
+   whether it is the selected one, and the tail of its picture's name. */
+__attribute__((used)) static void icon_record(const uint32_t *f)
+{
+    struct draw d;
+    const char *name = (const char *)f[8], *tail;
+    uint32_t ctx = ICON_CTX;
+    int n;
+
+    if (!screen_hooked || ctx == 0)
+        return;
+    memset(&d, 0, sizeof d);
+    d.kind = EV_ICON;
+    d.tick = device_ticks();
+    d.surf = *(const volatile uint32_t *)ctx;
+    d.x = (int16_t)((int16_t)f[1] + *(const volatile int16_t *)(ctx + 0x14));
+    d.y = (int16_t)((int16_t)f[2] + *(const volatile int16_t *)(ctx + 0x18));
+    d.mark = f[3] != 0;
+    d.site = f[7];
+    tail = name;
+    if (name != NULL)
+        for (n = 0; name[n] && n < 200; n++)
+            if (name[n] == '/')
+                tail = name + n + 1;
+    for (n = 0; tail != NULL && tail[n] && n < DRAW_TEXT - 1; n++)
+        d.text[n] = tail[n];
+    d.text[n] = 0;
+    push(&d);
+}
+
 /* Plain data writes, so the fault catcher may call this in handler mode. */
 void screen_remove(void)
 {
@@ -248,6 +312,10 @@ void screen_remove(void)
         VT(i, SLOT_CLEAR) = CLEAR_ALL;
         VT(i, SLOT_FILL) = FILL_RECT;
     }
+    if (icons_hooked)
+        for (i = 0; i < ICON_SLOTS; i++)
+            ICON_SLOT(i) = ICON_DRAW;
+    icons_hooked = 0;
     __asm__ volatile("dsb" ::: "memory");
     screen_hooked = 0;
 }
@@ -259,7 +327,7 @@ struct item {
     uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq;
     int32_t  mark;
     int16_t  x, y;
-    uint8_t  used, changed, rapid, task, title, fresh, role;
+    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -269,6 +337,11 @@ static uint32_t settle_ticks, batches, evicted, change_seq;
 static uint32_t last_change, first_pending, last_popup_change;
 static const struct item *last_label;
 static int pending, wiped;
+static struct {
+    uint32_t surf, tick;
+    int16_t  x, y;
+    uint8_t  sel, valid;
+} last_icon;
 
 /* The background colour: white, 0xFFFFFF, on the status bar and on the
    focused item of a menu or grid, 0 or 0x1000000 elsewhere, -1 on the
@@ -328,6 +401,18 @@ int screen_install(int mode, int settle_ms)
         VT(i, SLOT_CLEAR) = (uint32_t)(uintptr_t)clear_hook | 1u;
         VT(i, SLOT_FILL) = (uint32_t)(uintptr_t)fill_hook | 1u;
     }
+    /* The icon words only all together, and only if every one is still the
+       icon draw; the screen reader works without them, reading an icon
+       menu's every item. */
+    icons_hooked = 1;
+    for (i = 0; i < ICON_SLOTS; i++)
+        if (ICON_SLOT(i) != ICON_DRAW)
+            icons_hooked = 0;
+    if (icons_hooked)
+        for (i = 0; i < ICON_SLOTS; i++)
+            ICON_SLOT(i) = (uint32_t)(uintptr_t)icon_hook | 1u;
+    else
+        printf("screen: an icon slot is not the icon draw; icons not hooked\n");
     __asm__ volatile("dsb" ::: "memory");
     log_line("# tick task surface x y colour len caller site |text|, from %lu ticks,"
              " mode %d, settle %d ms\n", (unsigned long)device_ticks(), mode, settle_ms);
@@ -429,9 +514,11 @@ static int is_status(const struct item *it)
     return it->y <= 5 && it->mark == WHITE && !it->title;
 }
 
+/* The focus: white below the status bar, or the label under an icon menu's
+   selected icon. */
 static int is_lit(const struct item *it)
 {
-    return it->mark == WHITE && it->y >= 10 && !it->title;
+    return (it->mark == WHITE && it->y >= 10 && !it->title) || it->icon_sel;
 }
 
 static int is_popup(const struct item *it)
@@ -505,8 +592,32 @@ static int take(const struct draw *d)
         erase(d->surf, d->x, d->y, d->x1, d->y1, 0, d->tick);
         return 0;
     }
+    if (d->kind == EV_ICON) {
+        if (d->mark && (last_icon.surf != d->surf || last_icon.x != d->x
+                        || last_icon.y != d->y || !last_icon.sel))
+            log_line("%lu icon %08lx %d %d %08lx |%s| selected\n", (unsigned long)d->tick,
+                     (unsigned long)d->surf, d->x, d->y, (unsigned long)d->site, d->text);
+        last_icon.surf = d->surf;
+        last_icon.x = d->x;
+        last_icon.y = d->y;
+        last_icon.sel = d->mark != 0;
+        last_icon.tick = d->tick;
+        last_icon.valid = 1;
+        return 0;
+    }
     it = find(d);
     was_lit = is_lit(it);
+    /* An icon menu draws each label straight after its icon, below it and
+       in its column; each draw says afresh whether the label is under the
+       selected icon. */
+    it->icon_sel = 0;
+    if (last_icon.valid && d->tick - last_icon.tick <= 2) {
+        int w = 4 * (int)(d->len ? d->len : strlen(d->text));
+        if (d->surf == last_icon.surf && d->y > last_icon.y && d->y <= last_icon.y + 32
+            && d->x < last_icon.x + 28 && d->x + w > last_icon.x - 8)
+            it->icon_sel = (uint8_t)last_icon.sel;
+        last_icon.valid = 0;
+    }
     it->erased = 0;
     it->draws++;
     it->last_drawn = d->tick;
@@ -848,7 +959,12 @@ static int want_title(const struct item *it)
 {
     return is_title(it) && (int32_t)(it->last_drawn - b_prev) > 0;
 }
-static int want_lit(const struct item *it) { return is_lit(it); }
+/* The focus drawn since the last batch: an icon menu's layer may never be
+   wiped either, and its selected label would stay the focus for good. */
+static int want_lit(const struct item *it)
+{
+    return is_lit(it) && (int32_t)(it->last_drawn - b_prev) > 0;
+}
 static int want_popup(const struct item *it) { return is_popup(it); }
 static int want_new_popup(const struct item *it)
 {
