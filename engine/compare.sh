@@ -8,7 +8,16 @@ openevv=${OPENEVV:-/home/stas/Projects/openevv-sp404}
 ref=$(mktemp --suffix=.wav)
 trap 'rm -f "$ref"' EXIT
 
-"$openevv/build/evv" -o "$ref" "$text"
+# Some crasher text makes the engine say nothing at all, and evv then fails
+# rather than write an empty wave. Silence from both is agreement.
+if ! "$openevv/build/evv" -o "$ref" "$text" 2>/dev/null; then
+    if [ ! -s "$raw" ]; then
+        echo "match: both engines said nothing"
+        exit 0
+    fi
+    echo "DIFFER: the desktop engine said nothing, the target $(($(stat -c %s "$raw") / 2)) samples"
+    exit 1
+fi
 
 python3 - "$raw" "$ref" <<'EOF'
 import struct, sys
