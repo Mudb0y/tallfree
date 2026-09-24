@@ -25,3 +25,4 @@ work/decomp/
 engine/build/
 engine/out.raw
 engine/in.txt
+engine/rebuild.log
