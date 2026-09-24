@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include "kernel.h"
 
 typedef int (*open_fn) (const char *path, int mode);
 typedef int (*read_fn) (int h, void *buf, int len);
@@ -38,6 +39,7 @@ typedef int (*close_fn)(int h);
 #define STEP    ((uint32_t)((11025ull << 16) / 48000u))
 
 const char *sys_log(size_t *len);
+void target_sleep(int ms);
 void target_stage(const char *what);
 
 static void (*orig_isr)(void);
@@ -207,8 +209,9 @@ static void play(const int16_t *pcm, size_t n)
     for (guard = 0; (g_pos >> 16) < g_n; guard++) {
         if (g_irqs > (uint32_t)((uint64_t)n * 750u / 11025u) + 750u)
             break;
-        if (g_irqs == 0 && guard > 300000000u)
+        if (g_irqs == 0 && guard > 400u)
             break;
+        target_sleep(10);
     }
     g_playing = 0;
     printf("play: %u samples, %u interrupts, reached sample %u, %u ticks, loop %u\n",
@@ -305,4 +308,42 @@ void target_leave(void)
 {
     unhook_audio();
     diag_remove();
+}
+
+/* The engine runs in a task of its own at low priority, so VALUE returns to
+   the firmware at once and the interface keeps going while it speaks. The
+   task's own stack only has to carry it into engine_run, which moves onto
+   the engine's. */
+#define TASK_PRIORITY 30
+#define TASK_STACK    8192
+
+static int g_sleep_sem = -1;
+static int (*g_body)(void);
+
+void target_sleep(int ms)
+{
+    if (g_sleep_sem > 0)
+        kernel_sem_wait(g_sleep_sem, ms);
+}
+
+static void engine_task(int code, void *arg)
+{
+    (void)code;
+    (void)arg;
+    g_body();
+    for (;;)
+        target_sleep(1000);
+}
+
+int target_launch(int (*body)(void))
+{
+    int task, rc;
+
+    g_body = body;
+    g_sleep_sem = kernel_sem_create("EVVsleep", 0, 1);
+    task = kernel_task_create("EVV", engine_task, 0, TASK_PRIORITY, TASK_STACK);
+    if (task <= 0)
+        return 0x100 | (task & 0xFF);
+    rc = kernel_task_start(task, 0);
+    return rc < 0 ? (0x200 | (rc & 0xFF)) : task;
 }

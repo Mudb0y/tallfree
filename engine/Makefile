@@ -41,10 +41,10 @@ $(BUILD)/qemu.elf: $(COMMON) qemu.c qemu.ld engine.ld $(LIB)
 	$(CC) $(CFLAGS) -DSEMIHOST $(LDFLAGS) -Wl,-Map=$(BUILD)/qemu.map \
 	  -T qemu.ld $(COMMON) qemu.c $(LIB) -lm -lc -lgcc -o $@
 
-$(BUILD)/device.elf: $(COMMON) device.c diag.c device.ld engine.ld $(LIB)
+$(BUILD)/device.elf: $(COMMON) device.c diag.c kernel.c kernel.h device.ld engine.ld $(LIB)
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -fno-delete-null-pointer-checks $(LDFLAGS) -Wl,-Map=$(BUILD)/device.map \
-	  -T device.ld $(COMMON) device.c diag.c $(LIB) -lm -lc -lgcc -o $@
+	  -T device.ld $(COMMON) device.c diag.c kernel.c $(LIB) -lm -lc -lgcc -o $@
 
 $(BUILD)/ENGINE.BIN: $(BUILD)/device.elf mkimage.py
 	python3 mkimage.py $< $@

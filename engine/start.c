@@ -15,6 +15,7 @@ extern void (*__init_array_start[])(void), (*__init_array_end[])(void);
 int engine_main(void);
 void target_enter(void);
 void target_leave(void);
+int target_launch(int (*body)(void));
 
 void _init(void) { }
 void _fini(void) { }
@@ -39,6 +40,19 @@ __asm__(
 
 int call_on_stack(void *top, int (*fn)(void));
 
+/* The engine proper, on its own stack, with the target's hooks round it. The
+   target decides whether this runs now, under QEMU, or in a task of its own,
+   on the instrument. */
+int engine_run(void)
+{
+    int rc;
+
+    target_enter();
+    rc = call_on_stack(__stack_top, engine_main);
+    target_leave();
+    return rc;
+}
+
 __attribute__((section(".entry"), used))
 int engine_start(void)
 {
@@ -52,12 +66,5 @@ int engine_start(void)
         for (f = __init_array_start; f < __init_array_end; f++)
             (*f)();
     }
-    {
-        int rc;
-
-        target_enter();
-        rc = call_on_stack(__stack_top, engine_main);
-        target_leave();
-        return rc;
-    }
+    return target_launch(engine_run);
 }
