@@ -2,8 +2,8 @@
    to the card, the log, and the speech through the audio engine.
 
    Files go through the firmware's own file calls. Playback hooks the eDMA
-   channel-3 vector exactly as work/ext/isr.c proved: call the original
-   handler, check the event is ours, re-read the four descriptors every
+   channel-3 vector exactly as work/ext/isr.c proved: note whether the event
+   is ours, call the original handler, re-read the four descriptors every
    interrupt, write 64 samples into all 16 slots of each frame, below 2^19.
    The engine speaks at 11025 Hz and the interrupt raises it to 48000 by
    linear interpolation as it goes, so no upsampled copy is ever held.
@@ -85,9 +85,13 @@ uint32_t device_ticks(void)
 static void our_isr(void)
 {
     uint32_t b, f, s;
+    /* Read before the original handler runs: it clears the flag, so a check
+       afterwards always reads zero and every interrupt looks like another
+       channel's. */
+    uint32_t mine = (EDMA_INT >> 3) & 1u;
 
     orig_isr();
-    if (((EDMA_INT >> 3) & 1u) == 0)
+    if (!mine)
         return;
     g_ticks++;
     if (!g_playing)
