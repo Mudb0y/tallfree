@@ -30,6 +30,7 @@ typedef int (*close_fn)(int h);
 #define BFAR  (*(volatile uint32_t *)0xE000ED38u)
 
 __attribute__((noreturn)) void engine_exit(int code);
+uint32_t device_ticks(void);
 
 struct fault {
     uint32_t vector, exc_return, cfsr, hfsr, mmfar, bfar;
@@ -68,6 +69,8 @@ void target_stage(const char *what)
 
     stage_count++;
     n += hexout(line, stage_count);
+    line[n++] = ' ';
+    n += hexout(line + n, device_ticks());
     line[n++] = ' ';
     while (*what && n < 76)
         line[n++] = *what++;

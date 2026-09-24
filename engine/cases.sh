@@ -20,21 +20,25 @@ case "$1" in
 run)
     rm -rf "$out"
     mkdir -p "$out"
+    # Its own copy of the image and its own in.txt and out.raw, so a build or
+    # a check running alongside cannot change what a case is spoken by.
+    cp build/qemu.elf "$out/qemu.elf"
     n=0
     cases | while IFS= read -r line; do
         n=$((n + 1))
-        printf '%s' "$line" > in.txt
+        printf '%s' "$line" > "$out/in.txt"
         printf '%s' "$line" > "$out/$n.txt"
-        rm -f out.raw
-        if timeout 300 qemu-system-arm -M mps2-an500 -nographic -monitor none \
-             -serial none -semihosting-config enable=on,target=native \
-             -kernel build/qemu.elf > "$out/$n.log" 2>&1 && [ -f out.raw ]; then
-            mv out.raw "$out/$n.raw"
+        rm -f "$out/out.raw"
+        if (cd "$out" && timeout 300 qemu-system-arm -M mps2-an500 -nographic \
+              -monitor none -serial none \
+              -semihosting-config enable=on,target=native \
+              -kernel qemu.elf > "$n.log" 2>&1) && [ -f "$out/out.raw" ]; then
+            mv "$out/out.raw" "$out/$n.raw"
         else
             echo "case $n: the run failed: $(tail -n 1 "$out/$n.log")"
         fi
     done
-    rm -f in.txt
+    rm -f "$out/in.txt"
     echo "ran $(ls "$out"/*.txt | wc -l) cases"
     ;;
 compare)

@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 typedef int (*open_fn) (const char *path, int mode);
 typedef int (*read_fn) (int h, void *buf, int len);
@@ -71,12 +72,25 @@ const char *target_input(void)
     return text;
 }
 
+/* One handler for the whole run: it counts the audio engine's interrupts,
+   750 a second, which is the only trustworthy clock here, and while g_n is
+   set it also writes the speech. */
+static volatile uint32_t g_ticks, g_playing, g_hooked;
+
+uint32_t device_ticks(void)
+{
+    return g_ticks;
+}
+
 static void our_isr(void)
 {
     uint32_t b, f, s;
 
     orig_isr();
     if (((EDMA_INT >> 3) & 1u) == 0)
+        return;
+    g_ticks++;
+    if (!g_playing)
         return;
     g_irqs++;
     if ((g_pos >> 16) >= g_n)
@@ -101,21 +115,36 @@ static void our_isr(void)
     g_pos += STEP * SAMPLES;
 }
 
+static void hook_audio(void)
+{
+    uint32_t installed = (uint32_t)(void *)our_isr | 1u;
+
+    orig_isr = (void (*)(void))*VEC_DMA3;
+    *VEC_DMA3 = installed;
+    g_hooked = *VEC_DMA3 == installed;
+}
+
+static void unhook_audio(void)
+{
+    if (g_hooked)
+        *VEC_DMA3 = (uint32_t)(void *)orig_isr;
+    g_hooked = 0;
+}
+
 static void play(const int16_t *pcm, size_t n)
 {
-    uint32_t installed, guard;
+    uint32_t guard, t0;
 
-    if (n == 0)
+    if (n == 0 || !g_hooked) {
+        printf("play: nothing to do, %u samples, hooked %u\n", (unsigned)n, (unsigned)g_hooked);
         return;
+    }
     g_pcm = pcm;
-    g_n = (uint32_t)n;
     g_pos = 0;
     g_irqs = 0;
-    orig_isr = (void (*)(void))*VEC_DMA3;
-    installed = (uint32_t)(void *)our_isr | 1u;
-    *VEC_DMA3 = installed;
-    if (*VEC_DMA3 != installed)
-        return;
+    g_n = (uint32_t)n;
+    t0 = g_ticks;
+    g_playing = 1;
     /* Bounded by interrupts, 750 a second: the clip's worth plus a second.
        The loop count only catches an interrupt that never comes at all. */
     for (guard = 0; (g_pos >> 16) < g_n; guard++) {
@@ -124,7 +153,10 @@ static void play(const int16_t *pcm, size_t n)
         if (g_irqs == 0 && guard > 300000000u)
             break;
     }
-    *VEC_DMA3 = (uint32_t)(void *)orig_isr;
+    g_playing = 0;
+    printf("play: %u samples, %u interrupts, reached sample %u, %u ticks, loop %u\n",
+           (unsigned)n, (unsigned)g_irqs, (unsigned)(g_pos >> 16),
+           (unsigned)(g_ticks - t0), (unsigned)guard);
 }
 
 void target_output(const short *samples, size_t n)
@@ -149,10 +181,12 @@ void diag_remove(void);
 void target_enter(void)
 {
     diag_install();
+    hook_audio();
     target_stage("engine entered");
 }
 
 void target_leave(void)
 {
+    unhook_audio();
     diag_remove();
 }
