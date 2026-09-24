@@ -78,3 +78,8 @@ const char *target_input(void)
     t[n] = 0;
     return t;
 }
+
+void target_done(int rc)
+{
+    (void)rc;
+}

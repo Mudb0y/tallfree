@@ -26,8 +26,9 @@ COMMON := port_coop.c sys.c start.c say.c
 
 TEXT ?= Hello, I am the SP four oh four, and I can talk now.
 
-.PHONY: qemu check lib clean
+.PHONY: qemu device check lib clean
 qemu: $(BUILD)/qemu.elf
+device: $(BUILD)/ENGINE.BIN
 
 lib:
 	$(MAKE) -C $(OPENEVV) PORT=none BUILD=build-m7 RULES=bytecode \
@@ -39,6 +40,14 @@ $(BUILD)/qemu.elf: $(COMMON) qemu.c qemu.ld engine.ld $(LIB)
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -DSEMIHOST $(LDFLAGS) -Wl,-Map=$(BUILD)/qemu.map \
 	  -T qemu.ld $(COMMON) qemu.c $(LIB) -lm -lc -lgcc -o $@
+
+$(BUILD)/device.elf: $(COMMON) device.c device.ld engine.ld $(LIB)
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) $(LDFLAGS) -Wl,-Map=$(BUILD)/device.map \
+	  -T device.ld $(COMMON) device.c $(LIB) -lm -lc -lgcc -o $@
+
+$(BUILD)/ENGINE.BIN: $(BUILD)/device.elf mkimage.py
+	python3 mkimage.py $< $@
 
 # The run leaves out.raw in this directory; the desktop evv built from the
 # same tree speaks the same text, and the two are compared as samples.

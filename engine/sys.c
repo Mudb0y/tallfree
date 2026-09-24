@@ -6,6 +6,7 @@
    SEMIHOST decides which at build time. */
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -99,18 +100,35 @@ __attribute__((noreturn)) void _exit(int code)
 
 #else
 
+/* On the instrument there is no console, so output collects here and the
+   target writes it to the card at the end. */
+static char log_buf[16384];
+static size_t log_len;
+
 int _write(int fd, const char *buf, int len)
 {
     (void)fd;
-    (void)buf;
+    if (len > (int)(sizeof log_buf - log_len))
+        len = (int)(sizeof log_buf - log_len);
+    memcpy(log_buf + log_len, buf, (size_t)len);
+    log_len += (size_t)len;
     return len;
 }
 
+const char *sys_log(size_t *len)
+{
+    fflush(stdout);
+    *len = log_len;
+    return log_buf;
+}
+
+/* Nothing on the instrument may hang the task that called in, so an exit
+   goes back to engine_main with its code. */
+__attribute__((noreturn)) void engine_exit(int code);
+
 __attribute__((noreturn)) void _exit(int code)
 {
-    (void)code;
-    for (;;)
-        ;
+    engine_exit(code);
 }
 
 #endif

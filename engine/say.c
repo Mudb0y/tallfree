@@ -4,6 +4,7 @@
    The call sequence is evv.c's so that its output on the desktop is the
    reference: 11025 Hz, 16-bit mono, the default voice. */
 
+#include <setjmp.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,7 @@ void evvRunStaticInitialisers(void);
 uint32_t sys_heap_used(void);
 
 void target_output(const short *samples, size_t n);
+void target_done(int rc);
 const char *target_input(void);
 
 #define FRAME 2048
@@ -66,7 +68,7 @@ void coop_fatal(const char *why)
 
 const char *say_text = "Hello, I am the SP four oh four, and I can talk now.";
 
-int engine_main(void)
+static int say_main(void)
 {
     OldInst *h;
     uint32_t langs[16];
@@ -108,4 +110,25 @@ int engine_main(void)
            (unsigned long)sys_heap_used());
     target_output(samples, nsamples);
     return 0;
+}
+
+static jmp_buf way_out;
+static int exit_code;
+
+__attribute__((noreturn)) void engine_exit(int code)
+{
+    exit_code = code;
+    longjmp(way_out, 1);
+}
+
+int engine_main(void)
+{
+    int rc;
+
+    if (setjmp(way_out) == 0)
+        rc = say_main();
+    else
+        rc = exit_code;
+    target_done(rc);
+    return rc;
 }

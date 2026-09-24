@@ -12,6 +12,15 @@ SECTIONS
   . = ENGINE_BASE;
   __image_start = .;
 
+  /* What the loader checks before it jumps: magic "EVV1", the image's
+     length, the entry point, and a CRC that mkimage.py fills in. */
+  .header : {
+    LONG(0x31565645)
+    LONG(__image_end - __image_start)
+    LONG(engine_start | 1)
+    LONG(0)
+  }
+
   .text : {
     KEEP(*(.entry))
     *(.text .text.*)
@@ -19,7 +28,11 @@ SECTIONS
     . = ALIGN(8);
   }
 
-  .ARM.exidx : { *(.ARM.exidx* .gnu.linkonce.armexidx.*) }
+  .ARM.exidx : {
+    __exidx_start = .;
+    *(.ARM.exidx* .gnu.linkonce.armexidx.*)
+    __exidx_end = .;
+  }
 
   .init_array : {
     . = ALIGN(4);
