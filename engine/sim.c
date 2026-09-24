@@ -9,7 +9,8 @@
    the run as sim_*.TXT, and what was played goes to sim.raw.
 
    sim_draws.txt, one event a line:
-     MS X Y TEXT   drawn MS ms after screen reading goes live
+     MS X Y TEXT   drawn MS ms after screen reading goes live; TEXT
+                   beginning ! is drawn highlighted, on white
      MS VALUE      VALUE pressed then
      @MS VALUE     VALUE pressed MS ms after the start */
 
@@ -40,10 +41,12 @@ int sim_draw_string(void *surface, int x, int y, const char *text, int len)
     return 0;
 }
 
+static int32_t mark_now = 0x1000000;
+
 static int32_t sim_mark(void *surface)
 {
     (void)surface;
-    return 7;
+    return mark_now;
 }
 
 static uint32_t surface_vtable[0x140 / 4];
@@ -67,7 +70,7 @@ static char *slurp(const char *name)
     return t;
 }
 
-#define EVENTS 256
+#define EVENTS 2048
 static struct { uint32_t ms; int absolute, key, x, y; const char *text; int done; } ev[EVENTS];
 static int nev;
 
@@ -166,8 +169,14 @@ static void fire(int i)
         }
         return;
     }
-    ((int (*)(void *, int, int, const char *, int))sim_vtable[i % 7])(
-        &surface, ev[i].x, ev[i].y, ev[i].text, (int)strlen(ev[i].text) + 4);
+    {
+        const char *t = ev[i].text;
+        mark_now = *t == '!' ? 0xFFFFFF : 0x1000000;
+        if (*t == '!')
+            t++;
+        ((int (*)(void *, int, int, const char *, int))sim_vtable[i % 7])(
+            &surface, ev[i].x, ev[i].y, t, (int)strlen(t) + 4);
+    }
 }
 
 void target_sleep(int ms)

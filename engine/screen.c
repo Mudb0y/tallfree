@@ -179,7 +179,7 @@ void screen_remove(void)
 #define ITEMS 512
 #define ITEM_TEXT DRAW_TEXT
 struct item {
-    uint32_t surf, lr, last_drawn, last_change, draws;
+    uint32_t surf, lr, last_drawn, last_change, draws, seq;
     int32_t  mark;
     int16_t  x, y;
     uint8_t  used, changed, rapid, task;
@@ -187,11 +187,21 @@ struct item {
 };
 static struct item items[ITEMS];
 static int burst[64], nburst;
-static uint32_t settle_ticks, last_draw, batches, evicted;
-static int dirty;
+static uint32_t settle_ticks, batches, evicted, change_seq;
+static uint32_t last_change, first_pending;
+static int pending;
 
-/* The draw log: every change in full, with a count of the redraws that
-   changed nothing, so a refreshing meter costs one line, not thousands. */
+/* What the slot 0x18 getter answers looks like the background the text is
+   drawn on: 0xFFFFFF, white, on the inverted status bar and on one item of
+   each menu, 0 or 0x1000000 elsewhere, -1 on the pop-up layers. White away
+   from the top bar is taken to be the menu's highlight. The first run with
+   the hook showed only the white items; this is the guess the next run's
+   log is there to confirm. */
+#define HIGHLIGHT 0xFFFFFF
+
+/* The draw log: every change of text or background in full, and at the end
+   a count of each item's redraws, so a screen that redraws continually costs
+   a line per item, not thousands. */
 #define LOG_CAP  (384u * 1024u)
 #define SUMMARY  (48u * 1024u)
 static char draw_log[LOG_CAP];
@@ -229,6 +239,7 @@ int screen_install(int mode, int settle_ms)
     screen_mode = mode;
     settle_ticks = MS_TO_TICKS(settle_ms);
     draw_rd = draw_wr;
+    pending = 0;
     screen_hooked = 1;
     for (i = 0; i < VT_SLOTS; i++)
         *vt_slots[i] = (uint32_t)(uintptr_t)text_hook | 1u;
@@ -268,16 +279,28 @@ static struct item *find(const struct draw *d)
     return free_one;
 }
 
-static void take(const struct draw *d)
+/* Folds one draw into the model and answers whether it is a change worth
+   waiting for: new text, or an item newly highlighted, and not an item that
+   is changing so fast it has been muted. A redraw that changes nothing is
+   not a change: some screens redraw every item continually, and counting
+   those kept the screen from ever settling. */
+static int take(const struct draw *d)
 {
     struct item *it = find(d);
+    int was_lit = it->mark == HIGHLIGHT, lit = d->mark == HIGHLIGHT;
+    int text_changed = strcmp(it->text, d->text) != 0;
+    int counts = 0;
 
     it->draws++;
     it->last_drawn = d->tick;
-    it->mark = d->mark;
     it->lr = d->lr;
     it->task = d->task;
-    if (strcmp(it->text, d->text) != 0) {
+    if (text_changed || it->mark != d->mark)
+        log_line("%lu %u %08lx %d %d %ld %u %08lx |%s|\n", (unsigned long)d->tick,
+                 (unsigned)d->task, (unsigned long)d->surf, d->x, d->y, (long)d->mark,
+                 (unsigned)d->len, (unsigned long)d->lr, d->text);
+    it->mark = d->mark;
+    if (text_changed) {
         /* Something that keeps changing, a meter or a clock, is muted from
            its second change less than a second after the one before. */
         if (it->last_change != 0 && d->tick - it->last_change < 750u) {
@@ -289,15 +312,21 @@ static void take(const struct draw *d)
         it->last_change = d->tick;
         memcpy(it->text, d->text, ITEM_TEXT);
         it->changed = 1;
-        log_line("%lu %u %08lx %d %d %ld %u %08lx |%s|\n", (unsigned long)d->tick,
-                 (unsigned)d->task, (unsigned long)d->surf, d->x, d->y, (long)d->mark,
-                 (unsigned)d->len, (unsigned long)d->lr, d->text);
+        it->seq = ++change_seq;
+        counts = it->rapid < 2;
+    } else if (lit && !was_lit) {
+        it->changed = 1;
+        it->seq = ++change_seq;
+        counts = 1;
     }
-    if (screen_mode == SCREEN_ALL && nburst < (int)(sizeof burst / sizeof burst[0])) {
+    if (screen_mode == SCREEN_ALL) {
         int k = (int)(it - items);
-        if (nburst == 0 || burst[nburst - 1] != k)
+        if (nburst < (int)(sizeof burst / sizeof burst[0])
+            && (nburst == 0 || burst[nburst - 1] != k))
             burst[nburst++] = k;
+        counts = 1;
     }
+    return counts;
 }
 
 /* A string worth saying: runs of spaces closed up, the ends trimmed, and at
@@ -324,58 +353,107 @@ static size_t clean(char *out, size_t cap, const char *in)
     return alnum ? n : 0;
 }
 
+/* Adds one item's text, unless it says nothing or repeats the phrase just
+   before it: some values are drawn twice, a pixel or two apart. */
 static int add_phrase(char *phrases, size_t cap, size_t *used, int *count, const struct item *it)
 {
-    size_t n = clean(phrases + *used, cap - *used, it->text);
+    char *at = phrases + *used;
+    size_t n = clean(at, cap - *used, it->text);
+    const char *prev = NULL;
 
     if (n == 0 || *used + n + 1 >= cap || *count >= 24)
         return 0;
+    if (*count > 0) {
+        prev = at - 1;
+        while (prev > phrases && prev[-1])
+            prev--;
+        if (strcmp(prev, at) == 0)
+            return 0;
+    }
     *used += n + 1;
     (*count)++;
     return 1;
 }
 
-/* Drains what the hook caught. Once drawing has been quiet for the settle
-   time, fills phrases with the strings to say, one after another, and
-   answers 1. */
+/* Changed items in reading order: each surface as a group, the groups in
+   the order they first changed, so a pop-up is read after the screen under
+   it rather than threaded through it; within a group, top to bottom, then
+   left to right. */
+static int changed_in_order(struct item **out, int max)
+{
+    uint32_t surf[16], first[16];
+    int nsurf = 0, n = 0, i, j, k;
+
+    for (i = 0; i < ITEMS && n < max; i++) {
+        struct item *it = &items[i];
+        if (!it->used || !it->changed)
+            continue;
+        out[n++] = it;
+        for (k = 0; k < nsurf && surf[k] != it->surf; k++)
+            ;
+        if (k == nsurf && nsurf < 16) {
+            surf[nsurf] = it->surf;
+            first[nsurf++] = it->seq;
+        } else if (k < nsurf && it->seq < first[k]) {
+            first[k] = it->seq;
+        }
+    }
+    for (i = 1; i < n; i++) {
+        struct item *it = out[i];
+        uint32_t fi = 0;
+        for (k = 0; k < nsurf; k++)
+            if (surf[k] == it->surf)
+                fi = first[k];
+        for (j = i; j > 0; j--) {
+            struct item *o = out[j - 1];
+            uint32_t fo = 0;
+            for (k = 0; k < nsurf; k++)
+                if (surf[k] == o->surf)
+                    fo = first[k];
+            if (fo < fi || (fo == fi && (o->y < it->y || (o->y == it->y && o->x <= it->x))))
+                break;
+            out[j] = o;
+        }
+        out[j] = it;
+    }
+    return n;
+}
+
+/* Drains what the hook caught. Once there has been no change for the
+   settle time, or changes have kept coming for a second, fills phrases with
+   the strings to say and answers 1. */
 int screen_poll(char *phrases, size_t cap, int *count)
 {
+    static struct item *order[ITEMS];
     uint32_t now = device_ticks();
     size_t used = 0;
-    int i;
+    int i, n;
 
     while (draw_rd != draw_wr) {
-        take(&draws[draw_rd % DRAWS]);
+        if (take(&draws[draw_rd % DRAWS])) {
+            if (!pending)
+                first_pending = now;
+            pending = 1;
+            last_change = now;
+        }
         __asm__ volatile("dmb" ::: "memory");
         draw_rd++;
-        last_draw = now;
-        dirty = 1;
     }
-    if (!dirty || now - last_draw < settle_ticks)
+    if (!pending)
         return 0;
-    dirty = 0;
+    if (now - last_change < settle_ticks && now - first_pending < 750u)
+        return 0;
+    pending = 0;
     *count = 0;
     if (screen_mode == SCREEN_ALL) {
         for (i = 0; i < nburst; i++)
             add_phrase(phrases, cap, &used, count, &items[burst[i]]);
         nburst = 0;
     } else {
-        /* Top to bottom, then left to right. */
-        for (;;) {
-            struct item *best = NULL;
-            for (i = 0; i < ITEMS; i++) {
-                struct item *it = &items[i];
-                if (!it->used || !it->changed)
-                    continue;
-                if (best == NULL || it->y < best->y || (it->y == best->y && it->x < best->x))
-                    best = it;
-            }
-            if (best == NULL)
-                break;
-            best->changed = 0;
-            if (best->rapid < 2)
-                add_phrase(phrases, cap, &used, count, best);
-        }
+        n = changed_in_order(order, ITEMS);
+        for (i = 0; i < n; i++)
+            if (order[i]->rapid < 2 || order[i]->mark == HIGHLIGHT)
+                add_phrase(phrases, cap, &used, count, order[i]);
     }
     for (i = 0; i < ITEMS; i++)
         items[i].changed = 0;
