@@ -4,19 +4,26 @@
    kernel calls the resident engine needs". Timeouts are milliseconds, -1
    meaning wait for ever; a negative return is the kernel's error code. */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include "kernel.h"
 
+/* Offsets as the create call reads them: the name at 0x14 when attribute
+   0x40 is set, the stack at 0x1C when 0x20 is. With the two swapped, the
+   stack came from the name's zero padding, sat at address zero, and its
+   first frames overwrote the kernel's own code below 0x2000. */
 struct task_record {
     void    *arg;
     uint32_t attributes;
     void   (*entry)(int code, void *arg);
     int32_t  priority;
     int32_t  stack_size;
-    void    *buffer;
     char     name[8];
+    void    *buffer;
 };
+_Static_assert(offsetof(struct task_record, name) == 0x14, "task name offset");
+_Static_assert(offsetof(struct task_record, buffer) == 0x1C, "task stack offset");
 
 struct sem_record {
     void    *arg;
@@ -25,6 +32,7 @@ struct sem_record {
     int32_t  maximum;
     char     name[8];
 };
+_Static_assert(offsetof(struct sem_record, name) == 0x10, "semaphore name offset");
 
 typedef int (*create_task_fn)(const struct task_record *);
 typedef int (*start_task_fn)(int task, int code);

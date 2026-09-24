@@ -252,12 +252,47 @@ void target_output(const short *samples, size_t n)
     play(samples, n);
 }
 
+/* The engine runs in a task of its own at low priority, so VALUE returns to
+   the firmware at once and the interface keeps going while it speaks. The
+   task's own stack only has to carry it into engine_run, which moves onto
+   the engine's. */
+#define TASK_PRIORITY 30
+#define TASK_STACK    8192
+
+static int g_sleep_sem = -1;
+static int (*g_body)(void);
+static uint64_t g_task_stack[TASK_STACK / 8];
+static uint32_t g_kernel_crc, g_task_sp;
+
+/* The kernel's code in ITCM, from the end of the vector table to the end of
+   what the firmware loads there. A task given a stack at zero once wrote over
+   it, and the next allocation anywhere in the firmware ran the damage. */
+static uint32_t kernel_code_crc(void)
+{
+    const volatile uint8_t *p = (const volatile uint8_t *)0x400u;
+    uint32_t crc = 0xFFFFFFFFu, i, k;
+
+    for (i = 0; i < 0x1F800u; i++) {
+        crc ^= p[i];
+        for (k = 0; k < 8; k++)
+            crc = (crc >> 1) ^ (0xEDB88320u & -(crc & 1u));
+    }
+    return ~crc;
+}
+
 void target_done(int rc)
 {
     size_t len;
-    const char *log = sys_log(&len);
+    const char *log;
+    uint32_t crc = kernel_code_crc();
 
     (void)rc;
+    printf("task stack at %08lx, buffer %08lx to %08lx\n", (unsigned long)g_task_sp,
+           (unsigned long)(uintptr_t)g_task_stack,
+           (unsigned long)((uintptr_t)g_task_stack + sizeof g_task_stack));
+    printf("kernel code crc %08lx at launch, %08lx now, %s\n", (unsigned long)g_kernel_crc,
+           (unsigned long)crc, crc == g_kernel_crc ? "unchanged" : "CHANGED");
+    log = sys_log(&len);
     write_file("A:/EVV/LOG.TXT", log, len);
 }
 
@@ -310,17 +345,6 @@ void target_leave(void)
     diag_remove();
 }
 
-/* The engine runs in a task of its own at low priority, so VALUE returns to
-   the firmware at once and the interface keeps going while it speaks. The
-   task's own stack only has to carry it into engine_run, which moves onto
-   the engine's. */
-#define TASK_PRIORITY 30
-#define TASK_STACK    8192
-
-static int g_sleep_sem = -1;
-static int (*g_body)(void);
-static uint64_t g_task_stack[TASK_STACK / 8];
-
 void target_sleep(int ms)
 {
     if (g_sleep_sem > 0)
@@ -336,6 +360,7 @@ static void engine_task(int code, void *arg)
 
     (void)code;
     (void)arg;
+    __asm__ volatile("mov %0, sp" : "=r"(g_task_sp));
     g_body();
     sem = g_sleep_sem;
     g_sleep_sem = -1;
@@ -348,6 +373,7 @@ int target_launch(int (*body)(void))
     int task, rc;
 
     g_body = body;
+    g_kernel_crc = kernel_code_crc();
     g_sleep_sem = kernel_sem_create("EVVsleep", 0, 1);
     if (g_sleep_sem <= 0)
         return 0x300 | (g_sleep_sem & 0xFF);
