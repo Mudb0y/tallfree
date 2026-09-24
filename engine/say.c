@@ -33,6 +33,7 @@ uint32_t sys_heap_used(void);
 void target_output(const short *samples, size_t n);
 void target_done(int rc);
 void target_stage(const char *what);
+void target_probe_slots(void);
 const char *target_input(void);
 
 #define FRAME 2048
@@ -81,6 +82,12 @@ static int say_main(void)
 
     if (text == NULL)
         text = say_text;
+    /* SAY.TXT beginning "#slots" runs the slot probe instead of speaking. */
+    if (strncmp(text, "#slots", 6) == 0) {
+        target_stage("slot probe");
+        target_probe_slots();
+        return 0;
+    }
     target_stage("engine_main entered");
     evv_port_start();
     target_stage("port started");

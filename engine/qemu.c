@@ -97,3 +97,5 @@ void target_done(int rc)
 void target_stage(const char *what) { (void)what; }
 void target_enter(void) { }
 void target_leave(void) { }
+
+void target_probe_slots(void) { }

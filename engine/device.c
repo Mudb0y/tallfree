@@ -17,6 +17,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 
 typedef int (*open_fn) (const char *path, int mode);
 typedef int (*read_fn) (int h, void *buf, int len);
@@ -75,7 +76,20 @@ const char *target_input(void)
 /* One handler for the whole run: it counts the audio engine's interrupts,
    750 a second, which is the only trustworthy clock here, and while g_n is
    set it also writes the speech. */
-static volatile uint32_t g_ticks, g_playing, g_hooked;
+static volatile uint32_t g_ticks, g_playing, g_hooked, g_probe;
+
+/* The slot probe: a quiet sine in every one of the 64 slots (four SAI lines
+   of sixteen), each at its own frequency, added to what the firmware put
+   there. Recording the main outputs then names every slot in one run. */
+#define PROBE_SLOTS 64
+#define PROBE_AMP   32768                     /* 2^19 / 16 */
+static int16_t probe_sine[1024];
+static uint32_t probe_phase[PROBE_SLOTS], probe_inc[PROBE_SLOTS];
+
+static uint32_t probe_freq(uint32_t k)
+{
+    return 300u + 41u * k;
+}
 
 uint32_t device_ticks(void)
 {
@@ -94,6 +108,18 @@ static void our_isr(void)
     if (!mine)
         return;
     g_ticks++;
+    if (g_probe) {
+        for (b = 0; b < 4u; b++) {
+            volatile int32_t *q = (volatile int32_t *)*(volatile uint32_t *)(0x400E9000u + b * 32u);
+            for (f = 0; f < SAMPLES; f++)
+                for (s = 0; s < SLOTS; s++) {
+                    uint32_t k = b * SLOTS + s;
+                    q[f * SLOTS + s] += (probe_sine[probe_phase[k] >> 22] * PROBE_AMP) >> 15;
+                    probe_phase[k] += probe_inc[k];
+                }
+        }
+        return;
+    }
     if (!g_playing)
         return;
     g_irqs++;
@@ -163,6 +189,32 @@ static void play(const int16_t *pcm, size_t n)
     printf("play: %u samples, %u interrupts, reached sample %u, %u ticks, loop %u\n",
            (unsigned)n, (unsigned)g_irqs, (unsigned)(g_pos >> 16),
            (unsigned)(g_ticks - t0), (unsigned)guard);
+}
+
+void target_probe_slots(void)
+{
+    uint32_t k, t0;
+
+    for (k = 0; k < 1024; k++)
+        probe_sine[k] = (int16_t)(32767.0f * sinf(6.28318530718f * (float)k / 1024.0f));
+    for (k = 0; k < PROBE_SLOTS; k++) {
+        probe_phase[k] = 0;
+        probe_inc[k] = (uint32_t)(((uint64_t)probe_freq(k) << 32) / 48000u);
+        printf("slot line %lu word %2lu: %lu Hz\n", (unsigned long)(k / SLOTS),
+               (unsigned long)(k % SLOTS), (unsigned long)probe_freq(k));
+    }
+    if (!g_hooked) {
+        printf("probe: audio hook not installed\n");
+        return;
+    }
+    t0 = g_ticks;
+    g_probe = 1;
+    while (g_ticks - t0 < 6u * 750u && g_ticks - t0 < 0x7FFFFFFFu) {
+        if (g_ticks == t0 && ++k > 300000000u)
+            break;
+    }
+    g_probe = 0;
+    printf("probe: ran %lu ticks\n", (unsigned long)(g_ticks - t0));
 }
 
 void target_output(const short *samples, size_t n)
