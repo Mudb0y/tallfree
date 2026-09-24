@@ -32,6 +32,7 @@ uint32_t sys_heap_used(void);
 
 void target_output(const short *samples, size_t n);
 void target_done(int rc);
+void target_stage(const char *what);
 const char *target_input(void);
 
 #define FRAME 2048
@@ -56,6 +57,8 @@ static int STDCALL on_message(OldInst *h, int msg, long param, void *data)
         }
         memcpy(samples + nsamples, frame, n * sizeof *frame);
         nsamples += n;
+        if ((nsamples / FRAME) % 8 == 0)
+            target_stage("synthesis buffers arriving");
     }
     return eciDataProcessed;
 }
@@ -78,12 +81,16 @@ static int say_main(void)
 
     if (text == NULL)
         text = say_text;
+    target_stage("engine_main entered");
     evv_port_start();
+    target_stage("port started");
     evvRunStaticInitialisers();
+    target_stage("static initialisers run");
     if (eo_getAvailableLanguages(langs, &n) || n < 1) {
         printf("engine: no languages\n");
         return 1;
     }
+    target_stage("languages listed");
     h = eo_new();
     if (h == NULL)
         h = eo_newEx((int32_t)langs[0]);
@@ -91,24 +98,30 @@ static int say_main(void)
         printf("engine: no instance\n");
         return 1;
     }
+    target_stage("instance created");
     eo_registerCallback(h, (void *)on_message, NULL);
     if (!ev_setOutputBuffer(h, FRAME, frame)) {
         printf("engine: output buffer refused\n");
         return 1;
     }
+    target_stage("output buffer set");
     if (!et_addText(h, text) || !et_synthesize(h)) {
         printf("engine: text refused\n");
         return 1;
     }
+    target_stage("text added, synthesising");
     for (i = 0; i < 30000 && eo_speaking(h); i++)
         evv_sleep_ms(10);
+    target_stage("speaking finished");
     eo_synchronizeSynth(h);
     es_delete(h);
     evv_port_finish();
 
     printf("engine: %u samples, heap %lu bytes\n", (unsigned)nsamples,
            (unsigned long)sys_heap_used());
+    target_stage("instance deleted, writing output");
     target_output(samples, nsamples);
+    target_stage("output done");
     return 0;
 }
 

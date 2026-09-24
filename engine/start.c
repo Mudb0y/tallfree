@@ -13,6 +13,8 @@ extern char __bss_start[], __bss_end[], __stack_top[];
 extern void (*__init_array_start[])(void), (*__init_array_end[])(void);
 
 int engine_main(void);
+void target_enter(void);
+void target_leave(void);
 
 void _init(void) { }
 void _fini(void) { }
@@ -50,5 +52,12 @@ int engine_start(void)
         for (f = __init_array_start; f < __init_array_end; f++)
             (*f)();
     }
-    return call_on_stack(__stack_top, engine_main);
+    {
+        int rc;
+
+        target_enter();
+        rc = call_on_stack(__stack_top, engine_main);
+        target_leave();
+        return rc;
+    }
 }

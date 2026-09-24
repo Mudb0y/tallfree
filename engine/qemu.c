@@ -83,3 +83,7 @@ void target_done(int rc)
 {
     (void)rc;
 }
+
+void target_stage(const char *what) { (void)what; }
+void target_enter(void) { }
+void target_leave(void) { }

@@ -34,6 +34,7 @@ typedef int (*close_fn)(int h);
 #define STEP    ((uint32_t)((11025ull << 16) / 48000u))
 
 const char *sys_log(size_t *len);
+void target_stage(const char *what);
 
 static void (*orig_isr)(void);
 static const int16_t *g_pcm;
@@ -129,6 +130,7 @@ static void play(const int16_t *pcm, size_t n)
 void target_output(const short *samples, size_t n)
 {
     write_file("A:/EVV/OUT.RAW", samples, n * sizeof *samples);
+    target_stage("OUT.RAW written, playing");
     play(samples, n);
 }
 
@@ -139,4 +141,18 @@ void target_done(int rc)
 
     (void)rc;
     write_file("A:/EVV/LOG.TXT", log, len);
+}
+
+void diag_install(void);
+void diag_remove(void);
+
+void target_enter(void)
+{
+    diag_install();
+    target_stage("engine entered");
+}
+
+void target_leave(void)
+{
+    diag_remove();
 }
