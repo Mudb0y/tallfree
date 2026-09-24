@@ -11,5 +11,7 @@ int kernel_sem_wait(int sem, int timeout_ms);
 int kernel_sem_signal(int sem);
 int kernel_sem_delete(int sem);
 __attribute__((noreturn)) void kernel_task_exit_delete(void);
+int kernel_task_self(void);
+int kernel_task_priority(int task, int priority);
 
 #endif

@@ -1,0 +1,7 @@
+#vol 50
+#mode changed
+This first line is long enough that the one after it cuts it off partway through.
+#wait 1200
+Second line, cutting in.
+One.
+Two.

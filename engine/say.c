@@ -1,8 +1,10 @@
-/* Speaks one sentence into memory, the way cli/evv.c does, and hands the
-   samples to the target: a file on the host under QEMU.
+/* The engine as a speaker: one instance, opened once, that says phrase after
+   phrase and hands each buffer of samples to the target as it is made.
 
-   The call sequence is evv.c's so that its output on the desktop is the
-   reference: 11025 Hz, 16-bit mono, the default voice. */
+   The call sequence is cli/evv.c's so that the desktop's output is the
+   reference: 11025 Hz, 16-bit mono, the default voice. What is done with the
+   phrases is the target's: under QEMU one sentence goes to a file, on the
+   instrument a service speaks what the screen draws. */
 
 #include <setjmp.h>
 #include <stdint.h>
@@ -11,6 +13,7 @@
 #include <string.h>
 #include "evv_abi.h"
 #include "evv_port.h"
+#include "say.h"
 
 typedef struct OldInst OldInst;
 
@@ -28,40 +31,18 @@ void     STDCALL eo_synchronizeSynth(OldInst *h);
 int      STDCALL eo_speaking(OldInst *h);
 int      STDCALL eo_getAvailableLanguages(uint32_t *out, int *count);
 void evvRunStaticInitialisers(void);
-uint32_t sys_heap_used(void);
 
-void target_output(const short *samples, size_t n);
-void target_done(int rc);
-void target_stage(const char *what);
-void target_probe_slots(void);
-void target_volume(uint32_t percent);
-const char *target_input(void);
+#define FRAME_MAX 4096
 
-#define FRAME 2048
-
-static short frame[FRAME];
-static short *samples;
-static size_t nsamples, cap;
+static short frame[FRAME_MAX];
+static OldInst *inst;
 
 static int STDCALL on_message(OldInst *h, int msg, long param, void *data)
 {
     (void)h;
     (void)data;
-    if (msg == eciWaveformBuffer) {
-        size_t n = (size_t)param;
-        if (nsamples + n > cap) {
-            short *more;
-            cap = (nsamples + n) * 2 + FRAME;
-            more = realloc(samples, cap * sizeof *samples);
-            if (more == NULL)
-                return eciDataProcessed;
-            samples = more;
-        }
-        memcpy(samples + nsamples, frame, n * sizeof *frame);
-        nsamples += n;
-        if (nsamples == n)
-            target_stage("first audio buffer");
-    }
+    if (msg == eciWaveformBuffer)
+        target_audio(frame, (size_t)param);
     return eciDataProcessed;
 }
 
@@ -71,74 +52,61 @@ void coop_fatal(const char *why)
     exit(3);
 }
 
-const char *say_text = "Hello, I am the SP four oh four, and I can talk now.";
-
-static int say_main(void)
+int speech_open(int frame_samples)
 {
-    OldInst *h;
     uint32_t langs[16];
-    int n = 16, i;
+    int n = 16;
 
-    const char *text = target_input();
-
-    if (text == NULL)
-        text = say_text;
-    /* "#vol N" on the first line sets the speech level in percent. */
-    if (strncmp(text, "#vol ", 5) == 0) {
-        target_volume((uint32_t)strtoul(text + 5, NULL, 10));
-        while (*text && *text != '\n')
-            text++;
-        while (*text == '\n' || *text == '\r')
-            text++;
-    }
-    /* SAY.TXT beginning "#slots" runs the slot probe instead of speaking. */
-    if (strncmp(text, "#slots", 6) == 0) {
-        target_stage("slot probe");
-        target_probe_slots();
-        return 0;
-    }
-    target_stage("engine_main entered");
+    if (frame_samples < 64 || frame_samples > FRAME_MAX)
+        frame_samples = FRAME_MAX;
     evv_port_start();
-    target_stage("port started");
     evvRunStaticInitialisers();
-    target_stage("static initialisers run");
     if (eo_getAvailableLanguages(langs, &n) || n < 1) {
         printf("engine: no languages\n");
-        return 1;
+        return -1;
     }
-    target_stage("languages listed");
-    h = eo_new();
-    if (h == NULL)
-        h = eo_newEx((int32_t)langs[0]);
-    if (h == NULL) {
+    inst = eo_new();
+    if (inst == NULL)
+        inst = eo_newEx((int32_t)langs[0]);
+    if (inst == NULL) {
         printf("engine: no instance\n");
-        return 1;
+        return -1;
     }
-    target_stage("instance created");
-    eo_registerCallback(h, (void *)on_message, NULL);
-    if (!ev_setOutputBuffer(h, FRAME, frame)) {
+    eo_registerCallback(inst, (void *)on_message, NULL);
+    if (!ev_setOutputBuffer(inst, frame_samples, frame)) {
         printf("engine: output buffer refused\n");
-        return 1;
+        return -1;
     }
-    target_stage("output buffer set");
-    if (!et_addText(h, text) || !et_synthesize(h)) {
-        printf("engine: text refused\n");
-        return 1;
-    }
-    target_stage("text added, synthesising");
-    for (i = 0; i < 30000 && eo_speaking(h); i++)
-        evv_sleep_ms(10);
-    target_stage("speaking finished");
-    eo_synchronizeSynth(h);
-    es_delete(h);
-    evv_port_finish();
-
-    printf("engine: %u samples, heap %lu bytes\n", (unsigned)nsamples,
-           (unsigned long)sys_heap_used());
-    target_stage("instance deleted, writing output");
-    target_output(samples, nsamples);
-    target_stage("output done");
     return 0;
+}
+
+int speech_say(const char *text)
+{
+    if (!et_addText(inst, text) || !et_synthesize(inst)) {
+        printf("engine: text refused\n");
+        return -1;
+    }
+    return 0;
+}
+
+/* Lets the synthesis context run, and answers whether anything of the
+   phrases handed over is still to come. */
+int speech_busy(void)
+{
+    if (eo_speaking(inst)) {
+        evv_sleep_ms(1);
+        return 1;
+    }
+    eo_synchronizeSynth(inst);
+    return 0;
+}
+
+void speech_close(void)
+{
+    if (inst != NULL)
+        es_delete(inst);
+    inst = NULL;
+    evv_port_finish();
 }
 
 static jmp_buf way_out;
@@ -155,7 +123,7 @@ int engine_main(void)
     int rc;
 
     if (setjmp(way_out) == 0)
-        rc = say_main();
+        rc = target_main();
     else
         rc = exit_code;
     target_done(rc);

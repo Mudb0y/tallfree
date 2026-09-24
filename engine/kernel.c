@@ -41,6 +41,8 @@ typedef int (*wait_sem_fn)(int sem, int count, int timeout);
 typedef int (*signal_sem_fn)(int sem, int count);
 typedef int (*delete_sem_fn)(int sem);
 typedef void (*exit_delete_task_fn)(void);
+typedef int (*task_self_fn)(void);
+typedef int (*change_priority_fn)(int task, int priority);
 
 #define CREATE_TASK ((create_task_fn)0x800D31A9u)
 #define START_TASK  ((start_task_fn) 0x800D31B3u)
@@ -51,6 +53,10 @@ typedef void (*exit_delete_task_fn)(void);
 /* The firmware never exits and deletes a task, so there is no stub for it;
    this is the kernel's own entry in ITCM. */
 #define EXIT_DELETE_TASK ((exit_delete_task_fn)0x00003407u)
+#define TASK_SELF   ((task_self_fn)  0x800D3163u)
+/* No stub either: the firmware never changes a priority. Task 0 is the
+   caller, priority 0 its initial one. */
+#define CHANGE_PRIORITY ((change_priority_fn)0x000034FBu)
 
 /* High-level language, named, uses the FPU, as the firmware's own tasks are,
    plus a stack we supply: asked to find 8 KB itself, the kernel answered -33,
@@ -114,4 +120,16 @@ void kernel_task_exit_delete(void)
     EXIT_DELETE_TASK();
     for (;;)
         ;
+}
+
+/* Reads the kernel's running-task record and nothing else, so it answers in
+   handler mode too, with the task that was interrupted. */
+int kernel_task_self(void)
+{
+    return TASK_SELF();
+}
+
+int kernel_task_priority(int task, int priority)
+{
+    return CHANGE_PRIORITY(task, priority);
 }

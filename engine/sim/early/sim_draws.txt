@@ -1,0 +1,2 @@
+# VALUE during the script, before screen reading starts.
+@2500 VALUE

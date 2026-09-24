@@ -102,7 +102,7 @@ __attribute__((noreturn)) void _exit(int code)
 
 /* On the instrument there is no console, so output collects here and the
    target writes it to the card at the end. */
-static char log_buf[16384];
+static char log_buf[65536];
 static size_t log_len;
 
 int _write(int fd, const char *buf, int len)

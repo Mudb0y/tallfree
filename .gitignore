@@ -26,3 +26,7 @@ engine/build/
 engine/out.raw
 engine/in.txt
 engine/rebuild.log
+
+# Simulator outputs
+engine/sim/*/sim.raw
+engine/sim/*/sim_*.TXT

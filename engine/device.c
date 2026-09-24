@@ -1,18 +1,16 @@
-/* What only the instrument needs: the text from the card, the samples back
-   to the card, the log, and the speech through the audio engine.
+/* What only the instrument needs: files through the firmware's own calls,
+   the engine's kernel task, and the speech through the audio engine.
 
-   Files go through the firmware's own file calls. Playback hooks the eDMA
-   channel-3 vector exactly as work/ext/isr.c proved: note whether the event
-   is ours, call the original handler, re-read the descriptors every
-   interrupt. Speech is added, clamped, to line 3 words 0 and 1, the one
-   left-right pair of the main outputs the slot probe found, so it mixes with
-   the instrument instead of replacing it. The engine speaks at 11025 Hz and
-   the interrupt raises it to 48000 by linear interpolation as it goes, so no
-   upsampled copy is ever held.
+   Playback hooks the eDMA channel-3 vector exactly as work/ext/isr.c proved:
+   note whether the event is ours, call the original handler, re-read the
+   descriptors every interrupt. Speech is added, clamped, to line 3 words 0
+   and 1, the one left-right pair of the main outputs the slot probe found,
+   so it mixes with the instrument instead of replacing it.
 
-   engine_main waits for playback to finish and puts the vector back before
-   returning. The handler lives in the engine image, and the next press loads
-   a fresh image over it. */
+   The engine speaks at 11025 Hz into a ring, and the interrupt raises it to
+   48000 by linear interpolation as it takes from the ring, so playback starts
+   with the first buffer synthesised rather than the last. Running dry is
+   silence until more arrives, not a jump. */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -21,6 +19,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "kernel.h"
+#include "device.h"
 
 typedef int (*open_fn) (const char *path, int mode);
 typedef int (*read_fn) (int h, void *buf, int len);
@@ -39,14 +38,10 @@ typedef int (*close_fn)(int h);
 #define STEP    ((uint32_t)((11025ull << 16) / 48000u))
 
 const char *sys_log(size_t *len);
-void target_sleep(int ms);
-void target_stage(const char *what);
+void diag_install(void);
+void diag_remove(void);
 
-static void (*orig_isr)(void);
-static const int16_t *g_pcm;
-static volatile uint32_t g_n, g_pos, g_irqs;
-
-static void write_file(const char *path, const void *buf, size_t len)
+void write_file(const char *path, const void *buf, size_t len)
 {
     int h = F_OPEN(path, 0x601);
 
@@ -62,10 +57,10 @@ static void write_file(const char *path, const void *buf, size_t len)
     F_CLOSE(h);
 }
 
-const char *target_input(void)
+const char *read_text(const char *path)
 {
     static char text[4096];
-    int h = F_OPEN("A:/EVV/SAY.TXT", 0), n;
+    int h = F_OPEN(path, 0), n;
 
     if (h < 0)
         return NULL;
@@ -77,14 +72,20 @@ const char *target_input(void)
     return text;
 }
 
-/* One handler for the whole run: it counts the audio engine's interrupts,
-   750 a second, which is the only trustworthy clock here, and while g_n is
-   set it also writes the speech. */
-static volatile uint32_t g_ticks, g_playing, g_hooked, g_probe;
+/* One handler for the whole residency: it counts the audio engine's
+   interrupts, 750 a second, which is the only trustworthy clock here, and
+   plays whatever is in the ring. */
+static volatile uint32_t g_ticks, g_hooked, g_probe;
+static void (*orig_isr)(void);
 
-/* Speech level: a 16-bit sample times g_gain / 32. 128 is the old <<3 into
-   one pair; the default, 64, is half of that. Set from "#vol N" (percent of
-   128) at the head of SAY.TXT. */
+#define RING 16384u                          /* 1.49 s at 11025 Hz */
+static int16_t ring[RING];
+static volatile uint32_t ring_wr;            /* samples ever written */
+static volatile uint32_t ring_rd;            /* samples ever passed */
+static volatile uint32_t ring_frac;          /* and the fraction into the next */
+
+/* Speech level: a 16-bit sample times g_gain / 32. Set from "#vol N"
+   (percent of 128) in SAY.TXT; 50, gain 64, is the level Stas approved. */
 static volatile uint32_t g_gain = 64;
 
 void target_volume(uint32_t percent)
@@ -113,65 +114,104 @@ uint32_t device_ticks(void)
     return g_ticks;
 }
 
-static void our_isr(void)
+static void probe_fill(void)
 {
     uint32_t b, f, s;
+
+    for (b = 0; b < 4u; b++) {
+        volatile int32_t *q = (volatile int32_t *)*(volatile uint32_t *)(0x400E9000u + b * 32u);
+        for (f = 0; f < SAMPLES; f++)
+            for (s = 0; s < SLOTS; s++) {
+                uint32_t k = b * SLOTS + s;
+                q[f * SLOTS + s] += (probe_sine[probe_phase[k] >> 22] * PROBE_AMP) >> 15;
+                probe_phase[k] += probe_inc[k];
+            }
+    }
+}
+
+static void our_isr(void)
+{
     /* Read before the original handler runs: it clears the flag, so a check
        afterwards always reads zero and every interrupt looks like another
        channel's. */
     uint32_t mine = (EDMA_INT >> 3) & 1u;
+    uint32_t f, s, rd, frac, wr;
+    volatile int32_t *q;
 
     orig_isr();
     if (!mine)
         return;
     g_ticks++;
     if (g_probe) {
-        for (b = 0; b < 4u; b++) {
-            volatile int32_t *q = (volatile int32_t *)*(volatile uint32_t *)(0x400E9000u + b * 32u);
-            for (f = 0; f < SAMPLES; f++)
-                for (s = 0; s < SLOTS; s++) {
-                    uint32_t k = b * SLOTS + s;
-                    q[f * SLOTS + s] += (probe_sine[probe_phase[k] >> 22] * PROBE_AMP) >> 15;
-                    probe_phase[k] += probe_inc[k];
-                }
-        }
+        probe_fill();
         return;
     }
-    if (!g_playing)
+    rd = ring_rd;
+    wr = ring_wr;
+    if (rd >= wr)
         return;
-    g_irqs++;
-    if ((g_pos >> 16) >= g_n)
-        return;
-    {
-        /* Line 3 is the only line that reaches the main outputs, and words 0
-           and 1 of its frames are one left-right pair there (measured with the
-           slot probe). Speech is added to what the firmware put in them and
-           clamped to the 20-bit field, so a loud mix saturates instead of
-           wrapping round. */
-        volatile int32_t *q = (volatile int32_t *)*(volatile uint32_t *)(0x400E9000u + 3u * 32u);
-        uint32_t pos = g_pos;
-        for (f = 0; f < SAMPLES; f++) {
-            uint32_t i = pos >> 16, frac = pos & 0xFFFFu;
-            int32_t v = 0;
-            if (i < g_n) {
-                int32_t a = g_pcm[i];
-                int32_t c = i + 1 < g_n ? g_pcm[i + 1] : 0;
-                v = a + (((c - a) * (int32_t)frac) >> 16);
-            }
-            v = (v * (int32_t)g_gain) >> 5;
-            for (s = 0; s < 2u; s++) {
-                int32_t m = q[f * SLOTS + s] + v;
-                if (m > 524287)
-                    m = 524287;
-                else if (m < -524288)
-                    m = -524288;
-                q[f * SLOTS + s] = m;
-            }
-            pos += STEP;
+    /* Line 3 is the only line that reaches the main outputs, and words 0
+       and 1 of its frames are one left-right pair there (measured with the
+       slot probe). Speech is added to what the firmware put in them and
+       clamped to the 20-bit field, so a loud mix saturates instead of
+       wrapping round. */
+    q = (volatile int32_t *)*(volatile uint32_t *)(0x400E9000u + 3u * 32u);
+    frac = ring_frac;
+    for (f = 0; f < SAMPLES && rd < wr; f++) {
+        int32_t a = ring[rd % RING];
+        int32_t c = rd + 1 < wr ? ring[(rd + 1) % RING] : a;
+        int32_t v = a + (((c - a) * (int32_t)frac) >> 16);
+
+        v = (v * (int32_t)g_gain) >> 5;
+        for (s = 0; s < 2u; s++) {
+            int32_t m = q[f * SLOTS + s] + v;
+            if (m > 524287)
+                m = 524287;
+            else if (m < -524288)
+                m = -524288;
+            q[f * SLOTS + s] = m;
         }
-        (void)b;
+        frac += STEP;
+        rd += frac >> 16;
+        frac &= 0xFFFFu;
     }
-    g_pos += STEP * SAMPLES;
+    ring_frac = frac;
+    ring_rd = rd;
+}
+
+size_t audio_space(void)
+{
+    return RING - 1u - (ring_wr - ring_rd);
+}
+
+size_t audio_pending(void)
+{
+    return ring_wr - ring_rd;
+}
+
+/* Only the engine's task writes; the interrupt only reads what the count
+   already covers. */
+void audio_push(const int16_t *s, size_t n)
+{
+    uint32_t wr = ring_wr;
+    size_t i;
+
+    for (i = 0; i < n; i++)
+        ring[(wr + i) % RING] = s[i];
+    __asm__ volatile("dmb" ::: "memory");
+    ring_wr = wr + (uint32_t)n;
+}
+
+/* Drops what has not been played. The interrupt moves the read side, so the
+   two words change together with it held off. */
+void audio_flush(void)
+{
+    uint32_t primask;
+
+    __asm__ volatile("mrs %0, primask\n cpsid i" : "=r"(primask) :: "memory");
+    ring_rd = ring_wr;
+    ring_frac = 0;
+    __asm__ volatile("msr primask, %0" :: "r"(primask) : "memory");
 }
 
 static void hook_audio(void)
@@ -190,33 +230,9 @@ static void unhook_audio(void)
     g_hooked = 0;
 }
 
-static void play(const int16_t *pcm, size_t n)
+int audio_hooked(void)
 {
-    uint32_t guard, t0;
-
-    if (n == 0 || !g_hooked) {
-        printf("play: nothing to do, %u samples, hooked %u\n", (unsigned)n, (unsigned)g_hooked);
-        return;
-    }
-    g_pcm = pcm;
-    g_pos = 0;
-    g_irqs = 0;
-    g_n = (uint32_t)n;
-    t0 = g_ticks;
-    g_playing = 1;
-    /* Bounded by interrupts, 750 a second: the clip's worth plus a second.
-       The loop count only catches an interrupt that never comes at all. */
-    for (guard = 0; (g_pos >> 16) < g_n; guard++) {
-        if (g_irqs > (uint32_t)((uint64_t)n * 750u / 11025u) + 750u)
-            break;
-        if (g_irqs == 0 && guard > 400u)
-            break;
-        target_sleep(10);
-    }
-    g_playing = 0;
-    printf("play: %u samples, %u interrupts, reached sample %u, %u ticks, loop %u\n",
-           (unsigned)n, (unsigned)g_irqs, (unsigned)(g_pos >> 16),
-           (unsigned)(g_ticks - t0), (unsigned)guard);
+    return g_hooked != 0;
 }
 
 void target_probe_slots(void)
@@ -237,19 +253,10 @@ void target_probe_slots(void)
     }
     t0 = g_ticks;
     g_probe = 1;
-    while (g_ticks - t0 < 6u * 750u && g_ticks - t0 < 0x7FFFFFFFu) {
-        if (g_ticks == t0 && ++k > 300000000u)
-            break;
-    }
+    while (g_ticks - t0 < 6u * 750u)
+        target_sleep(20);
     g_probe = 0;
     printf("probe: ran %lu ticks\n", (unsigned long)(g_ticks - t0));
-}
-
-void target_output(const short *samples, size_t n)
-{
-    write_file("A:/EVV/OUT.RAW", samples, n * sizeof *samples);
-    target_stage("OUT.RAW written, playing");
-    play(samples, n);
 }
 
 /* The engine runs in a task of its own at low priority, so VALUE returns to
@@ -259,7 +266,7 @@ void target_output(const short *samples, size_t n)
 #define TASK_PRIORITY 30
 #define TASK_STACK    8192
 
-static int g_sleep_sem = -1;
+static int g_sleep_sem = -1, g_task;
 static int (*g_body)(void);
 static uint64_t g_task_stack[TASK_STACK / 8];
 static uint32_t g_kernel_crc, g_task_sp;
@@ -280,14 +287,21 @@ static uint32_t kernel_code_crc(void)
     return ~crc;
 }
 
-void target_done(int rc)
+int engine_task_id(void)
+{
+    return g_task;
+}
+
+/* The log so far to the card. Safe from the engine's task at any point: the
+   file calls take the file system's own lock. */
+void target_checkpoint(void)
 {
     size_t len;
     const char *log;
     uint32_t crc = kernel_code_crc();
 
-    (void)rc;
-    printf("task stack at %08lx, buffer %08lx to %08lx\n", (unsigned long)g_task_sp,
+    printf("checkpoint at %lu ticks: task stack at %08lx, buffer %08lx to %08lx\n",
+           (unsigned long)g_ticks, (unsigned long)g_task_sp,
            (unsigned long)(uintptr_t)g_task_stack,
            (unsigned long)((uintptr_t)g_task_stack + sizeof g_task_stack));
     printf("kernel code crc %08lx at launch, %08lx now, %s\n", (unsigned long)g_kernel_crc,
@@ -296,47 +310,19 @@ void target_done(int rc)
     write_file("A:/EVV/LOG.TXT", log, len);
 }
 
-void diag_install(void);
-void diag_remove(void);
-
-/* What the processor says about the context the engine was entered in, and
-   whether the audio interrupt can reach us from it. Named registers only:
-   the peripheral windows are sparse and a sweep has faulted this core. */
-__attribute__((unused)) static void context_report(const char *when)
+void target_done(int rc)
 {
-    uint32_t ipsr, primask, basepri, faultmask, control, sa, sb;
-    volatile uint32_t spin;
-
-    __asm__ volatile("mrs %0, ipsr" : "=r"(ipsr));
-    __asm__ volatile("mrs %0, primask" : "=r"(primask));
-    __asm__ volatile("mrs %0, basepri" : "=r"(basepri));
-    __asm__ volatile("mrs %0, faultmask" : "=r"(faultmask));
-    __asm__ volatile("mrs %0, control" : "=r"(control));
-    sa = *(volatile uint32_t *)0x400E9000u;
-    for (spin = 0; spin < 2000000u; spin++)
-        ;
-    sb = *(volatile uint32_t *)0x400E9000u;
-    printf("%s: ipsr %lx primask %lx basepri %lx faultmask %lx control %lx\n",
-           when, (unsigned long)ipsr, (unsigned long)primask, (unsigned long)basepri,
-           (unsigned long)faultmask, (unsigned long)control);
-    printf("%s: vtor %lx iser0 %lx ispr0 %lx iabr0 %lx ipr3 %lx vec19 %lx\n", when,
-           (unsigned long)*(volatile uint32_t *)0xE000ED08u,
-           (unsigned long)*(volatile uint32_t *)0xE000E100u,
-           (unsigned long)*(volatile uint32_t *)0xE000E200u,
-           (unsigned long)*(volatile uint32_t *)0xE000E300u,
-           (unsigned long)*(volatile uint8_t *)0xE000E403u,
-           (unsigned long)*VEC_DMA3);
-    printf("%s: edma erq %lx int %lx, tcd0 saddr %lx then %lx, ticks %lu\n", when,
-           (unsigned long)*(volatile uint32_t *)0x400E800Cu,
-           (unsigned long)EDMA_INT, (unsigned long)sa, (unsigned long)sb,
-           (unsigned long)g_ticks);
+    screen_remove();
+    target_sleep(50);
+    printf("engine finished, code %d\n", rc);
+    screen_log_write();
+    target_checkpoint();
 }
 
 void target_enter(void)
 {
     diag_install();
     hook_audio();
-    target_stage("engine entered");
 }
 
 void target_leave(void)
@@ -351,20 +337,33 @@ void target_sleep(int ms)
         kernel_sem_wait(g_sleep_sem, ms);
 }
 
+/* Cuts a sleep short. Never waits, so the screen hook may call it from
+   inside the interface's drawing. */
+void target_wake(void)
+{
+    if (g_sleep_sem > 0)
+        kernel_sem_signal(g_sleep_sem);
+}
+
 /* The task has to be gone before the next press loads a fresh image over
    its code and zeroes its stack, and the kernel has only 32 semaphores, so
-   it gives back both on the way out. */
+   it gives back both on the way out. The loader gets VALUE back last of all,
+   above the interface's priority, so no press can reach the loader while
+   any of this is still running. */
 static void engine_task(int code, void *arg)
 {
     int sem;
 
     (void)code;
     (void)arg;
+    g_task = kernel_task_self();
     __asm__ volatile("mov %0, sp" : "=r"(g_task_sp));
     g_body();
     sem = g_sleep_sem;
     g_sleep_sem = -1;
     kernel_sem_delete(sem);
+    kernel_task_priority(0, 1);
+    key_remove();
     kernel_task_exit_delete();
 }
 

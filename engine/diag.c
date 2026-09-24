@@ -127,16 +127,27 @@ __attribute__((used)) static uint32_t fault_c(uint32_t *frame, uint32_t exc_retu
     return exc_return;
 }
 
-/* Only faults in the engine's own code are ours. Anything else is the
-   firmware's, and some of its code faults on purpose and expects its own
-   handler; those go straight to the saved vector with every register as the
-   fault left it. */
+/* Only faults in the engine's own code, in the engine's own task, are ours
+   to recover. Anything else goes straight to the saved vector with every
+   register as the fault left it. A fault in the engine's code on another
+   task's time means the screen hook, running inside the interface; that
+   cannot be walked back, but the hook is taken out first so that nothing
+   calls into it again. */
 extern char __image_start[], __image_end[];
+int engine_task_id(void);
+int kernel_task_self(void);
+void screen_remove(void);
 
 __attribute__((used)) static uint32_t fault_is_ours(uint32_t *frame)
 {
     uint32_t pc = frame[6];
-    return pc >= (uint32_t)__image_start && pc < (uint32_t)__image_end;
+
+    if (pc < (uint32_t)__image_start || pc >= (uint32_t)__image_end)
+        return 0;
+    if (kernel_task_self() == engine_task_id())
+        return 1;
+    screen_remove();
+    return 0;
 }
 
 #define FAULT_ENTRY(name, num)                                   \

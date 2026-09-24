@@ -7,6 +7,9 @@
 #
 #   make qemu      build the QEMU image
 #   make check     run it and compare with the desktop engine, byte for byte
+#   make sim       run the instrument's resident service under QEMU against
+#                  a scenario, sim/basic unless SIM= names another directory
+#                  holding sim_say.txt and sim_draws.txt
 
 OPENEVV ?= /home/stas/Projects/openevv-sp404
 CC      := arm-none-eabi-gcc
@@ -22,11 +25,11 @@ LDFLAGS := $(ARCH) -nostartfiles --specs=nano.specs -Wl,--gc-sections -Wl,--no-w
            -Wl,-Map=$(BUILD)/$*.map
 
 LIB := $(OPENEVV)/build-m7/libevv.a
-COMMON := port_coop.c sys.c start.c say.c
+COMMON := port_coop.c sys.c start.c say.c say.h
 
 TEXT ?= Hello, I am the SP four oh four, and I can talk now.
 
-.PHONY: qemu device check lib clean
+.PHONY: qemu device check sim lib clean
 qemu: $(BUILD)/qemu.elf
 device: $(BUILD)/ENGINE.BIN
 
@@ -36,15 +39,20 @@ lib:
 
 $(LIB): lib
 
-$(BUILD)/qemu.elf: $(COMMON) qemu.c qemu.ld engine.ld $(LIB)
+$(BUILD)/qemu.elf: $(COMMON) qemu.c qemuboot.c qemu.ld engine.ld $(LIB)
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -DSEMIHOST $(LDFLAGS) -Wl,-Map=$(BUILD)/qemu.map \
-	  -T qemu.ld $(COMMON) qemu.c $(LIB) -lm -lc -lgcc -o $@
+	  -T qemu.ld $(filter %.c,$(COMMON)) qemu.c qemuboot.c $(LIB) -lm -lc -lgcc -o $@
 
-$(BUILD)/device.elf: $(COMMON) device.c diag.c kernel.c kernel.h device.ld engine.ld $(LIB)
+$(BUILD)/sim.elf: $(COMMON) service.c screen.c sim.c qemuboot.c device.h qemu.ld engine.ld $(LIB)
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -DSEMIHOST -DSIM $(LDFLAGS) -Wl,-Map=$(BUILD)/sim.map \
+	  -T qemu.ld $(filter %.c,$(COMMON)) service.c screen.c sim.c qemuboot.c $(LIB) -lm -lc -lgcc -o $@
+
+$(BUILD)/device.elf: $(COMMON) device.c device.h service.c screen.c diag.c kernel.c kernel.h device.ld engine.ld $(LIB)
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -fno-delete-null-pointer-checks $(LDFLAGS) -Wl,-Map=$(BUILD)/device.map \
-	  -T device.ld $(COMMON) device.c diag.c kernel.c $(LIB) -lm -lc -lgcc -o $@
+	  -T device.ld $(filter %.c,$(COMMON)) device.c service.c screen.c diag.c kernel.c $(LIB) -lm -lc -lgcc -o $@
 
 $(BUILD)/ENGINE.BIN: $(BUILD)/device.elf mkimage.py
 	python3 mkimage.py $< $@
@@ -56,6 +64,11 @@ check: $(BUILD)/qemu.elf
 	qemu-system-arm -M mps2-an500 -nographic -monitor none -serial none \
 	  -semihosting-config enable=on,target=native -kernel $(BUILD)/qemu.elf
 	./compare.sh out.raw "$(TEXT)"
+
+SIM ?= sim/basic
+sim: $(BUILD)/sim.elf
+	cd $(SIM) && rm -f sim.raw sim_*.TXT && qemu-system-arm -M mps2-an500 -nographic -monitor none \
+	  -serial none -semihosting-config enable=on,target=native -kernel $(CURDIR)/$(BUILD)/sim.elf
 
 clean:
 	rm -rf $(BUILD) out.raw

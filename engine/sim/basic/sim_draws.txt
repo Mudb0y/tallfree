@@ -1,0 +1,25 @@
+# The first page, drawn at once.
+0 10 0 PATTERN SELECT
+0 10 10 BPM 120.0
+0 10 20 A-01
+# The same page redrawn with nothing changed: silent.
+1500 10 0 PATTERN SELECT
+1500 10 10 BPM 120.0
+1500 10 20 A-01
+# One value turned, twice within the settle time: only the last is said.
+3000 10 20 A-02
+3080 10 20 A-03
+# A clock ticking: muted after its third quick change.
+5000 90 0 00:01
+5500 90 0 00:02
+6000 90 0 00:03
+6500 90 0 00:04
+7000 90 0 00:05
+7500 90 0 00:06
+# A long string, cut off by the next change while it plays.
+9000 10 30 A long description that takes a good few seconds to say out loud
+10000 10 20 A-04
+# Unload.
+14000 VALUE
+# Pressed again while "speech off" plays: ignored.
+14300 VALUE
