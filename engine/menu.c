@@ -29,7 +29,8 @@ static struct {
     { "Speed", "speed", 0, 250, 5, 50 },
     { "Pitch", "pitch", 0, 100, 5, 65 },
     { "Voice", "voice", 1, 8, 1, 1 },
-    { "Volume", "volume", 0, 100, 5, 50 },
+    /* Never silent: a menu turned down to nothing could not be found again. */
+    { "Volume", "volume", 10, 100, 5, 50 },
     { "Abbreviations", "abbreviations", 0, 1, 1, 0 },
     { "Screen reading", "reading", 0, 1, 1, 1 },
 };
