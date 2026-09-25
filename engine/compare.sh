@@ -4,7 +4,7 @@
 set -e
 raw=$1
 text=$2
-openevv=${OPENEVV:-/home/stas/Projects/openevv-sp404}
+openevv=${OPENEVV:-$(cd "$(dirname "$0")" && pwd)/openevv}
 ref=$(mktemp --suffix=.wav)
 trap 'rm -f "$ref"' EXIT
 

@@ -7,7 +7,7 @@
 # crashers, and 30 lines of 20 dictionary words each.
 set -e
 cd "$(dirname "$0")"
-openevv=${OPENEVV:-/home/stas/Projects/openevv-sp404}
+openevv=${OPENEVV:-$PWD/openevv}
 out=build/cases
 
 cases() {

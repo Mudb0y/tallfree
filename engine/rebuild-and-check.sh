@@ -3,12 +3,12 @@
 # engine, then OpenEVV's own matrix. Written after a power cut left build
 # outputs that could not be trusted.
 set -e
-OPENEVV=${OPENEVV:-/home/stas/Projects/openevv-sp404}
 here=$(cd "$(dirname "$0")" && pwd)
+OPENEVV=${OPENEVV:-$here/openevv}
 arm="nix develop $here/.. --command"
 
 echo "== clean"
-rm -rf "$OPENEVV/build" "$OPENEVV/build-m7c" "$here/build"
+rm -rf "$OPENEVV/build" "$here/build"
 echo "== rulecode"
 (cd "$OPENEVV" && nix develop --command make rulecode)
 echo "== arm library and qemu image"

@@ -2,7 +2,9 @@
 #
 # The engine library comes from OpenEVV's own Makefile with PORT=none, so its
 # source list cannot drift from the desktop build's; this directory adds the
-# platform layer and the way in. Run inside nix develop.
+# platform layer and the way in. Run inside nix develop. OpenEVV is the
+# submodule in openevv/, pinned to the commit this was built and tested
+# against: git submodule update --init fetches it.
 #
 #   make qemu      build the QEMU image
 #   make check     run it and compare with the desktop engine, byte for byte
@@ -11,7 +13,7 @@
 #                  holding sim_say.txt and sim_draws.txt
 #   make sims      every scenario in sim/, one line each: PASS or FAIL
 
-OPENEVV ?= /home/stas/Projects/openevv-sp404
+OPENEVV ?= $(CURDIR)/openevv
 CC      := arm-none-eabi-gcc
 OBJCOPY := arm-none-eabi-objcopy
 BUILD   := build
@@ -26,7 +28,7 @@ LDFLAGS := $(ARCH) -nostartfiles --specs=nano.specs -Wl,--gc-sections -Wl,--no-w
 
 # Compiled rules: three times faster than bytecode on the unit's core, the
 # same samples, 0.9 MB bigger.
-LIB := $(OPENEVV)/build-m7c/libevv.a
+LIB := $(OPENEVV)/build/m7c/libevv.a
 COMMON := port_coop.c sys.c start.c say.c say.h
 
 TEXT ?= Hello, I am the SP four oh four, and I can talk now.
@@ -36,8 +38,8 @@ qemu: $(BUILD)/qemu.elf
 device: $(BUILD)/ENGINE.BIN
 
 lib:
-	$(MAKE) -C $(OPENEVV) PORT=none BUILD=build-m7c RULES=c \
-	  CC=$(CC) AR=arm-none-eabi-ar CFLAGS="$(LIBFLAGS)" build-m7c/libevv.a
+	$(MAKE) -C $(OPENEVV) PORT=none BUILD=build/m7c RULES=c \
+	  CC=$(CC) AR=arm-none-eabi-ar CFLAGS="$(LIBFLAGS)" build/m7c/libevv.a
 
 $(LIB): lib
 
