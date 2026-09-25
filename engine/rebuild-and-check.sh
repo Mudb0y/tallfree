@@ -8,7 +8,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 arm="nix shell nixpkgs#gcc-arm-embedded nixpkgs#gnumake nixpkgs#python3 nixpkgs#qemu --command"
 
 echo "== clean"
-rm -rf "$OPENEVV/build" "$OPENEVV/build-m7" "$here/build"
+rm -rf "$OPENEVV/build" "$OPENEVV/build-m7c" "$here/build"
 echo "== rulecode"
 (cd "$OPENEVV" && nix develop --command make rulecode)
 echo "== arm library and qemu image"

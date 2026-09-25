@@ -1,8 +1,9 @@
 /* What only the instrument needs: files through the firmware's own calls,
    the engine's kernel task, and the speech through the audio engine.
 
-   Playback hooks the eDMA channel-3 vector exactly as work/ext/isr.c proved:
-   note whether the event is ours, call the original handler, re-read the
+   Playback hooks the eDMA channel-3 vector exactly as work/ext/isr.c, the
+   payload of images 17 to 25 and at the tag pre-cleanup, proved: note
+   whether the event is ours, call the original handler, re-read the
    descriptors every interrupt. Speech is added, clamped, to line 3 words 0
    and 1, the one left-right pair of the main outputs the slot probe found,
    so it mixes with the instrument instead of replacing it.
