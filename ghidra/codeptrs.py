@@ -1,6 +1,7 @@
 import os, sys
 import capstone,struct
 HERE=os.path.dirname(os.path.abspath(__file__))
+os.makedirs(os.path.join(HERE, 'out'), exist_ok=True)
 d=open(os.path.join(HERE,'regions','sdram_code.bin'),'rb').read()
 N=len(d); B=0x80000000
 md=capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB|capstone.CS_MODE_MCLASS)

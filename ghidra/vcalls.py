@@ -1,5 +1,6 @@
 import capstone,os,sys
 HERE=os.path.dirname(os.path.abspath(__file__))
+os.makedirs(os.path.join(HERE, 'out'), exist_ok=True)
 d=open(os.path.join(HERE,'regions','sdram_code.bin'),'rb').read(); B=0x80000000
 md=capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB|capstone.CS_MODE_MCLASS); md.skipdata=True
 offs={0x12c:'drawstr',0x134:'drawchar',0x128:'fwd128',0x140:'fwd140'}

@@ -1,7 +1,7 @@
 # slotmap.py REC.wav: which of the 64 SAI slots reach the SP's main outputs.
 #
 # The slot probe puts a sine at 300 + 41*k Hz in slot k (line k // 16, word
-# k % 16) for six seconds. The recording is all eighteen XR18 inputs; the two
+# k % 16) for six seconds. The recording may hold any number of channels; the two
 # channels carrying the SP are picked by energy, and each slot's frequency is
 # measured on both against the noise floor around it.
 import sys, wave
