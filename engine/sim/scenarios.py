@@ -216,14 +216,51 @@ def system():
     for k, t in enumerate(['GENERAL', 'CLICK', 'MIDI', 'GAIN', 'VERSION']):
         d.append(f'3000 s0 {5 + 25 * k} 2 {TABS}{t}')
     d += ['5000 s0 FILL 90 29 127 36', '5000 s0 100 29 Prev',
-          '6000 s0 FILL 90 29 127 36', '6000 s0 100 29 Last',
-          '8000 VALUE']
+          '6400 s0 FILL 90 29 127 36', '6400 s0 100 29 Last']
+    # The knob: the list scrolls a row, every row redrawn one line higher.
+    more = rows[1:] + [('Scrn Saver Type', 85, 'OldRave')]
+    d += ['8000 s0 FILL 0 9 127 60']
+    for k, (name, x, value) in enumerate(more):
+        y = 13 + 8 * k
+        d += [f'8000 s0 6 {y} _{ROWLABEL}{name}', f'8000 s0 {x} {y} {value}']
+    # CTRL 3: the next tab, a new page of settings and the page count.
+    click = [('Output Assign', 109, 'ON'), ('Click Level', 115, '1'),
+             ('Metronome:REC', 106, 'OFF'), ('Metronome:PTN', 109, 'ON')]
+    d += ['8600 s0 FILL 0 9 127 60', '8600 s0 103 2  2/ 5']
+    for k, (name, x, value) in enumerate(click):
+        y = 13 + 8 * k
+        d += [f'8600 s0 6 {y} _{ROWLABEL}{name}', f'8600 s0 {x} {y} {value}']
+    d += ['10000 VALUE']
     write('system', d, ['A 13',
                         'UTILITY MENU | SYSTEM', 'PAD SET', 'EFX SET',
-                        '1 of 5 | Edit Knob Mode Direct | EFX Knob Mode Direct | '
-                        'Load Project Last | Sub Pad Mode Retrig | Auto Trig Level 5 | '
-                        'Scrn Saver Time 1 min',
-                        'Load Project Prev', 'Last'])
+                        'GENERAL | Edit Knob Mode Direct',
+                        'Load Project Prev', 'Last',
+                        'EFX Knob Mode Direct',
+                        'CLICK | Output Assign ON'])
+
+# FORMAT in the SD card menu, as the unit draws it: the menu redrawn, then a
+# dialog on a surface of its own, its text on the pop-up background and its
+# buttons below, CANCEL selected; OK, CANCEL again, then closing it back to
+# the menu with its own CANCEL selected.
+def dialog():
+    top = ['IMPORT from SD-CARD', 'EXPORT to SD-CARD', 'FORMAT SD-CARD', 'CANCEL']
+    def lst(t, sel):
+        out = [f'{t} s0 FILL 14 20 113 52']
+        for k, text in enumerate(top):
+            out.append(f'{t} s0 17 {22 + 8 * k} {"!" if k == sel else ""}{text}')
+        return out
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 s0 CLEAR', '1000 s1 5 2 ^_IMPORT/EXPORT MENU'] + lst(1000, 2)
+    d += ['3000 s1 5 2 ^_IMPORT/EXPORT MENU'] + lst(3000, 2)
+    d += ['3010 s3 13 10 ~Format \\nSD Card', '3010 s3 13 30 ~Are you sure?',
+          '3010 s3 86 47 OK', '3010 s3 16 47 !CANCEL']
+    d += ['4000 s3 86 47 !OK', '4000 s3 16 47 CANCEL',
+          '5000 s3 16 47 !CANCEL', '5000 s3 86 47 OK']
+    d += ['6000 s3 CLEAR'] + lst(6000, 3)
+    d += ['8000 VALUE']
+    write('dialog', d, ['A 13', 'IMPORT/EXPORT MENU | FORMAT SD-CARD',
+                        'Format SD Card | Are you sure? | CANCEL', 'OK', 'CANCEL',
+                        'CANCEL'])
 
 # The SD card menu drawn over the main screen without wiping all of it, the
 # big BPM left just above the list; into the EXPORT submenu and back out,
@@ -259,3 +296,4 @@ submenu()
 recscale()
 system()
 sdreturn()
+dialog()

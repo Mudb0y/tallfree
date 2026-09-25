@@ -26,6 +26,7 @@
 
 #define SLOT_CLEAR 0x08u
 #define SLOT_FILL  0xC0u
+#define SLOT_INK   0x10u
 #define SLOT_MARK  0x18u
 #define SLOT_TEXT  0x12Cu
 
@@ -155,7 +156,7 @@ enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON };
 #define DRAW_TEXT 64
 struct draw {
     uint32_t tick, surf, lr, site;
-    int32_t  mark;
+    int32_t  mark, ink;
     int16_t  x, y, x1, y1;
     uint8_t  kind, task, len;
     char     text[DRAW_TEXT];
@@ -226,6 +227,8 @@ __attribute__((used)) static void text_record(const uint32_t *f)
     d.site = sim_site;
 #endif
     d.mark = ((int32_t (*)(uint32_t))(*(const uint32_t *const *)surf)[SLOT_MARK / 4])(surf);
+    /* Slot 0x10, the text colour, a plain getter in all seven classes. */
+    d.ink = ((int32_t (*)(uint32_t))(*(const uint32_t *const *)surf)[SLOT_INK / 4])(surf);
     d.x = (int16_t)f[1];
     d.y = (int16_t)f[2];
     d.x1 = d.y1 = 0;
@@ -325,7 +328,7 @@ void screen_remove(void)
 #define ITEM_TEXT DRAW_TEXT
 struct item {
     uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq;
-    int32_t  mark;
+    int32_t  mark, ink;
     int16_t  x, y;
     uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel;
     char     prev0;                          /* the text's first letter before */
@@ -414,7 +417,7 @@ int screen_install(int mode, int settle_ms)
     else
         printf("screen: an icon slot is not the icon draw; icons not hooked\n");
     __asm__ volatile("dsb" ::: "memory");
-    log_line("# tick task surface x y colour len caller site |text|, from %lu ticks,"
+    log_line("# tick task surface x y background ink len caller site |text|, from %lu ticks,"
              " mode %d, settle %d ms\n", (unsigned long)device_ticks(), mode, settle_ms);
     return 0;
 }
@@ -629,11 +632,13 @@ static int take(const struct draw *d)
     it->role = role_of(d->site);
     it->title = it->role == ROLE_TITLE;
     text_changed = strcmp(it->text, d->text) != 0;
-    if (text_changed || it->mark != d->mark)
-        log_line("%lu %u %08lx %d %d %ld %u %08lx %08lx |%s|\n", (unsigned long)d->tick,
+    if (text_changed || it->mark != d->mark || it->ink != d->ink)
+        log_line("%lu %u %08lx %d %d %ld %ld %u %08lx %08lx |%s|\n", (unsigned long)d->tick,
                  (unsigned)d->task, (unsigned long)d->surf, d->x, d->y, (long)d->mark,
-                 (unsigned)d->len, (unsigned long)d->lr, (unsigned long)d->site, d->text);
+                 (long)d->ink, (unsigned)d->len, (unsigned long)d->lr, (unsigned long)d->site,
+                 d->text);
     it->mark = d->mark;
+    it->ink = d->ink;
     now_lit = is_lit(it);
     if (text_changed) {
         /* A first change is said at once. One that follows another within
@@ -1014,30 +1019,147 @@ static void say_contents(struct item **order, int n)
     }
 }
 
-/* What to say about a new screen: its title, then its focus; on the main
-   screen, which has neither, the bank and pad; then any pop-up; and on a
-   screen with no title, focus or pop-up, what it shows. */
+static int layer_is_new(uint32_t surf);
+
+static int drawn_now(const struct item *it)
+{
+    return (int32_t)(it->last_drawn - b_prev) > 0;
+}
+
+/* A page count, "2/ 5", drawn at the top: which of a tabbed page's tabs is
+   showing. */
+static int page_number(const struct item *it)
+{
+    const char *t = it->text;
+    int n = 0;
+
+    while (*t == ' ')
+        t++;
+    if (*t < '0' || *t > '9' || it->y > 5)
+        return 0;
+    while (*t >= '0' && *t <= '9')
+        n = n * 10 + (*t++ - '0');
+    return *t == '/' ? n : 0;
+}
+
+/* The name of the tab a tabbed page is on: its tabs in order along the top,
+   and the page count saying which. */
+static const struct item *current_tab(void)
+{
+    const struct item *tabs[16];
+    int ntabs = 0, page = 0, i, j;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *it = &items[i];
+        if (!live(it))
+            continue;
+        if (it->role == ROLE_TABS && ntabs < 16) {
+            for (j = ntabs; j > 0 && tabs[j - 1]->x > it->x; j--)
+                tabs[j] = tabs[j - 1];
+            tabs[j] = it;
+            ntabs++;
+        } else if (page == 0 && drawn_now(it)) {
+            page = page_number(it);
+        }
+    }
+    return page >= 1 && page <= ntabs ? tabs[page - 1] : NULL;
+}
+
+/* A list of settings, a name on each row with its value beside it: the row
+   at the top, which is the one the knob is on while the list scrolls. */
+static const struct item *top_row(const struct item **value)
+{
+    const struct item *best = NULL, *best_v = NULL;
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *v = &items[i], *l;
+        if (!live(v) || !drawn_now(v) || (l = row_label(v)) == NULL || !drawn_now(l))
+            continue;
+        if (best == NULL || l->y < best->y) {
+            best = l;
+            best_v = v;
+        }
+    }
+    *value = best_v;
+    return best;
+}
+
+/* A dialog that has just opened: a surface newly in use carrying pop-up
+   text, not a title, and a focused button, as "Format SD Card, Are you
+   sure?" with CANCEL selected. A page titled on a pop-up layer, as PAD LINK
+   GROUPS, is not one. */
+static uint32_t new_dialog(void)
+{
+    int i, k;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *it = &items[i];
+        if (!live(it) || it->mark != -1 || it->role != ROLE_NONE || !it->fresh
+            || !layer_is_new(it->surf))
+            continue;
+        for (k = 0; k < ITEMS; k++)
+            if (live(&items[k]) && items[k].surf == it->surf && is_lit(&items[k]))
+                return it->surf;
+    }
+    return 0;
+}
+
+static uint32_t dialog_surf;
+static int want_dialog_text(const struct item *it)
+{
+    return it->surf == dialog_surf && it->mark == -1;
+}
+static int want_dialog_focus(const struct item *it)
+{
+    return it->surf == dialog_surf && is_lit(it);
+}
+
+static char last_tab[ITEM_TEXT];
+
+/* What to say about a new screen. A dialog that has just opened is all
+   there is: its text, then its own focused button. Otherwise the title, the
+   tab a tabbed page is on when it has changed, then the focus: the focused
+   item, else a settings list's top row, else on the main screen the bank
+   and pad; then any pop-up; and on a screen with none of those, what it
+   shows. */
 static void new_screen(struct item **order)
 {
-    int n, i, titles, focus, popups;
+    const struct item *tab, *row, *value;
+    int n, i, focus, popups;
 
     last_label = NULL;
+    if ((dialog_surf = new_dialog()) != 0) {
+        n = in_order(order, ITEMS, want_dialog_text);
+        for (i = 0; i < n; i++)
+            say(order[i]);
+        n = in_order(order, ITEMS, want_dialog_focus);
+        for (i = 0; i < n; i++)
+            say(order[i]);
+        return;
+    }
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
         say(order[i]);
-    titles = b_count;
-    (void)titles;
+    if ((tab = current_tab()) != NULL && strcmp(tab->text, last_tab) != 0) {
+        memcpy(last_tab, tab->text, ITEM_TEXT);
+        say(tab);
+    }
     /* The focus counts when it is there, even when the title has already
        said its words, as a grid's title names the focused cell. */
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
         say(order[i]);
+    if (focus == 0 && (row = top_row(&value)) != NULL) {
+        last_label = row;
+        say3(row->text, value->text, NULL);
+        focus = 1;
+    }
     /* Only a bank and pad just drawn: the main screen's stay on its layer
        under the screens opened over it. */
     if (focus == 0)
         for (i = 0; i < ITEMS; i++)
-            if (live(&items[i]) && is_pad_field(&items[i])
-                && (int32_t)(items[i].last_drawn - b_prev) > 0)
+            if (live(&items[i]) && is_pad_field(&items[i]) && drawn_now(&items[i]))
                 focus += say_pad(&items[i]) == 1;
     popups = in_order(order, ITEMS, want_new_popup);
     for (i = 0; i < popups; i++)
@@ -1166,7 +1288,7 @@ static int screen_changed(void)
         alive++;
         if (it->fresh || (it->changed == 1 && !is_status(it)))
             fresh++;
-        if (!it->fresh && it->changed == 1 && !is_status(it) && it->rapid == 0)
+        if (!it->fresh && it->changed == 1 && !is_status(it))
             replaced++;
         for (k = 0; k < nsurf && surf[k] != it->surf; k++)
             ;

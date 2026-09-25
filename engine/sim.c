@@ -69,6 +69,12 @@ static int32_t sim_mark(void *surface)
     return colour_now;
 }
 
+static int32_t sim_ink(void *surface)
+{
+    (void)surface;
+    return 0xFFFFFF;
+}
+
 static uint32_t surface_vtable[0x140 / 4];
 static struct { const uint32_t *vtable; } surfaces[4] = {
     { surface_vtable }, { surface_vtable }, { surface_vtable }, { surface_vtable },
@@ -390,6 +396,7 @@ void target_enter(void)
         sim_vtables[i][0xC0 / 4] = (uint32_t)(uintptr_t)sim_fill;
     }
     surface_vtable[0x18 / 4] = (uint32_t)(uintptr_t)sim_mark;
+    surface_vtable[0x10 / 4] = (uint32_t)(uintptr_t)sim_ink;
     sim_icon_slots[0] = sim_icon_slots[1] = (uint32_t)(uintptr_t)sim_draw_icon;
     sim_icon_ctx = (uint32_t)(uintptr_t)icon_ctx;
     load_events();

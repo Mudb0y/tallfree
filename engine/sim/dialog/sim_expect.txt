@@ -1,0 +1,6 @@
+A 13
+IMPORT/EXPORT MENU | FORMAT SD-CARD
+Format SD Card | Are you sure? | CANCEL
+OK
+CANCEL
+CANCEL
