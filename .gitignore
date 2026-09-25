@@ -1,3 +1,12 @@
+# Private and never published: the working log and the unit's run logs, which
+# only mean anything beside it; Roland's firmware, which is Roland's; this
+# unit's flash and RAM dumps; and the decompiled Roland code Ghidra wrote.
+notes.md
+runs/
+firmware/
+dump/
+ghidra/out/
+
 # Ghidra project, 43 MB: ghidra/import.sh rebuilds it from firmware/
 ghidra/project/
 
