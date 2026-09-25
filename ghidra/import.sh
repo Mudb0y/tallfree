@@ -43,5 +43,10 @@ echo "import: the tail-call functions"
 gh -process sdram_code.bin -noanalysis -scriptPath "$here/scripts" \
    -postScript MkFns.java 80124f38 800ff060 80138180 801386d0 80141c98 80172188 \
    80101778 80111468 80114188 8012b9b8 80168ac0 80003342 8000327a
+# The early finder scripts created these as they ran; without them the
+# project falls nine functions short of the one the notes were written from.
+gh -process sdram_code.bin -noanalysis -scriptPath "$here/scripts" \
+   -postScript MkFns.java 80003380 80008ec8 80009490 80034d4c 80074500 800fea30 \
+   800ffcb8 801016e0 80111458
 grep -h -E 'orphan instructions|created from' "$log"
 echo "import: done, $proj"
