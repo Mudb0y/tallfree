@@ -315,9 +315,15 @@ static void fire(int i)
             s, icon_ctx, rect, 0, 0, ev[i].x1, 0);
         break;
     }
-    case E_PAGE:
-        ((int (*)(void *))sim_page_table[ev[i].x % 94])(NULL);
+    case E_PAGE: {
+        /* Building the page, then the page's steady traffic, which must
+           not count. */
+        int16_t build = 1, tick = 3;
+        ((int (*)(void *))sim_page_table[ev[i].x % 94])(&build);
+        ((int (*)(void *))sim_page_table[ev[i].x % 94])(&tick);
+        ((int (*)(void *))sim_page_table[ev[i].x % 94])(&tick);
         break;
+    }
     case E_ICON:
         icon_ctx[0] = (uint32_t)(uintptr_t)s;
         ((void (*)(void *, int, int, int, const char *, const char *))sim_icon_slots[i % 2])(

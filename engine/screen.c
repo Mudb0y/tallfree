@@ -341,19 +341,30 @@ __attribute__((used)) static void row_record(const uint32_t *f)
     push(&d);
 }
 
-/* The page factories, their stubs, and what they were. */
+/* The page handlers, their stubs, and what they were. Each is sent a
+   message whose first halfword is its type; FUN_80063B68, the UTILITY
+   page's, builds the page on type 1. The interface sends the page it is on
+   other types twenty times a second, so only type 1 is a page change; the
+   types each page is sent are logged as they change, to learn the rest. */
 uint32_t page_orig[PAGES];
+static int16_t page_last_type[PAGES];
 
-__attribute__((used)) static void page_record(uint32_t page)
+__attribute__((used)) static void page_record(uint32_t page, const int16_t *message)
 {
     struct draw d;
+    int16_t type;
 
-    if (!screen_hooked)
+    if (!screen_hooked || message == NULL || page >= PAGES)
         return;
+    type = *message;
+    if (type == page_last_type[page] && type != 1)
+        return;
+    page_last_type[page] = type;
     memset(&d, 0, sizeof d);
     d.kind = EV_PAGE;
     d.tick = device_ticks();
     d.mark = (int32_t)page;
+    d.x = type;
     push(&d);
 }
 
@@ -682,7 +693,9 @@ static int take(const struct draw *d)
         return 0;
     }
     if (d->kind == EV_PAGE) {
-        log_line("%lu page %ld\n", (unsigned long)d->tick, (long)d->mark);
+        log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
+        if (d->x != 1)
+            return 0;
         page_pending = 1;
         return 1;
     }

@@ -1,10 +1,11 @@
-/* One stub per page factory: it records its page number, then jumps on to
-   the factory saved in page_orig. */
+/* One stub per page handler: it records its page number and the message it
+   was sent, then jumps on to the handler saved in page_orig. */
 #define PAGE_STUB(n) \
     __asm__(".syntax unified\n.thumb\n.text\n" \
             ".globl page_stub_" #n "\n.thumb_func\n" \
             "page_stub_" #n ":\n" \
             "    push  {r0-r5, r12, lr}\n" \
+            "    mov   r1, r0\n" \
             "    movs  r0, #" #n "\n" \
             "    bl    page_record\n" \
             "    pop   {r0-r5, r12, lr}\n" \
