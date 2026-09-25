@@ -1,5 +1,6 @@
 /* One stub per page handler: it records its page number and the message it
-   was sent, then jumps on to the handler saved in page_orig. */
+   was sent, then jumps on to the handler saved in page_orig, unless the
+   speech settings menu keeps the message, when it answers 1, handled. */
 #define PAGE_STUB(n) \
     __asm__(".syntax unified\n.thumb\n.text\n" \
             ".globl page_stub_" #n "\n.thumb_func\n" \
@@ -8,10 +9,14 @@
             "    mov   r1, r0\n" \
             "    movs  r0, #" #n "\n" \
             "    bl    page_record\n" \
+            "    cmp   r0, #0\n" \
             "    pop   {r0-r5, r12, lr}\n" \
+            "    bne   1f\n" \
             "    ldr   r12, =page_orig + " #n " * 4\n" \
             "    ldr   r12, [r12]\n" \
             "    bx    r12\n" \
+            "1:  movs  r0, #1\n" \
+            "    bx    lr\n" \
             ".ltorg\n")
 
 PAGE_STUB(0);

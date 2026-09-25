@@ -293,6 +293,23 @@ def sdreturn():
                           'EXPORT to SD-CARD', 'EXPORT SAMPLE/PROJ./MULTIPAD | SAMPLE',
                           'CANCEL', 'IMPORT from SD-CARD'])
 
+# The speech settings menu: SHIFT + EXIT on the main screen, the VALUE knob
+# to a setting, a press, the knob to change it, a press back, EXIT to save
+# and close, which announces the main screen again. SHIFT and a pad go
+# through to the page; the menu's own keys do not.
+def settings():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 2a', '1050 KEY DOWN 22', '1150 KEY UP 22', '1200 KEY UP 2a',
+          '2500 KNOB 0 1',
+          '4000 KEY DOWN 31', '4100 KEY UP 31',
+          '5000 KNOB 0 1', '6000 KNOB 0 1',
+          '7000 KEY DOWN 31', '7100 KEY UP 31',
+          '8000 KEY DOWN 0c', '8100 KEY UP 0c',
+          '9000 KEY DOWN 22', '9100 KEY UP 22',
+          '11000 VALUE']
+    write('settings', d, ['A 13', 'Speech settings | Speed 50', 'Pitch 65', '65', '70',
+                          '75', 'Pitch', 'Settings saved | A 13'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -306,3 +323,4 @@ system()
 sdreturn()
 dialog()
 pages()
+settings()

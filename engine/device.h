@@ -31,6 +31,13 @@ int  screen_poll(char *phrases, size_t cap, int *count);
 int  screen_log_write(void);
 void screen_report(void);
 
+/* menu.c */
+enum { MENU_OPEN, MENU_CLOSE, MENU_PRESS, MENU_TURN };
+void settings_load(int volume, int abbreviations);
+int  menu_is_open(void);
+int  menu_action(int action, int step);
+void screen_mute(int mute);
+
 #define TICKS_TO_MS(t) ((uint32_t)(t) * 4u / 3u)
 #define MS_TO_TICKS(m) ((uint32_t)(m) * 3u / 4u)
 

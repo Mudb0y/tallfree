@@ -27,6 +27,9 @@ int      STDCALL et_addText(OldInst *h, const char *text);
 int      STDCALL et_synthesize(OldInst *h);
 int      STDCALL ev_setOutputBuffer(OldInst *h, int32_t n, void *buf);
 int      STDCALL ev_setParam(OldInst *h, int32_t param, int32_t value);
+int      STDCALL vc_copyVoice(OldInst *h, int32_t from, int32_t to);
+int      STDCALL vc_getVoiceParam(OldInst *h, int32_t voice, int32_t which);
+int      STDCALL vc_setVoiceParam(OldInst *h, int32_t voice, int32_t which, int32_t value);
 void     STDCALL eo_registerCallback(OldInst *h, void *cb, void *data);
 void     STDCALL eo_synchronizeSynth(OldInst *h);
 int      STDCALL eo_speaking(OldInst *h);
@@ -107,6 +110,23 @@ int speech_busy(void)
 int speech_param(int param, int value)
 {
     return inst != NULL ? ev_setParam(inst, param, value) : -1;
+}
+
+/* The voice being spoken in is voice 0; presets 1 to 8 are copied onto it.
+   Its parameters by eci.h's numbers: pitch 2, speed 6, volume 7. */
+int speech_voice(int preset)
+{
+    return inst != NULL ? vc_copyVoice(inst, preset, 0) : -1;
+}
+
+int speech_voice_get(int which)
+{
+    return inst != NULL ? vc_getVoiceParam(inst, 0, which) : -1;
+}
+
+int speech_voice_set(int which, int value)
+{
+    return inst != NULL ? vc_setVoiceParam(inst, 0, which, value) : -1;
 }
 
 void speech_close(void)

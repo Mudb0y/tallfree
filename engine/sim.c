@@ -19,6 +19,8 @@
      MS [sN] ICON X Y SEL NAME an icon menu's icon, selected if SEL is 1
      MS [sN] ROW Y SEL         a settings row whose text is at Y, selected if 1
      MS PAGE N                 page factory N called: a page being built
+     MS KEY DOWN|UP HEX        a key sent to the main screen's page, 84
+     MS KNOB N STEP            knob N turned by STEP, to page 84
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
@@ -49,9 +51,13 @@ void sim_draw_row(void *page, void *ctx, const int16_t *rect, int a, int b, int 
     (void)page; (void)ctx; (void)rect; (void)a; (void)b; (void)sel; (void)c;
 }
 
+static unsigned page_saw_keys;
+
 static int sim_page_factory(void *request)
 {
-    (void)request;
+    const int16_t *m = request;
+    if (m != NULL && *m >= 5 && *m <= 7)
+        page_saw_keys++;
     return 0;
 }
 static unsigned sim_drawn;
@@ -112,7 +118,7 @@ static char *slurp(const char *name)
     return t;
 }
 
-enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE };
+enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -147,6 +153,14 @@ static void load_events(void)
             ev[nev].kind = E_VALUE;
         } else if (strncmp(p, "CLEAR", 5) == 0) {
             ev[nev].kind = E_CLEAR;
+        } else if (strncmp(p, "KEY ", 4) == 0) {
+            ev[nev].kind = E_KEY;
+            ev[nev].x = strncmp(p + 4, "DOWN", 4) == 0 ? 5 : 6;
+            ev[nev].y = (int)strtol(p + (ev[nev].x == 5 ? 9 : 7), NULL, 16);
+        } else if (strncmp(p, "KNOB", 4) == 0) {
+            ev[nev].kind = E_KNOB;
+            ev[nev].x = (int)strtol(p + 4, &p, 10);
+            ev[nev].y = (int)strtol(p, &p, 10);
         } else if (strncmp(p, "ROW", 3) == 0) {
             ev[nev].kind = E_ROW;
             p += 3;
@@ -315,6 +329,16 @@ static void fire(int i)
             s, icon_ctx, rect, 0, 0, ev[i].x1, 0);
         break;
     }
+    case E_KEY: {
+        int16_t m[3] = { (int16_t)ev[i].x, (int16_t)ev[i].y, 0 };
+        ((int (*)(void *))sim_page_table[84])(m);
+        break;
+    }
+    case E_KNOB: {
+        int16_t m[3] = { 7, (int16_t)ev[i].x, (int16_t)ev[i].y };
+        ((int (*)(void *))sim_page_table[84])(m);
+        break;
+    }
     case E_PAGE: {
         /* Building the page, then the page's steady traffic, which must
            not count. */
@@ -413,7 +437,8 @@ void write_file(const char *path, const void *buf, size_t len)
 
 const char *read_text(const char *path)
 {
-    (void)path;
+    if (strstr(path, "TALLFREE.CFG") != NULL)
+        return slurp("sim_TALLFREE.CFG");
     return slurp("sim_say.txt");
 }
 
@@ -455,9 +480,9 @@ int target_launch(int (*body)(void))
             || sim_vtables[i][0xC0 / 4] != (uint32_t)(uintptr_t)sim_fill)
             restored = 0;
     printf("sim %lu ms: done, code %d; tables %s, %u draws reached DrawString, "
-           "%lu flushes, %lu samples played\n",
+           "%u keys reached the page, %lu flushes, %lu samples played\n",
            (unsigned long)now_ms, rc, restored ? "restored" : "NOT RESTORED",
-           sim_drawn, (unsigned long)flushes, (unsigned long)nplayed);
+           sim_drawn, page_saw_keys, (unsigned long)flushes, (unsigned long)nplayed);
     for (i = 0; i < nsaid; i++)
         printf("said %d: %s\n", i + 1, said[i]);
     check_expected();

@@ -45,15 +45,15 @@ $(BUILD)/qemu.elf: $(COMMON) qemu.c qemuboot.c qemu.ld engine.ld $(LIB)
 	$(CC) $(CFLAGS) -DSEMIHOST $(LDFLAGS) -Wl,-Map=$(BUILD)/qemu.map \
 	  -T qemu.ld $(filter %.c,$(COMMON)) qemu.c qemuboot.c $(LIB) -lm -lc -lgcc -o $@
 
-$(BUILD)/sim.elf: $(COMMON) service.c screen.c sim.c qemuboot.c device.h qemu.ld engine.ld $(LIB)
+$(BUILD)/sim.elf: $(COMMON) service.c screen.c menu.c pagestubs.h sim.c qemuboot.c device.h qemu.ld engine.ld $(LIB)
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -DSEMIHOST -DSIM $(LDFLAGS) -Wl,-Map=$(BUILD)/sim.map \
-	  -T qemu.ld $(filter %.c,$(COMMON)) service.c screen.c sim.c qemuboot.c $(LIB) -lm -lc -lgcc -o $@
+	  -T qemu.ld $(filter %.c,$(COMMON)) service.c screen.c menu.c sim.c qemuboot.c $(LIB) -lm -lc -lgcc -o $@
 
-$(BUILD)/device.elf: $(COMMON) device.c device.h service.c screen.c diag.c kernel.c kernel.h device.ld engine.ld $(LIB)
+$(BUILD)/device.elf: $(COMMON) device.c device.h service.c screen.c menu.c pagestubs.h diag.c kernel.c kernel.h device.ld engine.ld $(LIB)
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -fno-delete-null-pointer-checks $(LDFLAGS) -Wl,-Map=$(BUILD)/device.map \
-	  -T device.ld $(filter %.c,$(COMMON)) device.c service.c screen.c diag.c kernel.c $(LIB) -lm -lc -lgcc -o $@
+	  -T device.ld $(filter %.c,$(COMMON)) device.c service.c screen.c menu.c diag.c kernel.c $(LIB) -lm -lc -lgcc -o $@
 
 $(BUILD)/ENGINE.BIN: $(BUILD)/device.elf mkimage.py
 	python3 mkimage.py $< $@
@@ -68,7 +68,7 @@ check: $(BUILD)/qemu.elf
 
 SIM ?= sim/basic
 sim: $(BUILD)/sim.elf
-	cd $(SIM) && rm -f sim.raw sim_*.TXT && qemu-system-arm -M mps2-an500 -nographic -monitor none \
+	cd $(SIM) && rm -f sim.raw sim_*.TXT sim_*.CFG && qemu-system-arm -M mps2-an500 -nographic -monitor none \
 	  -serial none -semihosting-config enable=on,target=native -kernel $(CURDIR)/$(BUILD)/sim.elf
 
 sims: $(BUILD)/sim.elf

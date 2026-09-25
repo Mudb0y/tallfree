@@ -28,7 +28,7 @@
 #include "device.h"
 #include "say.h"
 
-static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, dictionary;
+static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, dictionary, volume = 50;
 
 #define SCRIPT 64
 static struct { const char *text; int wait_ms; } script[SCRIPT];
@@ -56,7 +56,7 @@ static void configure(char *text)
         if (*line && line[strlen(line) - 1] == '\r')
             line[strlen(line) - 1] = 0;
         if (strncmp(line, "#vol ", 5) == 0)
-            target_volume((uint32_t)strtoul(line + 5, NULL, 10));
+            volume = atoi(line + 5);
         else if (strncmp(line, "#mode ", 6) == 0)
             mode = strcmp(line + 6, "off") == 0 ? SCREEN_OFF
                  : strcmp(line + 6, "all") == 0 ? SCREEN_ALL : SCREEN_CHANGED;
@@ -236,8 +236,9 @@ int target_main(void)
         printf("audio hook not installed\n");
     if (speech_open(frame))
         return 1;
-    /* eciDictionary, 3: IBM's inverted setting, 1 turns the dictionary off. */
-    speech_param(3, dictionary ? 0 : 1);
+    /* The saved speech settings over SAY.TXT's: speed, pitch, voice, volume,
+       the abbreviation dictionary and screen reading. */
+    settings_load(volume, dictionary);
     batch_one("speech on");
 
     for (;;) {

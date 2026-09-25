@@ -168,7 +168,7 @@ int unload_requested(void)
 }
 
 /* One call as a hook saw it. */
-enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON, EV_ROW, EV_PAGE };
+enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON, EV_ROW, EV_PAGE, EV_MENU };
 #define DRAW_TEXT 64
 struct draw {
     uint32_t tick, surf, lr, site;
@@ -349,19 +349,88 @@ __attribute__((used)) static void row_record(const uint32_t *f)
 uint32_t page_orig[PAGES];
 static int16_t page_last_type[PAGES];
 
-__attribute__((used)) static void page_record(uint32_t page, const int16_t *message)
+/* The keys the speech settings menu uses: SHIFT, EXIT, pressing VALUE, and
+   VALUE, knob 0. Measured from the unit's key log. */
+#define KEY_SHIFT 0x2A
+#define KEY_EXIT  0x22
+#define KEY_VALUE_PRESS 0x31
+#define KNOB_VALUE 0
+
+static volatile int shift_down, keys_to_menu, exit_kept, press_kept;
+
+static void menu_event(int action, int step)
+{
+    struct draw d;
+
+    memset(&d, 0, sizeof d);
+    d.kind = EV_MENU;
+    d.tick = device_ticks();
+    d.x = (int16_t)action;
+    d.y = (int16_t)step;
+    push(&d);
+}
+
+/* In the interface's own task, before the page sees a message: answers 1 to
+   keep it from the page. SHIFT + EXIT opens the menu, and that EXIT is kept,
+   so it does not stop everything as SHIFT + EXIT otherwise does; while the
+   menu is open EXIT, pressing VALUE and turning VALUE are kept for it, and
+   everything else, SHIFT and the pads included, goes through. A key's
+   release is kept whenever its press was. */
+static int keep_for_menu(int type, int code, int step)
+{
+    if (type == 5) {
+        if (code == KEY_SHIFT) {
+            shift_down = 1;
+            return 0;
+        }
+        if (code == KEY_EXIT && (keys_to_menu || shift_down)) {
+            exit_kept = 1;
+            keys_to_menu = !keys_to_menu;
+            menu_event(keys_to_menu ? MENU_OPEN : MENU_CLOSE, 0);
+            return 1;
+        }
+        if (code == KEY_VALUE_PRESS && keys_to_menu) {
+            press_kept = 1;
+            menu_event(MENU_PRESS, 0);
+            return 1;
+        }
+        return 0;
+    }
+    if (type == 6) {
+        if (code == KEY_SHIFT)
+            shift_down = 0;
+        if (code == KEY_EXIT && exit_kept) {
+            exit_kept = 0;
+            return 1;
+        }
+        if (code == KEY_VALUE_PRESS && press_kept) {
+            press_kept = 0;
+            return 1;
+        }
+        return 0;
+    }
+    if (type == 7 && keys_to_menu && code == KNOB_VALUE) {
+        menu_event(MENU_TURN, step);
+        return 1;
+    }
+    return 0;
+}
+
+__attribute__((used)) static int page_record(uint32_t page, const int16_t *message)
 {
     struct draw d;
     int16_t type;
 
     if (!screen_hooked || message == NULL || page >= PAGES)
-        return;
+        return 0;
     type = *message;
+    if (type >= 5 && type <= 7 && keep_for_menu(type, message[1], message[2]))
+        return 1;
     /* Keys, key releases and knob turns (types 5, 6 and 7, the key or knob
        in the second halfword, a knob's step in the third) all go to the log,
        to learn the codes. */
     if (type == page_last_type[page] && type != 1 && (type < 5 || type > 7))
-        return;
+        return 0;
     page_last_type[page] = type;
     memset(&d, 0, sizeof d);
     d.kind = EV_PAGE;
@@ -373,6 +442,7 @@ __attribute__((used)) static void page_record(uint32_t page, const int16_t *mess
         d.x1 = message[2];
     }
     push(&d);
+    return 0;
 }
 
 #include "pagestubs.h"
@@ -420,7 +490,14 @@ static int burst[64], nburst;
 static uint32_t settle_ticks, batches, evicted, change_seq;
 static uint32_t last_change, first_pending, last_popup_change;
 static const struct item *last_label;
-static int pending, wiped, page_pending;
+static int pending, wiped, page_pending, muted;
+static struct { int16_t action, step; } menu_q[16];
+static int menu_n;
+
+void screen_mute(int mute)
+{
+    muted = mute;
+}
 static struct {
     uint32_t surf, tick;
     int16_t  y;
@@ -697,6 +774,14 @@ static int take(const struct draw *d)
     }
     if (d->kind == EV_FILL) {
         erase(d->surf, d->x, d->y, d->x1, d->y1, 0, d->tick);
+        return 0;
+    }
+    if (d->kind == EV_MENU) {
+        if (menu_n < 16) {
+            menu_q[menu_n].action = d->x;
+            menu_q[menu_n].step = d->y;
+            menu_n++;
+        }
         return 0;
     }
     if (d->kind == EV_PAGE && d->x >= 5 && d->x <= 7) {
@@ -1420,6 +1505,45 @@ static void same_screen(struct item **order)
    of what is showing. A pad hit wipes and redraws the status line, which
    changes but is not new; a screen drawing the rest of itself a moment
    later, with no wipe, is not a new screen. */
+/* For the settings menu's phrases. */
+int screen_say_text(const char *text)
+{
+    return say3(text, NULL, NULL);
+}
+
+/* What is showing, when nothing has just been drawn to say so: after the
+   settings menu closes over a screen that did not change. The focus drawn
+   most recently, with anything lit within a second of it; the newest title
+   if it is no older than that; else the main screen's bank and pad. */
+static void reannounce(void)
+{
+    const struct item *title = NULL, *pad = NULL;
+    uint32_t newest = 0;
+    int i, any = 0;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *it = &items[i];
+        if (!live(it))
+            continue;
+        if (is_lit(it) && (!any || (int32_t)(it->last_drawn - newest) > 0)) {
+            newest = it->last_drawn;
+            any = 1;
+        }
+        if (is_title(it) && (title == NULL || (int32_t)(it->last_drawn - title->last_drawn) > 0))
+            title = it;
+        if (is_pad_field(it))
+            pad = it;
+    }
+    if (title != NULL && (!any || (int32_t)(title->last_drawn + 750u - newest) >= 0))
+        say(title);
+    for (i = 0; any && i < ITEMS; i++)
+        if (live(&items[i]) && is_lit(&items[i])
+            && (int32_t)(items[i].last_drawn + 750u - newest) >= 0)
+            say_focus(&items[i]);
+    if (!any && pad != NULL)
+        say_pad(pad);
+}
+
 static int screen_changed(void)
 {
     uint32_t surf[16];
@@ -1483,6 +1607,39 @@ int screen_poll(char *phrases, size_t cap, int *count)
         }
         __asm__ volatile("dmb" ::: "memory");
         draw_rd++;
+    }
+    /* The settings menu answers at once, and nothing else speaks while it
+       is open, or while screen reading is off. */
+    if (menu_n > 0) {
+        int closed = 0;
+        b_out = phrases;
+        b_cap = cap;
+        b_now = now;
+        for (i = 0; i < menu_n; i++) {
+            b_used = 0;
+            b_count = 0;
+            closed = menu_action(menu_q[i].action, menu_q[i].step);
+        }
+        menu_n = 0;
+        if (closed && !muted)
+            reannounce();
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = items[i].fresh = 0;
+        pending = 0;
+        b_prev = now;
+        *count = b_count;
+#ifdef SIM
+        sim_batch(phrases, b_count);
+#endif
+        log_line("%lu say menu %d\n", (unsigned long)now, b_count);
+        return b_count > 0;
+    }
+    if (menu_is_open() || muted) {
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = items[i].fresh = 0;
+        pending = 0;
+        page_pending = 0;
+        return 0;
     }
     if (pending && (now - last_change >= settle_ticks || now - first_pending >= 750u))
         due = 1;
