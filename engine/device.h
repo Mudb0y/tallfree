@@ -10,6 +10,13 @@ uint32_t device_ticks(void);                 /* audio interrupts, 750 a second *
 void target_sleep(int ms);
 void target_wake(void);
 void target_checkpoint(void);
+/* Whether the log, the draw log and a fault's record go to the card: only
+   when SAY.TXT asks, "#log on", since a stranger's card may be one whose
+   FAT the unit's file system hangs on. */
+extern int card_log;
+/* Where image 31's boot loader found the engine, and why it did not use the
+   card's; see image/boot.c. */
+extern unsigned int engine_loaded_from, engine_card_refusal;
 void target_volume(uint32_t percent);
 void target_probe_slots(void);
 int  engine_task_id(void);

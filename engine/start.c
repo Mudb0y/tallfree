@@ -53,8 +53,12 @@ int engine_run(void)
     return rc;
 }
 
+unsigned int engine_loaded_from, engine_card_refusal;
+
+/* The boot loader's two arguments, from image 31 on: where it found this
+   image, and why it did not use the card's. */
 __attribute__((section(".entry"), used))
-int engine_start(void)
+int engine_start(unsigned int from, unsigned int refusal)
 {
     /* Every entry follows a fresh load, and the memory past the image holds
        whatever was there before, so this runs every time. A flag saying it had
@@ -66,5 +70,7 @@ int engine_start(void)
         for (f = __init_array_start; f < __init_array_end; f++)
             (*f)();
     }
+    engine_loaded_from = from;
+    engine_card_refusal = refusal;
     return target_launch(engine_run);
 }

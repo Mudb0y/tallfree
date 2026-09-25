@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-int  engine_start(void);
+int  engine_start(unsigned int from, unsigned int refusal);
 int  sh_open(const char *path, int mode);
 int  sh_write(int fd, const void *buf, int len);
 int  sh_close(int fd);
@@ -42,7 +42,7 @@ __attribute__((used)) static void qemu_main(void)
 
     while (p < end)
         *p++ = 0xA5A5A5A5u;
-    sh_exit(engine_start());
+    sh_exit(engine_start(0, 0));
 }
 
 static void fault(void)

@@ -441,8 +441,10 @@ void target_done(int rc)
     screen_remove();
     target_sleep(50);
     printf("engine finished, code %d\n", rc);
-    screen_log_write();
-    target_checkpoint();
+    if (card_log) {
+        screen_log_write();
+        target_checkpoint();
+    }
 }
 
 void target_enter(void)
@@ -495,6 +497,16 @@ int target_launch(int (*body)(void))
 
     g_body = body;
     g_kernel_crc = kernel_code_crc();
+    if ((engine_loaded_from & 0xFFFF0000u) != 0x4C4F0000u)
+        printf("loaded by a boot loader that does not say from where\n");
+    else if ((engine_loaded_from & 0xFFFFu) == 1)
+        printf("loaded from the card\n");
+    else
+        printf("loaded from the eMMC; the card's engine: %s\n",
+               engine_card_refusal == 1 ? "none" : engine_card_refusal == 2 ? "not an engine image"
+               : engine_card_refusal == 3 ? "truncated"
+               : engine_card_refusal == 4 ? "entry outside the image"
+               : engine_card_refusal == 5 ? "CRC does not match" : "refused");
     g_sleep_sem = kernel_sem_create("EVVsleep", 0, 1);
     if (g_sleep_sem <= 0)
         return 0x300 | (g_sleep_sem & 0xFF);

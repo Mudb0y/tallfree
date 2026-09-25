@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include "device.h"
 
 typedef int (*open_fn) (const char *path, int mode);
 typedef int (*write_fn)(int h, const void *buf, int len);
@@ -93,7 +94,8 @@ static void fault_recover(void)
         text[n++] = '\r';
         text[n++] = '\n';
     }
-    write_text("A:/EVV/FAULT.TXT", text, n);
+    if (card_log)
+        write_text("A:/EVV/FAULT.TXT", text, n);
     engine_exit(99);
 }
 

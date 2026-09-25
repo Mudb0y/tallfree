@@ -10,6 +10,8 @@
      #frame N    samples per synthesised buffer; 512
      #dict on    the engine's abbreviation dictionary, off by default: with
                  it, SD-CARD is "South Dakota card"
+     #log on     the log, the draw log and any fault's record to the card,
+                 off by default
      #wait N     the next line is said N ms after the one before it started,
                  cutting that one off; without it, a line waits for the one
                  before to finish
@@ -29,6 +31,7 @@
 #include "say.h"
 
 static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, dictionary, volume = 50;
+int card_log;
 
 #define SCRIPT 64
 static struct { const char *text; int wait_ms; } script[SCRIPT];
@@ -66,6 +69,8 @@ static void configure(char *text)
             frame = atoi(line + 7);
         else if (strcmp(line, "#dict on") == 0)
             dictionary = 1;
+        else if (strcmp(line, "#log on") == 0)
+            card_log = 1;
         else if (strncmp(line, "#wait ", 6) == 0)
             wait_ms = atoi(line + 6);
         else if (strncmp(line, "#slots", 6) == 0)
@@ -246,7 +251,8 @@ static void phrase_done(void)
 static void start_screen(void)
 {
     screen_started = 1;
-    target_checkpoint();
+    if (card_log)
+        target_checkpoint();
     if (mode == SCREEN_OFF)
         return;
     if (screen_install(mode, settle_ms) == 0)
@@ -304,7 +310,7 @@ int target_main(void)
         }
         /* The draw log goes to the card every ten seconds while nothing is
            being said, so a hang still leaves most of it behind. */
-        if (screen_live && idle() && device_ticks() - last_flush >= 7500u) {
+        if (card_log && screen_live && idle() && device_ticks() - last_flush >= 7500u) {
             last_flush = device_ticks();
             if (screen_log_write())
                 target_checkpoint();

@@ -19,22 +19,31 @@
 
    This runs from flash, which is not writable, so it keeps no state of its
    own; the clip's playing position lives at the start of the engine's
-   region, which is free when there is no engine. */
+   region, which is free when there is no engine.
 
-/* Image 30's region. Its engines carry "EVV2"; an image 29 engine, "EVV1",
-   linked 1 MB higher, is refused, not run at the wrong address. */
+   It writes nothing to the card: a write from inside the interface's first
+   draw hung the unit on a card whose FAT was inconsistent. Where the engine
+   came from, and why the card's copy was refused if it was, go to the engine
+   as its arguments instead, for its own log. */
+
+/* The region images 30 and 31 give the engine. Its engines carry "EVV2"; an
+   image 29 engine, "EVV1", linked 1 MB higher, is refused, not run at the
+   wrong address. */
 #define ENGINE_BASE 0x83AC0000u
 #define ENGINE_MAX  0x00530000u
 #define MAGIC       0x32565645u              /* "EVV2" */
 
 typedef int (*open_fn) (const char *path, int mode);
 typedef int (*read_fn) (int h, void *buf, int len);
-typedef int (*write_fn)(int h, const void *buf, int len);
 typedef int (*close_fn)(int h);
 #define F_OPEN  ((open_fn) 0x800DEC61u)
 #define F_READ  ((read_fn) 0x800DEC49u)
-#define F_WRITE ((write_fn)0x800DD9B9u)
 #define F_CLOSE ((close_fn)0x800DEBD9u)
+
+/* The engine's first argument: this mark with 1 for the card or 2 for the
+   eMMC, so an engine started by an older loader, which passes nothing, can
+   tell. The second is why the card's copy was not used, as load answers. */
+#define FROM_MARK   0x4C4F0000u
 
 #define DCCIMVAC (*(volatile unsigned int *)0xE000EF70u)
 #define DCCMVAC  (*(volatile unsigned int *)0xE000EF68u)
@@ -83,30 +92,6 @@ __asm__(
 );
 extern const short clip[], clip_end[];
 
-static void report(const char *what, unsigned int a, unsigned int b)
-{
-    static const char hex[] = "0123456789ABCDEF";
-    char line[96];
-    int n = 0, i;
-    int h;
-
-    while (*what && n < 60)
-        line[n++] = *what++;
-    line[n++] = ' ';
-    for (i = 28; i >= 0; i -= 4)
-        line[n++] = hex[(a >> i) & 15];
-    line[n++] = ' ';
-    for (i = 28; i >= 0; i -= 4)
-        line[n++] = hex[(b >> i) & 15];
-    line[n++] = '\r';
-    line[n++] = '\n';
-    h = F_OPEN("A:/EVV/LOADER.TXT", 0x601);
-    if (h >= 0) {
-        F_WRITE(h, line, n);
-        F_CLOSE(h);
-    }
-}
-
 static void dcache_range(volatile unsigned int *op, unsigned int start, unsigned int len)
 {
     unsigned int a;
@@ -138,8 +123,10 @@ static int exists(const char *path)
     return 1;
 }
 
-/* Reads an engine image into its place and answers whether it can run. */
-static int load(const char *path)
+/* Reads an engine image into its place and answers 0 if it can run, or why
+   not: 1 no such file, 2 not an engine image, 3 truncated, 4 its entry
+   outside it, 5 a CRC that does not match. */
+static unsigned int load(const char *path)
 {
     struct header *hd = (struct header *)ENGINE_BASE;
     unsigned char *dst = (unsigned char *)ENGINE_BASE;
@@ -148,7 +135,7 @@ static int load(const char *path)
 
     h = F_OPEN(path, 0);
     if (h < 0)
-        return 0;
+        return 1;
     dcache_range(&DCCIMVAC, ENGINE_BASE, ENGINE_MAX);
     for (;;) {
         unsigned int want = ENGINE_MAX - total;
@@ -163,26 +150,18 @@ static int load(const char *path)
     }
     F_CLOSE(h);
 
-    if (total < sizeof *hd || hd->magic != MAGIC) {
-        report("not an engine image, bytes and magic", total, total >= 4 ? hd->magic : 0);
-        return 0;
-    }
-    if (hd->length != total) {
-        report("engine image truncated, read and expected", total, hd->length);
-        return 0;
-    }
-    if (hd->entry < ENGINE_BASE || hd->entry >= ENGINE_BASE + total) {
-        report("engine entry outside the image", hd->entry, total);
-        return 0;
-    }
-    if (crc32(dst + sizeof *hd, total - sizeof *hd) != hd->crc) {
-        report("engine image CRC does not match, stored", hd->crc, total);
-        return 0;
-    }
+    if (total < sizeof *hd || hd->magic != MAGIC)
+        return 2;
+    if (hd->length != total)
+        return 3;
+    if (hd->entry < ENGINE_BASE || hd->entry >= ENGINE_BASE + total)
+        return 4;
+    if (crc32(dst + sizeof *hd, total - sizeof *hd) != hd->crc)
+        return 5;
     dcache_range(&DCCMVAC, ENGINE_BASE, total);
     ICIALLU = 0;
     __asm__ volatile("dsb\n isb" ::: "memory");
-    return 1;
+    return 0;
 }
 
 /* The clip's player. Its state sits where the engine would have been. */
@@ -243,22 +222,20 @@ static void say_no_engine(void)
 
 void boot_main(void)
 {
-    const char *from;
-    int rc;
+    unsigned int card, from;
 
     STATUS_WORD = STATUS_DRAW;
     __asm__ volatile("dsb" ::: "memory");
-    if (exists("A:/EVV/NOENGINE")) {
-        report("A:/EVV/NOENGINE present, no engine loaded", 0, 0);
+    if (exists("A:/EVV/NOENGINE"))
         return;
-    }
-    if (load(from = "A:/EVV/ENGINE.BIN") == 0 && load(from = "B:/TALLFREE.BIN") == 0) {
-        report("no engine on the card or the eMMC", 0, 0);
+    if ((card = load("A:/EVV/ENGINE.BIN")) == 0)
+        from = 1;
+    else if (load("B:/TALLFREE.BIN") == 0)
+        from = 2;
+    else {
         say_no_engine();
         return;
     }
-    rc = ((int (*)(void))((struct header *)ENGINE_BASE)->entry)();
-    report(from[0] == 'A' ? "engine from the card, bytes and result"
-                          : "engine from the eMMC, bytes and result",
-           ((struct header *)ENGINE_BASE)->length, (unsigned int)rc);
+    ((int (*)(unsigned int, unsigned int))((struct header *)ENGINE_BASE)->entry)(FROM_MARK | from,
+                                                                              card);
 }
