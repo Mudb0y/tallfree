@@ -5,7 +5,7 @@
 set -e
 OPENEVV=${OPENEVV:-/home/stas/Projects/openevv-sp404}
 here=$(cd "$(dirname "$0")" && pwd)
-arm="nix shell nixpkgs#gcc-arm-embedded nixpkgs#gnumake nixpkgs#python3 nixpkgs#qemu --command"
+arm="nix develop $here/.. --command"
 
 echo "== clean"
 rm -rf "$OPENEVV/build" "$OPENEVV/build-m7c" "$here/build"

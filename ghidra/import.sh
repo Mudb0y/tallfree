@@ -17,10 +17,11 @@ fi
 mkdir -p "$proj"
 log=$proj/import.log
 : > "$log"
-py='(builtins.getFlake "nixpkgs").legacyPackages.${builtins.currentSystem}.python3.withPackages (ps: [ ps.capstone ])'
+# The Ghidra of the locked nixpkgs, as in gdec.
+rev=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["nodes"]["nixpkgs"]["locked"]["rev"])' "$here/../flake.lock")
 
 gh() {
-    if ! nix shell nixpkgs#ghidra --command ghidra-analyzeHeadless "$proj" sp404 "$@" >> "$log" 2>&1; then
+    if ! nix shell "github:NixOS/nixpkgs/$rev#ghidra" --command ghidra-analyzeHeadless "$proj" sp404 "$@" >> "$log" 2>&1; then
         echo "Ghidra failed; the end of $log:" >&2
         tail -n 20 "$log" >&2
         exit 1
@@ -36,7 +37,7 @@ echo "import: ITCM code at 0x400, with analysis"
 gh -import "$here/regions/itcm_code.bin" -processor ARM:LE:32:Cortex \
    -loader BinaryLoader -loader-baseAddr 0x400
 echo "import: functions at every call target and code pointer"
-nix shell --impure --expr "$py" --command python3 "$here/codeptrs.py" >> "$log" 2>&1
+nix develop "$here/.." --command python3 "$here/codeptrs.py" >> "$log" 2>&1
 gh -process sdram_code.bin -noanalysis -scriptPath "$here/scripts" \
    -postScript MkMissing.java "$here/out/ptr_targets.txt"
 echo "import: the tail-call functions"

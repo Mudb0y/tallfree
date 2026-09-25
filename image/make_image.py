@@ -31,11 +31,8 @@ md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB | capstone.CS_MODE
 def insn(a):
     return next(md.disasm(bytes(d[f(a):f(a) + 4]), a))
 
-# The boot loader, built here so the image comes from one command. Nix's
-# python3 does not see a capstone package merely installed beside it, so:
-#   nix shell nixpkgs#gcc-arm-embedded --command nix shell --impure --expr \
-#     '(builtins.getFlake "nixpkgs").legacyPackages.${builtins.currentSystem}.python3.withPackages (ps: [ ps.capstone ])' \
-#     --command python3 image/make_image.py
+# The boot loader, built here so the image comes from one command. Run
+# inside nix develop.
 def build_boot():
     flags = ['-mcpu=cortex-m7', '-mthumb', '-mfloat-abi=hard', '-mfpu=fpv5-d16', '-Os',
              '-ffreestanding', '-fno-builtin', '-fno-delete-null-pointer-checks',
