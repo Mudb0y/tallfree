@@ -184,7 +184,8 @@ def recscale():
     write('recscale', d, ['A 13', 'Select PAD for RECORDING', 'A 14',
                           'PAD LINK GROUPS | GROUP 1'])
 
-# The UTILITY menu, its title on a layer never wiped, then the SYSTEM page:
+# The UTILITY menu, its title on a layer never wiped, its icons on another
+# surface from its labels, the main screen still under it; then the SYSTEM page:
 # rows of a setting's name and its value, a tab strip, a page count. The
 # menu's title must not be read again on the SYSTEM page; each value is read
 # with the name on its own row; a value turned is read alone.
@@ -196,11 +197,12 @@ def system():
     def utility(t, sel):
         out = [f'{t} s2 5 2 ^_UTILITY MENU']
         for k, (x, y, name) in enumerate(items):
-            out.append(f'{t} s2 ICON {icons[k][0]} {icons[k][1]} {int(k == sel)} '
+            out.append(f'{t} s3 ICON {icons[k][0]} {icons[k][1]} {int(k == sel)} '
                        f'G:/xpage/work1/pages/icon{k}_pos_30')
             out.append(f'{t} s2 {x} {y} ={0x8013E92B + 0x4E * k:08X}:{name}')
         return out
-    d += ['1000 s0 CLEAR'] + utility(1000, 0)
+    # The main screen stays on its layer under the menu, as on the unit.
+    d += utility(1000, 0)
     # the knob: the selection moves to PAD SET, then EFX SET, redrawing all
     d += utility(1600, 1) + utility(2200, 2)
     rows = [('Edit Knob Mode', 93, 'Direct'), ('EFX Knob Mode', 93, 'Direct'),
@@ -223,6 +225,29 @@ def system():
                         'Scrn Saver Time 1 min',
                         'Load Project Prev', 'Last'])
 
+# The SD card menu drawn over the main screen without wiping all of it, the
+# big BPM left just above the list; into the EXPORT submenu and back out,
+# the list's items all changing back at once with no title drawn.
+def sdreturn():
+    top = ['IMPORT from SD-CARD', 'EXPORT to SD-CARD', 'FORMAT SD-CARD', 'CANCEL']
+    sub = ['SAMPLE', 'PROJECT', 'MULTIPAD', 'CANCEL']
+    SEL, UNSEL = '=8016F55B:', '=8016F505:'
+    def lst(t, items, sel):
+        out = [f'{t} s0 FILL 14 20 113 52']
+        for k, text in enumerate(items):
+            out.append(f'{t} s0 17 {22 + 8 * k} {"!" + SEL if k == sel else UNSEL}{text}')
+        return out
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 s0 FILL 0 0 128 8', '1000 s1 5 2 ^_IMPORT/EXPORT MENU'] + lst(1000, top, 0)
+    d += lst(2000, top, 1)
+    d += ['3000 s2 3 2 _=80151801:EXPORT SAMPLE/PROJ./MULTIPAD'] + lst(3000, sub, 0)
+    d += lst(4000, sub, 3)
+    d += lst(5000, top, 0)
+    d += ['7000 VALUE']
+    write('sdreturn', d, ['A 13', 'IMPORT/EXPORT MENU | IMPORT from SD-CARD',
+                          'EXPORT to SD-CARD', 'EXPORT SAMPLE/PROJ./MULTIPAD | SAMPLE',
+                          'CANCEL', 'IMPORT from SD-CARD'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -233,3 +258,4 @@ mainpads()
 submenu()
 recscale()
 system()
+sdreturn()

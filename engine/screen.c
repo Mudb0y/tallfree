@@ -609,11 +609,13 @@ static int take(const struct draw *d)
     was_lit = is_lit(it);
     /* An icon menu draws each label straight after its icon, below it and
        in its column; each draw says afresh whether the label is under the
-       selected icon. */
+       selected icon. The icons go on the display's global surface and the
+       labels on the page's own, so only the order and the position link
+       them. */
     it->icon_sel = 0;
     if (last_icon.valid && d->tick - last_icon.tick <= 2) {
         int w = 4 * (int)(d->len ? d->len : strlen(d->text));
-        if (d->surf == last_icon.surf && d->y > last_icon.y && d->y <= last_icon.y + 32
+        if (d->y > last_icon.y && d->y <= last_icon.y + 32
             && d->x < last_icon.x + 28 && d->x + w > last_icon.x - 8)
             it->icon_sel = (uint8_t)last_icon.sel;
         last_icon.valid = 0;
@@ -755,7 +757,7 @@ static const struct item *full_name(const struct item *it)
 static char *b_out;
 static size_t b_cap, b_used;
 static int b_count;
-static uint32_t b_now, b_prev;
+static uint32_t b_now, b_prev, screen_epoch;
 
 static int in_batch(const char *text)
 {
@@ -876,7 +878,9 @@ static int plain(const struct item *it)
     return !is_title(it) && !is_status(it) && !is_lit(it) && it->role != ROLE_TABS;
 }
 
-/* A value's label is plain text drawn by other code: on its own line to
+/* A value's label is plain text drawn by other code, and drawn since the
+   current screen began, so that what a screen left underneath, as the main
+   screen's big BPM under the SD card menu, labels nothing: on its own line to
    its left and on another background, as the SYSTEM page sets "Edit Knob
    Mode" beside "Direct", or else just above it in its column, as the
    parameter pages set CUTOFF over 827. Text drawn by the same code is a
@@ -890,7 +894,8 @@ static const struct item *row_label(const struct item *v)
     for (i = 0; i < ITEMS; i++) {
         const struct item *o = &items[i];
         if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->site == v->site
-            || o->mark == v->mark || o->x >= v->x || o->y - v->y > 2 || v->y - o->y > 2)
+            || o->mark == v->mark || o->x >= v->x || o->y - v->y > 2 || v->y - o->y > 2
+            || (int32_t)(o->last_drawn - screen_epoch) < 0)
             continue;
         if (best == NULL || o->x > best->x)
             best = o;
@@ -908,7 +913,8 @@ static const struct item *label_of(const struct item *v)
     for (i = 0; i < ITEMS; i++) {
         const struct item *o = &items[i];
         if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->site == v->site
-            || o->y >= v->y - 2 || v->y - o->y > 20 || !horizontally_near(v, o))
+            || o->y >= v->y - 2 || v->y - o->y > 20 || !horizontally_near(v, o)
+            || (int32_t)(o->last_drawn - screen_epoch) < 0)
             continue;
         if (best == NULL || o->y > best->y)
             best = o;
@@ -1026,9 +1032,12 @@ static void new_screen(struct item **order)
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
         say(order[i]);
+    /* Only a bank and pad just drawn: the main screen's stay on its layer
+       under the screens opened over it. */
     if (focus == 0)
         for (i = 0; i < ITEMS; i++)
-            if (live(&items[i]) && is_pad_field(&items[i]))
+            if (live(&items[i]) && is_pad_field(&items[i])
+                && (int32_t)(items[i].last_drawn - b_prev) > 0)
                 focus += say_pad(&items[i]) == 1;
     popups = in_order(order, ITEMS, want_new_popup);
     for (i = 0; i < popups; i++)
@@ -1137,7 +1146,8 @@ static void same_screen(struct item **order)
 }
 
 /* A new screen: its title changed; or a surface that was not showing
-   anything is now showing three strings or more; or after a wipe of half
+   anything is now showing three strings or more; or three strings already
+   showing change their text at once; or after a wipe of half
    the screen or more, at least three strings are new and they make up half
    of what is showing. A pad hit wipes and redraws the status line, which
    changes but is not new; a screen drawing the rest of itself a moment
@@ -1145,7 +1155,7 @@ static void same_screen(struct item **order)
 static int screen_changed(void)
 {
     uint32_t surf[16];
-    int nsurf = 0, i, k, alive = 0, fresh = 0;
+    int nsurf = 0, i, k, alive = 0, fresh = 0, replaced = 0;
 
     for (i = 0; i < ITEMS; i++) {
         const struct item *it = &items[i];
@@ -1156,6 +1166,8 @@ static int screen_changed(void)
         alive++;
         if (it->fresh || (it->changed == 1 && !is_status(it)))
             fresh++;
+        if (!it->fresh && it->changed == 1 && !is_status(it) && it->rapid == 0)
+            replaced++;
         for (k = 0; k < nsurf && surf[k] != it->surf; k++)
             ;
         if (k == nsurf && nsurf < 16)
@@ -1171,6 +1183,10 @@ static int screen_changed(void)
         if (n >= 3)
             return 1;
     }
+    /* A list whose items all change at once, as the SD card menu's do on
+       coming back from its submenu. */
+    if (replaced >= 3)
+        return 1;
     return wiped && fresh >= 3 && fresh * 2 >= alive;
 }
 
@@ -1185,9 +1201,12 @@ int screen_poll(char *phrases, size_t cap, int *count)
     int i, due = 0, kind = 0;
 
     while (draw_rd != draw_wr) {
-        if (take(&draws[draw_rd % DRAWS])) {
+        const struct draw *dr = &draws[draw_rd % DRAWS];
+        if (take(dr)) {
+            /* When the change was drawn, not when it was seen: the screen
+               it starts begins there, and its own labels are no older. */
             if (!pending)
-                first_pending = now;
+                first_pending = dr->tick;
             pending = 1;
             last_change = now;
         }
@@ -1230,6 +1249,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < ITEMS; i++)
             items[i].changed = 0;
     } else if ((kind = screen_changed()) != 0) {
+        screen_epoch = first_pending - 2u;
         new_screen(order);
         for (i = 0; i < ITEMS; i++)
             items[i].changed = 0;
