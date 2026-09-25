@@ -1,0 +1,4 @@
+#!/bin/sh
+# decompile the functions containing the given hex addresses; output on stdout
+here=$(cd "$(dirname "$0")" && pwd)
+nix shell nixpkgs#ghidra --command ghidra-analyzeHeadless "$here/project" sp404 -process sdram_code.bin -noanalysis -readOnly -scriptPath "$here/scripts" -postScript DecompAt.java "$@" 2>&1 | awk '/@@@/{p=1} /INFO  (REPORT|ANALYZING|Headless)/{p=0} p' | sed 's/^INFO  DecompAt.java> //; s/ (GhidraScript)  $//'

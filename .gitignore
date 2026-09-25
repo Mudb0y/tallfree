@@ -1,23 +1,16 @@
-# Ghidra project: 42 MB and fully regenerable from firmware/ via the
-# unpack + import steps in notes.md
-work/ghidra_proj/
+# Ghidra project, 43 MB: ghidra/import.sh rebuilds it from firmware/
+ghidra/project/
+
+# The regions Ghidra imports and the decompressed data: ghidra/unpack.py
+ghidra/regions/
+
+# Decompiler dumps: regenerable with ghidra/scripts/DecompCallers.java
+ghidra/decomp/
 
 # The image and its boot loader, built by image/make_image.py
 image/build/
 
-# Build artefacts
-work/**/*.o
-work/**/*.elf
 __pycache__/
-
-# Decompressed firmware segments: regenerable by work/unpack.py
-work/sdram_code.bin
-work/itcm_code.bin
-work/seg_*.bin
-work/vectors.bin
-
-# Decompiler dumps: regenerable with work/gscripts/DecompCallers.java
-work/decomp/
 
 # Engine builds and QEMU run leftovers
 engine/build/
