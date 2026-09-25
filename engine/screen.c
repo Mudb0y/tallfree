@@ -523,7 +523,7 @@ void screen_remove(void)
 #define ITEMS 512
 #define ITEM_TEXT DRAW_TEXT
 struct item {
-    uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq;
+    uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq, drawn_seq;
     int32_t  mark, ink;
     int16_t  x, y;
     uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed;
@@ -532,7 +532,7 @@ struct item {
 };
 static struct item items[ITEMS];
 static int burst[64], nburst;
-static uint32_t settle_ticks, batches, evicted, change_seq;
+static uint32_t settle_ticks, batches, evicted, change_seq, draw_seq, page_seq;
 static uint32_t last_change, first_pending, last_popup_change;
 static const struct item *last_label;
 static int pending, wiped, page_pending, muted;
@@ -855,6 +855,7 @@ static int take(const struct draw *d)
         if (d->x != 1)
             return 0;
         page_pending = 1;
+        page_seq = draw_seq;
         return 1;
     }
     if (d->kind == EV_ROW) {
@@ -930,6 +931,7 @@ static int take(const struct draw *d)
     it->erased = 0;
     it->draws++;
     it->last_drawn = d->tick;
+    it->drawn_seq = ++draw_seq;
     it->lr = d->lr;
     it->site = d->site;
     it->task = d->task;
@@ -1774,6 +1776,20 @@ int screen_poll(char *phrases, size_t cap, int *count)
             items[i].changed = 0;
     } else if ((kind = screen_changed()) != 0) {
         screen_epoch = first_pending - 2u;
+        /* A page just built has drawn all it shows; what it has not drawn
+           belongs to the page before, left on a layer never wiped, and
+           drawn a moment ago if that page redrew itself continually, as
+           the BPM screen does. */
+        if (page_pending)
+            for (i = 0; i < ITEMS; i++) {
+                struct item *it = &items[i];
+                if (!it->used || (int32_t)(it->drawn_seq - page_seq) > 0)
+                    continue;
+                if (text_len(it) > 0 && it->last_drawn - it->first_drawn >= 750u)
+                    log_line("%lu gone %08lx %d %d |%s|\n", (unsigned long)now,
+                             (unsigned long)it->surf, it->x, it->y, it->text);
+                it->used = 0;
+            }
         page_pending = 0;
         new_screen(order);
         for (i = 0; i < ITEMS; i++)

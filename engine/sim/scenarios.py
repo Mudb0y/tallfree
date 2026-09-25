@@ -316,7 +316,8 @@ def settings():
 # hint. Every change clears and redraws it all. VALUE turned; CTRL 1 to the
 # bank; back; VALUE again, to the bank's tempo; CTRL 1 to the bank, whose
 # tempo is now the same; the button that gives the knobs back to the
-# effects, held and let go.
+# effects, held and let go; EXIT to the main screen, on a surface of its
+# own, while the BPM screen redraws itself every 40 ms, as on the unit.
 def bpm():
     def screen(t, project, tempo, head=None):
         box = '10 17 55 37' if project else '74 17 118 37'
@@ -328,7 +329,7 @@ def bpm():
                 f'{t} s0 46 42 !=801051B3:{tempo}',
                 f'{t} s0 22 58 _=801051D3:SUB PAD to TAP']
         return out
-    d = main_screen(0, 0, 'A-13')
+    d = main_screen(0, 1, 'A-13')
     d += ['1000 PAGE 81'] + screen(1000, True, '120.00')
     d += screen(3000, True, '121.00') + screen(3500, True, '121.00')
     d += screen(5000, False, '118.50') + screen(5500, False, '118.50')
@@ -338,11 +339,13 @@ def bpm():
     d += screen(13000, False, '118.50', ['13000 s0 10 2 =8010500D:C1:CTR1',
                                          '13000 s0 48 2 =80105019:C2:CTRL2',
                                          '13000 s0 85 2 C3:CTRL3'])
-    d += screen(15000, False, '118.50')
-    d += ['17000 VALUE']
+    for t in range(15000, 17000, 40):
+        d += screen(t, False, '118.50')
+    d += ['17000 PAGE 84'] + main_screen(17000, 1, 'A-13')
+    d += ['19000 VALUE']
     write('bpm', d, ['A 13', 'C1:TEMPO SEL | PROJECT | 120.00', '121.00',
                      'BANK A | 118.50', 'PROJECT | 121.00', '118.50', 'BANK A | 118.50',
-                     'C1:CTR1', 'C1:TEMPO SEL | BANK A | 118.50'])
+                     'C1:CTR1', 'C1:TEMPO SEL | BANK A | 118.50', 'A 13'])
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
