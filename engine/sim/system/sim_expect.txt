@@ -3,7 +3,7 @@ UTILITY MENU | SYSTEM
 PAD SET
 EFX SET
 GENERAL | Edit Knob Mode Direct
-Load Project Prev
-Last
 EFX Knob Mode Direct
+Load Project Last
 CLICK | Output Assign ON
+OFF

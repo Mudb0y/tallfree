@@ -208,35 +208,43 @@ def system():
     rows = [('Edit Knob Mode', 93, 'Direct'), ('EFX Knob Mode', 93, 'Direct'),
             ('Load Project', 100, 'Last'), ('Sub Pad Mode', 93, 'Retrig'),
             ('Auto Trig Level', 102, '   5'), ('Scrn Saver Time', 97, '1 min')]
-    d += ['3000 s0 CLEAR']
-    for k, (name, x, value) in enumerate(rows):
-        y = 13 + 8 * k
-        d += [f'3000 s0 6 {y} _{ROWLABEL}{name}', f'3000 s0 {x} {y} {value}']
+    # Each row as FUN_801489B8 draws it: the row, selected or not, then its
+    # name and its value.
+    def page(t, rows, sel):
+        out = [f'{t} s0 FILL 0 9 127 60']
+        for k, (name, x, value) in enumerate(rows):
+            y = 13 + 8 * k
+            out += [f'{t} s0 ROW {y} {int(k == sel)}',
+                    f'{t} s0 6 {y} _{ROWLABEL}{name}', f'{t} s0 {x} {y} {value}']
+        return out
+    d += ['3000 PAGE 11', '3000 s0 CLEAR'] + page(3000, rows, 0)
     d += ['3000 s0 103 2  1/ 5']
     for k, t in enumerate(['GENERAL', 'CLICK', 'MIDI', 'GAIN', 'VERSION']):
         d.append(f'3000 s0 {5 + 25 * k} 2 {TABS}{t}')
-    d += ['5000 s0 FILL 90 29 127 36', '5000 s0 100 29 Prev',
-          '6400 s0 FILL 90 29 127 36', '6400 s0 100 29 Last']
-    # The knob: the list scrolls a row, every row redrawn one line higher.
-    more = rows[1:] + [('Scrn Saver Type', 85, 'OldRave')]
-    d += ['8000 s0 FILL 0 9 127 60']
-    for k, (name, x, value) in enumerate(more):
-        y = 13 + 8 * k
-        d += [f'8000 s0 6 {y} _{ROWLABEL}{name}', f'8000 s0 {x} {y} {value}']
+    # The knob moves the cursor down two rows; the list does not scroll.
+    d += page(5000, rows, 1) + page(6000, rows, 2)
     # CTRL 3: the next tab, a new page of settings and the page count.
     click = [('Output Assign', 109, 'ON'), ('Click Level', 115, '1'),
              ('Metronome:REC', 106, 'OFF'), ('Metronome:PTN', 109, 'ON')]
-    d += ['8600 s0 FILL 0 9 127 60', '8600 s0 103 2  2/ 5']
-    for k, (name, x, value) in enumerate(click):
-        y = 13 + 8 * k
-        d += [f'8600 s0 6 {y} _{ROWLABEL}{name}', f'8600 s0 {x} {y} {value}']
-    d += ['10000 VALUE']
+    d += page(8000, click, 0) + ['8000 s0 103 2  2/ 5']
+    # A value turned on the selected row.
+    d += ['9000 s0 FILL 100 12 127 19', '9000 s0 ROW 13 1', '9000 s0 109 13 OFF']
+    d += ['11000 VALUE']
     write('system', d, ['A 13',
                         'UTILITY MENU | SYSTEM', 'PAD SET', 'EFX SET',
                         'GENERAL | Edit Knob Mode Direct',
-                        'Load Project Prev', 'Last',
-                        'EFX Knob Mode Direct',
-                        'CLICK | Output Assign ON'])
+                        'EFX Knob Mode Direct', 'Load Project Last',
+                        'CLICK | Output Assign ON', 'OFF'])
+
+# Leaving a menu for the main screen: its factory is called and it redraws
+# everything unchanged on its own layer, which only the page event shows.
+def pages():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 30', '1000 s1 5 2 ^_IMPORT/EXPORT MENU', '1000 s2 17 22 !IMPORT from SD-CARD',
+          '1000 s2 17 30 EXPORT to SD-CARD']
+    d += ['3000 PAGE 0'] + main_screen(3000, 0, 'A-13')
+    d += ['5000 VALUE']
+    write('pages', d, ['A 13', 'IMPORT/EXPORT MENU | IMPORT from SD-CARD', 'A 13'])
 
 # FORMAT in the SD card menu, as the unit draws it: the menu redrawn, then a
 # dialog on a surface of its own, its text on the pop-up background and its
@@ -297,3 +305,4 @@ recscale()
 system()
 sdreturn()
 dialog()
+pages()

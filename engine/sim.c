@@ -17,6 +17,8 @@
      MS [sN] CLEAR             the surface cleared
      MS [sN] FILL X0 Y0 X1 Y1  a rectangle cleared
      MS [sN] ICON X Y SEL NAME an icon menu's icon, selected if SEL is 1
+     MS [sN] ROW Y SEL         a settings row whose text is at Y, selected if 1
+     MS PAGE N                 page factory N called: a page being built
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
@@ -40,6 +42,18 @@ int  sh_flen(int fd);
 
 volatile uint32_t sim_vtables[7][0x130 / 4], sim_site;
 volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
+volatile uint32_t sim_page_table[94], sim_row_word;
+
+void sim_draw_row(void *page, void *ctx, const int16_t *rect, int a, int b, int sel, int c)
+{
+    (void)page; (void)ctx; (void)rect; (void)a; (void)b; (void)sel; (void)c;
+}
+
+static int sim_page_factory(void *request)
+{
+    (void)request;
+    return 0;
+}
 static unsigned sim_drawn;
 
 /* The global drawing context icons land on: the surface first, the origin
@@ -98,7 +112,7 @@ static char *slurp(const char *name)
     return t;
 }
 
-enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON };
+enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -133,6 +147,14 @@ static void load_events(void)
             ev[nev].kind = E_VALUE;
         } else if (strncmp(p, "CLEAR", 5) == 0) {
             ev[nev].kind = E_CLEAR;
+        } else if (strncmp(p, "ROW", 3) == 0) {
+            ev[nev].kind = E_ROW;
+            p += 3;
+            ev[nev].y = (int)strtol(p, &p, 10);
+            ev[nev].x1 = (int)strtol(p, &p, 10);
+        } else if (strncmp(p, "PAGE", 4) == 0) {
+            ev[nev].kind = E_PAGE;
+            ev[nev].x = (int)strtol(p + 4, &p, 10);
         } else if (strncmp(p, "ICON", 4) == 0) {
             ev[nev].kind = E_ICON;
             p += 4;
@@ -286,6 +308,16 @@ static void fire(int i)
     case E_CLEAR:
         ((void (*)(void *, int))vt[0x08 / 4])(s, 0);
         break;
+    case E_ROW: {
+        int16_t rect[8] = { 0, 0, (int16_t)(ev[i].y - 1), 0, 127, 0, 0, 0 };
+        icon_ctx[0] = (uint32_t)(uintptr_t)s;
+        ((void (*)(void *, void *, const int16_t *, int, int, int, int))sim_row_word)(
+            s, icon_ctx, rect, 0, 0, ev[i].x1, 0);
+        break;
+    }
+    case E_PAGE:
+        ((int (*)(void *))sim_page_table[ev[i].x % 94])(NULL);
+        break;
     case E_ICON:
         icon_ctx[0] = (uint32_t)(uintptr_t)s;
         ((void (*)(void *, int, int, int, const char *, const char *))sim_icon_slots[i % 2])(
@@ -399,6 +431,9 @@ void target_enter(void)
     surface_vtable[0x10 / 4] = (uint32_t)(uintptr_t)sim_ink;
     sim_icon_slots[0] = sim_icon_slots[1] = (uint32_t)(uintptr_t)sim_draw_icon;
     sim_icon_ctx = (uint32_t)(uintptr_t)icon_ctx;
+    sim_row_word = (uint32_t)(uintptr_t)sim_draw_row;
+    for (i = 0; i < 94; i++)
+        sim_page_table[i] = (uint32_t)(uintptr_t)sim_page_factory;
     load_events();
 }
 

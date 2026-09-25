@@ -48,6 +48,14 @@ static const uint32_t vt_base[] = {
 #define ICON_DRAW       0x80133E71u
 #define ICON_DRAW_ASM   "0x80133E71"
 #define ICON_CTX        (*(volatile uint32_t *)0x80591B48u)
+/* Each page is built by its factory, one of 94 in the table at 0x8023B4FC,
+   when the interface goes to it. The SYSTEM page's rows are drawn by
+   FUN_801489B8(page, ctx, rect, ., ., selected, .), its vtable word at
+   0x80226C08; the selected row alone gets an underline. */
+#define PAGE_TABLE      ((volatile uint32_t *)0x8023B4FCu)
+#define ROW_WORD        (*(volatile uint32_t *)0x80226C08u)
+#define ROW_DRAW        0x801489B9u
+#define ROW_DRAW_ASM    "0x801489B9"
 static const uint32_t icon_slots[] = {
     0x8021CF38u, 0x8021DA78u, 0x8021DC38u, 0x8021DDFCu, 0x8021DFBCu, 0x8021E8B4u,
     0x8021EA40u, 0x8021EBCCu, 0x8021ED58u, 0x8021EEE4u, 0x8021F1F8u, 0x8021F9ACu,
@@ -71,7 +79,13 @@ void sim_clear(void);
 void sim_fill(void);
 void sim_batch(const char *phrases, int count);
 extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
+extern volatile uint32_t sim_page_table[94], sim_row_word;
 void sim_draw_icon(void);
+void sim_draw_row(void);
+#define PAGE_TABLE      sim_page_table
+#define ROW_WORD        sim_row_word
+#define ROW_DRAW        ((uint32_t)(uintptr_t)sim_draw_row)
+#define ROW_DRAW_ASM    "sim_draw_row"
 #define ICON_DRAW       ((uint32_t)(uintptr_t)sim_draw_icon)
 #define ICON_DRAW_ASM   "sim_draw_icon"
 #define ICON_CTX        sim_icon_ctx
@@ -93,6 +107,7 @@ static const uint32_t vt_base[] = {
 #endif
 #define VTABLES   (sizeof vt_base / sizeof vt_base[0])
 #define ICON_SLOTS (sizeof icon_slots / sizeof icon_slots[0])
+#define PAGES 94
 #define ICON_SLOT(i) (*(volatile uint32_t *)icon_slots[i])
 #define VT(i, slot) (*(volatile uint32_t *)(vt_base[i] + (slot)))
 
@@ -136,7 +151,8 @@ static uint8_t role_of(uint32_t site)
     return ROLE_NONE;
 }
 
-static volatile int unload_flag, screen_hooked, icons_hooked, screen_mode;
+static volatile int unload_flag, screen_hooked, icons_hooked, rows_hooked, pages_hooked,
+    screen_mode;
 
 /* The engine runs from boot until the instrument is switched off; nothing
    on the unit asks it to stop. The simulator does, to end a run. */
@@ -152,7 +168,7 @@ int unload_requested(void)
 }
 
 /* One call as a hook saw it. */
-enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON };
+enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON, EV_ROW, EV_PAGE };
 #define DRAW_TEXT 64
 struct draw {
     uint32_t tick, surf, lr, site;
@@ -170,6 +186,7 @@ void text_hook(void);
 void clear_hook(void);
 void fill_hook(void);
 void icon_hook(void);
+void row_hook(void);
 /* Eight words keep the stack 8-byte aligned for the C call, and leave the
    caller's fifth argument at sp + 32. */
 #define HOOK(name, record, target)                                        \
@@ -186,6 +203,7 @@ HOOK(text_hook, text_record, DRAW_STRING_ASM);
 HOOK(clear_hook, clear_record, CLEAR_ALL_ASM);
 HOOK(fill_hook, fill_record, FILL_RECT_ASM);
 HOOK(icon_hook, icon_record, ICON_DRAW_ASM);
+HOOK(row_hook, row_record, ROW_DRAW_ASM);
 
 static void push(const struct draw *d)
 {
@@ -303,6 +321,44 @@ __attribute__((used)) static void icon_record(const uint32_t *f)
     push(&d);
 }
 
+/* A settings row: where its text goes, from the drawing context's surface
+   and origin and the row's rectangle, and whether it is the selected one,
+   the sixth argument, on the stack. */
+__attribute__((used)) static void row_record(const uint32_t *f)
+{
+    struct draw d;
+    uint32_t ctx = f[1];
+    const int16_t *rect = (const int16_t *)f[2];
+
+    if (!screen_hooked || ctx == 0 || rect == NULL)
+        return;
+    memset(&d, 0, sizeof d);
+    d.kind = EV_ROW;
+    d.tick = device_ticks();
+    d.surf = *(const volatile uint32_t *)ctx;
+    d.y = (int16_t)(rect[2] + 1 + *(const volatile int16_t *)(ctx + 0x18));
+    d.mark = f[9] != 0;
+    push(&d);
+}
+
+/* The page factories, their stubs, and what they were. */
+uint32_t page_orig[PAGES];
+
+__attribute__((used)) static void page_record(uint32_t page)
+{
+    struct draw d;
+
+    if (!screen_hooked)
+        return;
+    memset(&d, 0, sizeof d);
+    d.kind = EV_PAGE;
+    d.tick = device_ticks();
+    d.mark = (int32_t)page;
+    push(&d);
+}
+
+#include "pagestubs.h"
+
 /* Plain data writes, so the fault catcher may call this in handler mode. */
 void screen_remove(void)
 {
@@ -319,6 +375,13 @@ void screen_remove(void)
         for (i = 0; i < ICON_SLOTS; i++)
             ICON_SLOT(i) = ICON_DRAW;
     icons_hooked = 0;
+    if (rows_hooked)
+        ROW_WORD = ROW_DRAW;
+    rows_hooked = 0;
+    if (pages_hooked)
+        for (i = 0; i < PAGES; i++)
+            PAGE_TABLE[i] = page_orig[i];
+    pages_hooked = 0;
     __asm__ volatile("dsb" ::: "memory");
     screen_hooked = 0;
 }
@@ -330,7 +393,7 @@ struct item {
     uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq;
     int32_t  mark, ink;
     int16_t  x, y;
-    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel;
+    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -339,7 +402,12 @@ static int burst[64], nburst;
 static uint32_t settle_ticks, batches, evicted, change_seq;
 static uint32_t last_change, first_pending, last_popup_change;
 static const struct item *last_label;
-static int pending, wiped;
+static int pending, wiped, page_pending;
+static struct {
+    uint32_t surf, tick;
+    int16_t  y;
+    uint8_t  sel, valid;
+} last_row;
 static struct {
     uint32_t surf, tick;
     int16_t  x, y;
@@ -416,6 +484,24 @@ int screen_install(int mode, int settle_ms)
             ICON_SLOT(i) = (uint32_t)(uintptr_t)icon_hook | 1u;
     else
         printf("screen: an icon slot is not the icon draw; icons not hooked\n");
+    if (ROW_WORD == ROW_DRAW) {
+        ROW_WORD = (uint32_t)(uintptr_t)row_hook | 1u;
+        rows_hooked = 1;
+    } else {
+        printf("screen: the SYSTEM row word is not the row draw; rows not hooked\n");
+    }
+    /* Every factory must still be a code pointer, or none is hooked. */
+    pages_hooked = 1;
+    for (i = 0; i < PAGES; i++)
+        if ((PAGE_TABLE[i] & 1u) == 0)
+            pages_hooked = 0;
+    if (pages_hooked)
+        for (i = 0; i < PAGES; i++) {
+            page_orig[i] = PAGE_TABLE[i];
+            PAGE_TABLE[i] = (uint32_t)(uintptr_t)page_stubs[i] | 1u;
+        }
+    else
+        printf("screen: the page table is not all code; pages not hooked\n");
     __asm__ volatile("dsb" ::: "memory");
     log_line("# tick task surface x y background ink len caller site |text|, from %lu ticks,"
              " mode %d, settle %d ms\n", (unsigned long)device_ticks(), mode, settle_ms);
@@ -521,7 +607,7 @@ static int is_status(const struct item *it)
    selected icon. */
 static int is_lit(const struct item *it)
 {
-    return (it->mark == WHITE && it->y >= 10 && !it->title) || it->icon_sel;
+    return (it->mark == WHITE && it->y >= 10 && !it->title) || it->icon_sel || it->row_sel;
 }
 
 static int is_popup(const struct item *it)
@@ -595,6 +681,19 @@ static int take(const struct draw *d)
         erase(d->surf, d->x, d->y, d->x1, d->y1, 0, d->tick);
         return 0;
     }
+    if (d->kind == EV_PAGE) {
+        log_line("%lu page %ld\n", (unsigned long)d->tick, (long)d->mark);
+        page_pending = 1;
+        return 1;
+    }
+    if (d->kind == EV_ROW) {
+        last_row.surf = d->surf;
+        last_row.y = d->y;
+        last_row.sel = d->mark != 0;
+        last_row.tick = d->tick;
+        last_row.valid = 1;
+        return 0;
+    }
     if (d->kind == EV_ICON) {
         if (d->mark && (last_icon.surf != d->surf || last_icon.x != d->x
                         || last_icon.y != d->y || !last_icon.sel))
@@ -615,6 +714,11 @@ static int take(const struct draw *d)
        selected icon. The icons go on the display's global surface and the
        labels on the page's own, so only the order and the position link
        them. */
+    /* A settings row's name and value both take its selected state. */
+    it->row_sel = 0;
+    if (last_row.valid && d->tick - last_row.tick <= 2 && d->surf == last_row.surf
+        && d->y >= last_row.y - 1 && d->y <= last_row.y + 1)
+        it->row_sel = last_row.sel;
     it->icon_sel = 0;
     if (last_icon.valid && d->tick - last_icon.tick <= 2) {
         int w = 4 * (int)(d->len ? d->len : strlen(d->text));
@@ -667,6 +771,10 @@ static int take(const struct draw *d)
         it->seq = ++change_seq;
         counts = 1;
     }
+    /* A page just built draws itself unchanged on a layer it left before:
+       everything it draws counts, so the batch waits for the whole of it. */
+    if (page_pending)
+        counts = 1;
     if (screen_mode == SCREEN_ALL) {
         int k = (int)(it - items);
         if (nburst < (int)(sizeof burst / sizeof burst[0])
@@ -814,6 +922,26 @@ static int say(const struct item *it)
     return say3(full_name(it)->text, NULL, NULL);
 }
 
+static const struct item *row_label(const struct item *v);
+
+/* The focus: a settings row as its name and value together, once. */
+static int say_focus(const struct item *it)
+{
+    const struct item *l = row_label(it);
+    int i;
+
+    if (l != NULL && l->row_sel && it->row_sel)
+        return 2;
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *v = &items[i];
+        if (v != it && live(v) && v->row_sel && row_label(v) == it) {
+            last_label = it;
+            return say3(it->text, v->text, NULL);
+        }
+    }
+    return say(it);
+}
+
 /* A pad, "A-13" or "A 1", as "A 13" or "A 1", written out directly:
    cleaning would close up "B 1" the way it closes up the big letter-spaced
    digits. */
@@ -878,9 +1006,13 @@ static int horizontally_near(const struct item *a, const struct item *b)
     return a0 < b1 && b0 < a1;
 }
 
+/* Text that can label a value: not a title, the status bar, a tab, or a
+   highlighted menu item. A settings row's name labels its value whether or
+   not the row is selected. */
 static int plain(const struct item *it)
 {
-    return !is_title(it) && !is_status(it) && !is_lit(it) && it->role != ROLE_TABS;
+    return !is_title(it) && !is_status(it) && it->role != ROLE_TABS && !it->icon_sel
+        && !(it->mark == WHITE && it->y >= 10);
 }
 
 /* A value's label is plain text drawn by other code, and drawn since the
@@ -1065,26 +1197,6 @@ static const struct item *current_tab(void)
     return page >= 1 && page <= ntabs ? tabs[page - 1] : NULL;
 }
 
-/* A list of settings, a name on each row with its value beside it: the row
-   at the top, which is the one the knob is on while the list scrolls. */
-static const struct item *top_row(const struct item **value)
-{
-    const struct item *best = NULL, *best_v = NULL;
-    int i;
-
-    for (i = 0; i < ITEMS; i++) {
-        const struct item *v = &items[i], *l;
-        if (!live(v) || !drawn_now(v) || (l = row_label(v)) == NULL || !drawn_now(l))
-            continue;
-        if (best == NULL || l->y < best->y) {
-            best = l;
-            best_v = v;
-        }
-    }
-    *value = best_v;
-    return best;
-}
-
 /* A dialog that has just opened: a surface newly in use carrying pop-up
    text, not a title, and a focused button, as "Format SD Card, Are you
    sure?" with CANCEL selected. A page titled on a pop-up layer, as PAD LINK
@@ -1125,7 +1237,7 @@ static char last_tab[ITEM_TEXT];
    shows. */
 static void new_screen(struct item **order)
 {
-    const struct item *tab, *row, *value;
+    const struct item *tab;
     int n, i, focus, popups;
 
     last_label = NULL;
@@ -1149,12 +1261,7 @@ static void new_screen(struct item **order)
        said its words, as a grid's title names the focused cell. */
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
-        say(order[i]);
-    if (focus == 0 && (row = top_row(&value)) != NULL) {
-        last_label = row;
-        say3(row->text, value->text, NULL);
-        focus = 1;
-    }
+        say_focus(order[i]);
     /* Only a bank and pad just drawn: the main screen's stay on its layer
        under the screens opened over it. */
     if (focus == 0)
@@ -1234,9 +1341,19 @@ static void same_screen(struct item **order)
                 }
         }
     }
-    for (i = 0; i < n; i++)
-        if (order[i]->changed && is_lit(order[i]) && say(order[i]))
-            order[i]->changed = 0;
+    for (i = 0; i < n; i++) {
+        struct item *it = order[i];
+        const struct item *l;
+        if (!it->changed || !is_lit(it))
+            continue;
+        /* A value turned on the selected row says the value alone. */
+        if (it->changed == 1 && (l = row_label(it)) != NULL && l->row_sel) {
+            if (say3(it->text, NULL, NULL))
+                it->changed = 0;
+        } else if (say_focus(it)) {
+            it->changed = 0;
+        }
+    }
     for (i = 0; i < n; i++)
         if (order[i]->changed == 1 && is_pad_field(order[i]))
             pad_hit = 1;
@@ -1278,6 +1395,9 @@ static int screen_changed(void)
 {
     uint32_t surf[16];
     int nsurf = 0, i, k, alive = 0, fresh = 0, replaced = 0;
+
+    if (page_pending)
+        return 1;
 
     for (i = 0; i < ITEMS; i++) {
         const struct item *it = &items[i];
@@ -1372,6 +1492,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
             items[i].changed = 0;
     } else if ((kind = screen_changed()) != 0) {
         screen_epoch = first_pending - 2u;
+        page_pending = 0;
         new_screen(order);
         for (i = 0; i < ITEMS; i++)
             items[i].changed = 0;
