@@ -88,7 +88,7 @@ static volatile uint32_t ring_held;          /* nothing played until released */
 static volatile uint32_t ring_making, ring_dry;  /* a phrase is being made; ticks it ran dry */
 
 /* Speech level: a 16-bit sample times g_gain / 32. Set from "#vol N"
-   (percent of 128) in SAY.TXT; 50, gain 64, is the level Stas approved. */
+   (percent of 128) in SAY.TXT; 50, gain 64, is the level chosen by ear. */
 static volatile uint32_t g_gain = 64;
 
 void target_volume(uint32_t percent)
