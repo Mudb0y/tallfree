@@ -357,7 +357,10 @@ __attribute__((used)) static void page_record(uint32_t page, const int16_t *mess
     if (!screen_hooked || message == NULL || page >= PAGES)
         return;
     type = *message;
-    if (type == page_last_type[page] && type != 1)
+    /* Keys, key releases and knob turns (types 5, 6 and 7, the key or knob
+       in the second halfword, a knob's step in the third) all go to the log,
+       to learn the codes. */
+    if (type == page_last_type[page] && type != 1 && (type < 5 || type > 7))
         return;
     page_last_type[page] = type;
     memset(&d, 0, sizeof d);
@@ -365,6 +368,10 @@ __attribute__((used)) static void page_record(uint32_t page, const int16_t *mess
     d.tick = device_ticks();
     d.mark = (int32_t)page;
     d.x = type;
+    if (type >= 5 && type <= 7) {
+        d.y = message[1];
+        d.x1 = message[2];
+    }
     push(&d);
 }
 
@@ -690,6 +697,15 @@ static int take(const struct draw *d)
     }
     if (d->kind == EV_FILL) {
         erase(d->surf, d->x, d->y, d->x1, d->y1, 0, d->tick);
+        return 0;
+    }
+    if (d->kind == EV_PAGE && d->x >= 5 && d->x <= 7) {
+        if (d->x == 7)
+            log_line("%lu knob %d step %d, page %ld\n", (unsigned long)d->tick, d->y, d->x1,
+                     (long)d->mark);
+        else
+            log_line("%lu key %s 0x%02x, page %ld\n", (unsigned long)d->tick,
+                     d->x == 5 ? "down" : "up", (unsigned)(uint16_t)d->y, (long)d->mark);
         return 0;
     }
     if (d->kind == EV_PAGE) {
