@@ -1512,15 +1512,15 @@ static int mirrors_focus(const struct item *it)
 /* What to say about a change on the same screen: a message, whenever it is
    drawn; a pop-up that has just appeared, whole; the newly focused item;
    values that changed. On the main screen a pad hit says nothing, and nor
-   do the other status fields it changes, but a bank change says the bank
-   and pad; elsewhere a pad is named whenever it changes. Text that has
+   does anything else it changes there, the status fields or the big tempo
+   when the pads' tempos differ, but a bank change says the bank and pad; elsewhere a pad is named whenever it changes. Text that has
    only appeared, with nothing changed, stays quiet: a screen drawing the
    rest of itself, a meter's scale. */
 static void same_screen(struct item **order)
 {
     static struct item *pop[ITEMS];
     int n, i, k, m, pad_hit = 0;
-    uint32_t popup_surf = 0;
+    uint32_t popup_surf = 0, main_surf = 0;
 
     /* A choice newly made says what the screen now shows for it, changed or
        not: the BPM screen's tempo, when PROJECT gives way to the bank. */
@@ -1567,13 +1567,23 @@ static void same_screen(struct item **order)
         }
     }
     for (i = 0; i < n; i++)
-        if (order[i]->changed == 1 && is_pad_field(order[i]))
+        if (order[i]->changed == 1 && is_pad_field(order[i])) {
             pad_hit = 1;
+            if (order[i]->role == ROLE_PAD)
+                main_surf = order[i]->surf;
+        }
     for (i = 0; i < n; i++) {
         struct item *it = order[i];
         if (it->changed != 1 || is_lit(it) || is_title(it))
             continue;
         if (mirrors_focus(it)) {
+            it->changed = 0;
+            continue;
+        }
+        /* Before the wait for a value to hold still: pads played quickly
+           would otherwise have the tempo said once they stopped. */
+        if (main_surf != 0 && it->surf == main_surf && !is_pad_field(it) && !is_status(it)
+            && !is_popup(it)) {
             it->changed = 0;
             continue;
         }

@@ -18,7 +18,7 @@ def main_screen(t, surf, bank_pad, bus='BUS-1', big='9 4 '):
     return [f'{t} s{surf} 12 2 !{PATTERN}P-2', f'{t} s{surf} 34 2 !{PAD}{bank_pad}',
             f'{t} s{surf} {bx} 2 !{BUS}{bus}', f'{t} s{surf} 84 2 !{FIXVEL}Fix',
             f'{t} s{surf} 104 2 ! DC ',
-            f'{t} s{surf} {53 if big == "9 4 " else 24} 14 _{big}']
+            f'{t} s{surf} {24 if big.startswith("-") else 53} 14 _{big}']
 
 # A pad hit on the main screen: the status line and the big field wiped and
 # redrawn, the pad's bus changing with it.
@@ -143,7 +143,9 @@ def record():
 
 # The main screen as the last run drew it: pad hits wipe and redraw the
 # status line, changing the bus and the big field; then a bank change; then
-# a STOP message; then the SD menu, which must not read the old message.
+# a STOP message; then two pads whose tempos differ, the big field changing
+# its digits in place, slowly and then quickly; then the SD menu, which must
+# not read the old message.
 def mainpads():
     d = main_screen(0, 0, 'A-13')
     d += pad_hit(1000, 0, 'A-14', 'DRY', '- - - ')
@@ -152,9 +154,13 @@ def mainpads():
     d += pad_hit(4000, 0, 'B-10', 'DRY', '- - - ')
     d += [f'5000 s1 9 4 ~{TOAST}STOP']
     d += pad_hit(5000, 0, 'B-10', 'DRY', '- - - ')
-    d += ['9000 s0 CLEAR', '9000 s2 5 2 ^_IMPORT/EXPORT MENU',
-          '9000 s0 17 22 !IMPORT from SD-CARD', '9000 s0 17 30 EXPORT to SD-CARD',
-          '10000 VALUE']
+    d += pad_hit(6000, 0, 'B-11', 'BUS-1', '9 4 ')
+    d += pad_hit(7500, 0, 'B-12', 'BUS-1', '9 7 ')
+    for k, t in enumerate(range(9000, 10000, 250)):
+        d += pad_hit(t, 0, 'B-11' if k % 2 else 'B-12', 'BUS-1', '9 4 ' if k % 2 else '9 7 ')
+    d += ['13000 s0 CLEAR', '13000 s2 5 2 ^_IMPORT/EXPORT MENU',
+          '13000 s0 17 22 !IMPORT from SD-CARD', '13000 s0 17 30 EXPORT to SD-CARD',
+          '14000 VALUE']
     write('mainpads', d, ['A 13', 'B 10', 'STOP',
                           'IMPORT/EXPORT MENU | IMPORT from SD-CARD'])
 
