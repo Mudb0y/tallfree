@@ -3,7 +3,7 @@
 # The engine library comes from OpenEVV's own Makefile with PORT=none, so its
 # source list cannot drift from the desktop build's; this directory adds the
 # platform layer and the way in. Run inside
-#   nix shell nixpkgs#gcc-arm-embedded nixpkgs#gnumake nixpkgs#python3
+#   nix shell nixpkgs#gcc-arm-embedded nixpkgs#gnumake nixpkgs#python3 nixpkgs#qemu
 #
 #   make qemu      build the QEMU image
 #   make check     run it and compare with the desktop engine, byte for byte
