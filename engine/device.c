@@ -317,7 +317,7 @@ static int read_header(const char *path, struct image_header *h)
         return 0;
     n = F_READ(f, h, (int)sizeof *h);
     F_CLOSE(f);
-    return n == (int)sizeof *h && h->magic == 0x31565645u;
+    return n == (int)sizeof *h && h->magic == 0x32565645u;
 }
 
 static int same_image(const struct image_header *a, const struct image_header *b)

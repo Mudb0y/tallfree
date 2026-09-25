@@ -521,8 +521,8 @@ static struct {
    a line per item.
    Text leaving the screen is logged when it is taken off the model, not at
    each clear: some screens clear and redraw twenty-five times a second. */
-#define LOG_CAP  (384u * 1024u)
-#define SUMMARY  (48u * 1024u)
+#define LOG_CAP  (128u * 1024u)
+#define SUMMARY  (32u * 1024u)
 static char draw_log[LOG_CAP];
 static size_t log_len;
 static uint32_t log_dropped;

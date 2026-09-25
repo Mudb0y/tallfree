@@ -15,7 +15,9 @@ SECTIONS
   /* What the loader checks before it jumps: magic "EVV1", the image's
      length, the entry point, and a CRC that mkimage.py fills in. */
   .header : {
-    LONG(0x31565645)
+    /* "EVV2": linked at image 30's 0x83AC0000. Image 29 engines, "EVV1",
+       were linked 1 MB higher and must never be run here. */
+    LONG(0x32565645)
     LONG(__image_end - __image_start)
     LONG(engine_start | 1)
     LONG(0)

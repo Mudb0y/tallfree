@@ -25,7 +25,9 @@ CFLAGS  := $(ARCH) -O2 -std=gnu99 -Wall -Wno-attributes -fsigned-char -ffunction
 LDFLAGS := $(ARCH) -nostartfiles --specs=nano.specs -Wl,--gc-sections -Wl,--no-warn-rwx-segments \
            -Wl,-Map=$(BUILD)/$*.map
 
-LIB := $(OPENEVV)/build-m7/libevv.a
+# Compiled rules: three times faster than bytecode on the unit's core, the
+# same samples, 0.9 MB bigger.
+LIB := $(OPENEVV)/build-m7c/libevv.a
 COMMON := port_coop.c sys.c start.c say.c say.h
 
 TEXT ?= Hello, I am the SP four oh four, and I can talk now.
@@ -35,8 +37,8 @@ qemu: $(BUILD)/qemu.elf
 device: $(BUILD)/ENGINE.BIN
 
 lib:
-	$(MAKE) -C $(OPENEVV) PORT=none BUILD=build-m7 RULES=bytecode \
-	  CC=$(CC) AR=arm-none-eabi-ar CFLAGS="$(LIBFLAGS)" build-m7/libevv.a
+	$(MAKE) -C $(OPENEVV) PORT=none BUILD=build-m7c RULES=c \
+	  CC=$(CC) AR=arm-none-eabi-ar CFLAGS="$(LIBFLAGS)" build-m7c/libevv.a
 
 $(LIB): lib
 
