@@ -26,6 +26,7 @@ int      STDCALL es_delete(OldInst *h);
 int      STDCALL et_addText(OldInst *h, const char *text);
 int      STDCALL et_synthesize(OldInst *h);
 int      STDCALL ev_setOutputBuffer(OldInst *h, int32_t n, void *buf);
+int      STDCALL ev_setParam(OldInst *h, int32_t param, int32_t value);
 void     STDCALL eo_registerCallback(OldInst *h, void *cb, void *data);
 void     STDCALL eo_synchronizeSynth(OldInst *h);
 int      STDCALL eo_speaking(OldInst *h);
@@ -99,6 +100,13 @@ int speech_busy(void)
     }
     eo_synchronizeSynth(inst);
     return 0;
+}
+
+/* One of the engine's eighteen settings, by eci.h's numbers; answers what it
+   was, or -1 if refused. */
+int speech_param(int param, int value)
+{
+    return inst != NULL ? ev_setParam(inst, param, value) : -1;
 }
 
 void speech_close(void)

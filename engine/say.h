@@ -8,6 +8,7 @@ int  speech_open(int frame_samples);
 int  speech_say(const char *text);
 int  speech_busy(void);
 void speech_close(void);
+int  speech_param(int param, int value);
 
 /* What each target supplies. */
 int  target_main(void);

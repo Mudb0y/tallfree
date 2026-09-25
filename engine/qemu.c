@@ -63,7 +63,18 @@ int target_main(void)
 
     if (text == NULL)
         text = "Hello, I am the SP four oh four, and I can talk now.";
-    if (speech_open(FRAME) || speech_say(text))
+    if (speech_open(FRAME))
+        return 1;
+    /* "#param N V" lines at the head of in.txt set the engine's settings. */
+    while (strncmp(text, "#param ", 7) == 0) {
+        char *end;
+        int param = (int)strtol(text + 7, &end, 10);
+        int value = (int)strtol(end, &end, 10);
+        printf("param %d: %d, was %d\n", param, value, speech_param(param, value));
+        text = strchr(text, '\n');
+        text = text ? text + 1 : "";
+    }
+    if (speech_say(text))
         return 1;
     while (speech_busy())
         ;

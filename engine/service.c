@@ -8,6 +8,8 @@
      #mode M     screen reading: changed (the default), all, or off
      #settle N   ms without a change before speaking what changed; 40
      #frame N    samples per synthesised buffer; 512
+     #dict on    the engine's abbreviation dictionary, off by default: with
+                 it, SD-CARD is "South Dakota card"
      #wait N     the next line is said N ms after the one before it started,
                  cutting that one off; without it, a line waits for the one
                  before to finish
@@ -26,7 +28,7 @@
 #include "device.h"
 #include "say.h"
 
-static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots;
+static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, dictionary;
 
 #define SCRIPT 64
 static struct { const char *text; int wait_ms; } script[SCRIPT];
@@ -62,6 +64,8 @@ static void configure(char *text)
             settle_ms = atoi(line + 8);
         else if (strncmp(line, "#frame ", 7) == 0)
             frame = atoi(line + 7);
+        else if (strcmp(line, "#dict on") == 0)
+            dictionary = 1;
         else if (strncmp(line, "#wait ", 6) == 0)
             wait_ms = atoi(line + 6);
         else if (strncmp(line, "#slots", 6) == 0)
@@ -232,6 +236,8 @@ int target_main(void)
         printf("audio hook not installed\n");
     if (speech_open(frame))
         return 1;
+    /* eciDictionary, 3: IBM's inverted setting, 1 turns the dictionary off. */
+    speech_param(3, dictionary ? 0 : 1);
     batch_one("speech on");
 
     for (;;) {
