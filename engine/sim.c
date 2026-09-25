@@ -16,6 +16,8 @@
                                =XXXXXXXX: drawn from that site
      MS [sN] CLEAR             the surface cleared
      MS [sN] FILL X0 Y0 X1 Y1  a rectangle cleared
+     MS [sN] BOX X0 Y0 X1 Y1 [=XXXXXXXX]
+                               a rectangle's outline, drawn from that site
      MS [sN] ICON X Y SEL NAME an icon menu's icon, selected if SEL is 1
      MS [sN] ROW Y SEL         a settings row whose text is at Y, selected if 1
      MS PAGE N                 page factory N called: a page being built
@@ -80,6 +82,7 @@ int sim_draw_string(void *surface, int x, int y, const char *text, int len)
 
 void sim_clear(void *surface, int colour) { (void)surface; (void)colour; }
 void sim_fill(void *surface, const int32_t *rect) { (void)surface; (void)rect; }
+void sim_frame(void *surface, const int32_t *rect) { (void)surface; (void)rect; }
 
 static int32_t colour_now = 0x1000000;
 
@@ -118,11 +121,12 @@ static char *slurp(const char *name)
     return t;
 }
 
-enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB };
+enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_BOX };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
     int absolute, kind, surf, x, y, x1, y1, done;
+    uint32_t site;
     const char *text;
 } ev[EVENTS];
 static int nev;
@@ -178,13 +182,17 @@ static void load_events(void)
             while (*p == ' ')
                 p++;
             ev[nev].text = p;
-        } else if (strncmp(p, "FILL", 4) == 0) {
-            ev[nev].kind = E_FILL;
-            p += 4;
+        } else if (strncmp(p, "FILL", 4) == 0 || strncmp(p, "BOX", 3) == 0) {
+            ev[nev].kind = *p == 'F' ? E_FILL : E_BOX;
+            p += *p == 'F' ? 4 : 3;
             ev[nev].x = (int)strtol(p, &p, 10);
             ev[nev].y = (int)strtol(p, &p, 10);
             ev[nev].x1 = (int)strtol(p, &p, 10);
             ev[nev].y1 = (int)strtol(p, &p, 10);
+            while (*p == ' ')
+                p++;
+            if (*p == '=')
+                ev[nev].site = (uint32_t)strtoul(p + 1, NULL, 16);
         } else {
             ev[nev].kind = E_TEXT;
             ev[nev].x = (int)strtol(p, &p, 10);
@@ -373,6 +381,12 @@ static void fire(int i)
         ((void (*)(void *, const int32_t *))vt[0xC0 / 4])(s, r);
         break;
     }
+    case E_BOX: {
+        int32_t r[4] = { ev[i].x, ev[i].y, ev[i].x1, ev[i].y1 };
+        sim_site = ev[i].site;
+        ((void (*)(void *, const int32_t *))vt[0xBC / 4])(s, r);
+        break;
+    }
     default: {
         const char *t = ev[i].text;
         colour_now = 0x1000000;
@@ -472,6 +486,7 @@ void target_enter(void)
         sim_vtables[i][0x12C / 4] = (uint32_t)(uintptr_t)sim_draw_string;
         sim_vtables[i][0x08 / 4] = (uint32_t)(uintptr_t)sim_clear;
         sim_vtables[i][0xC0 / 4] = (uint32_t)(uintptr_t)sim_fill;
+        sim_vtables[i][0xBC / 4] = (uint32_t)(uintptr_t)sim_frame;
     }
     surface_vtable[0x18 / 4] = (uint32_t)(uintptr_t)sim_mark;
     surface_vtable[0x10 / 4] = (uint32_t)(uintptr_t)sim_ink;
@@ -492,7 +507,8 @@ int target_launch(int (*body)(void))
     for (i = 0; i < 7; i++)
         if (sim_vtables[i][0x12C / 4] != (uint32_t)(uintptr_t)sim_draw_string
             || sim_vtables[i][0x08 / 4] != (uint32_t)(uintptr_t)sim_clear
-            || sim_vtables[i][0xC0 / 4] != (uint32_t)(uintptr_t)sim_fill)
+            || sim_vtables[i][0xC0 / 4] != (uint32_t)(uintptr_t)sim_fill
+            || sim_vtables[i][0xBC / 4] != (uint32_t)(uintptr_t)sim_frame)
             restored = 0;
     printf("sim %lu ms: done, code %d; tables %s, %u draws reached DrawString, "
            "%u keys reached the page, %lu flushes, %lu samples played\n",

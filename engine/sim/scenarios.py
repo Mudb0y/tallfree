@@ -310,6 +310,40 @@ def settings():
     write('settings', d, ['A 13', 'Speech settings | Speed 50', 'Pitch 65', '65', '70',
                           '75', 'Pitch', 'Settings saved | A 13'])
 
+# The BPM screen (SHIFT + pad 11), page 81, as FUN_80104F68 draws it, found
+# in the firmware rather than a log: the heading, PROJECT and the bank with
+# an outline round the one CTRL 1 has chosen, the chosen tempo on white, a
+# hint. Every change clears and redraws it all. VALUE turned; CTRL 1 to the
+# bank; back; VALUE again, to the bank's tempo; CTRL 1 to the bank, whose
+# tempo is now the same; the button that gives the knobs back to the
+# effects, held and let go.
+def bpm():
+    def screen(t, project, tempo, head=None):
+        box = '10 17 55 37' if project else '74 17 118 37'
+        out = [f'{t} s0 CLEAR', f'{t} s0 FILL 0 0 128 8']
+        out += head or [f'{t} s0 10 2 =80105033:C1:TEMPO SEL']
+        out += [f'{t} s0 BOX {box} =80105153',
+                f'{t} s0 11 23 _=8010515F:PROJECT', f'{t} s0 78 23 _=8010516B:BANK A',
+                f'{t} s0 FILL 10 42 125 64', f'{t} s0 FILL 46 40 82 50',
+                f'{t} s0 46 42 !=801051B3:{tempo}',
+                f'{t} s0 22 58 _=801051D3:SUB PAD to TAP']
+        return out
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 81'] + screen(1000, True, '120.00')
+    d += screen(3000, True, '121.00') + screen(3500, True, '121.00')
+    d += screen(5000, False, '118.50') + screen(5500, False, '118.50')
+    d += screen(7000, True, '121.00')
+    d += screen(9000, True, '118.50')
+    d += screen(11000, False, '118.50')
+    d += screen(13000, False, '118.50', ['13000 s0 10 2 =8010500D:C1:CTR1',
+                                         '13000 s0 48 2 =80105019:C2:CTRL2',
+                                         '13000 s0 85 2 C3:CTRL3'])
+    d += screen(15000, False, '118.50')
+    d += ['17000 VALUE']
+    write('bpm', d, ['A 13', 'C1:TEMPO SEL | PROJECT | 120.00', '121.00',
+                     'BANK A | 118.50', 'PROJECT | 121.00', '118.50', 'BANK A | 118.50',
+                     'C1:CTR1', 'C1:TEMPO SEL | BANK A | 118.50'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -324,3 +358,4 @@ sdreturn()
 dialog()
 pages()
 settings()
+bpm()

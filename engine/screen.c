@@ -3,7 +3,8 @@
    Every string on the normal screens goes through one DrawString,
    FUN_800EE530(surface, x, y, string, length), and every clear through one
    of two calls, the whole surface (vtable slot 0x08) or a rectangle (slot
-   0xC0). All three are reached only through seven surface vtables, so
+   0xC0), and every rectangle's outline through slot 0xBC. All four are
+   reached only through seven surface vtables, so
    pointing those words at our hooks is a data write: no instruction changes
    and the caches need nothing. The hooks run inside the interface's own
    drawing, so they only copy the call into a ring and wake the engine's
@@ -26,6 +27,7 @@
 
 #define SLOT_CLEAR 0x08u
 #define SLOT_FILL  0xC0u
+#define SLOT_FRAME 0xBCu
 #define SLOT_INK   0x10u
 #define SLOT_MARK  0x18u
 #define SLOT_TEXT  0x12Cu
@@ -37,6 +39,13 @@
 #define CLEAR_ALL_ASM   "0x800F14D1"
 #define FILL_RECT       0x800EDEE9u
 #define FILL_RECT_ASM   "0x800EDEE9"
+/* A rectangle's outline, slot 0xBC, the same in all seven classes, given
+   four inclusive corners; some screens mark their choice with one. Most
+   outlines are drawn through FUN_800CE548(ctx, rect), which adds the
+   context's origin and keeps its caller's return seven words up. */
+#define FRAME_RECT      0x800EDE11u
+#define FRAME_RECT_ASM  "0x800EDE11"
+#define WRAP_FRAME      0x800CE577u
 static const uint32_t vt_base[] = {
     0x8021D1A4u, 0x8021D340u, 0x8021D4DCu, 0x8021D678u,
     0x8021E2A4u, 0x8021E438u, 0x8021E5D4u,
@@ -77,6 +86,7 @@ extern volatile uint32_t sim_vtables[7][0x130 / 4], sim_site;
 void sim_draw_string(void);
 void sim_clear(void);
 void sim_fill(void);
+void sim_frame(void);
 void sim_batch(const char *phrases, int count);
 extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
 extern volatile uint32_t sim_page_table[94], sim_row_word;
@@ -98,6 +108,8 @@ static const uint32_t icon_slots[] = {
 #define CLEAR_ALL_ASM   "sim_clear"
 #define FILL_RECT       ((uint32_t)(uintptr_t)sim_fill)
 #define FILL_RECT_ASM   "sim_fill"
+#define FRAME_RECT      ((uint32_t)(uintptr_t)sim_frame)
+#define FRAME_RECT_ASM  "sim_frame"
 static const uint32_t vt_base[] = {
     (uint32_t)(uintptr_t)sim_vtables[0], (uint32_t)(uintptr_t)sim_vtables[1],
     (uint32_t)(uintptr_t)sim_vtables[2], (uint32_t)(uintptr_t)sim_vtables[3],
@@ -123,7 +135,8 @@ static const uint32_t vt_base[] = {
 /* What particular drawing code is for, by the return address the hook reads
    one level up, from what the unit's logs recorded. Anything else is judged
    by how it is drawn. */
-enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS };
+enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
+       ROLE_CHOICE };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -139,6 +152,9 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80121751u, ROLE_TABS },             /* a page's tabs, GENERAL CLICK MIDI */
     { 0x8017388Bu, ROLE_IGNORE },           /* LEVEL meters */
     { 0x801779C9u, ROLE_IGNORE },
+    { 0x80105033u, ROLE_TITLE },            /* the BPM screen's heading, C1:TEMPO SEL */
+    /* An outline that marks the chosen one of several strings. */
+    { 0x80105153u, ROLE_CHOICE },           /* the BPM screen's, round PROJECT or the bank */
 };
 
 static uint8_t role_of(uint32_t site)
@@ -168,7 +184,7 @@ int unload_requested(void)
 }
 
 /* One call as a hook saw it. */
-enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON, EV_ROW, EV_PAGE, EV_MENU };
+enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON, EV_ROW, EV_PAGE, EV_MENU, EV_FRAME };
 #define DRAW_TEXT 64
 struct draw {
     uint32_t tick, surf, lr, site;
@@ -185,6 +201,7 @@ static volatile uint32_t draw_wr, draw_rd, draw_lost, draw_seen;
 void text_hook(void);
 void clear_hook(void);
 void fill_hook(void);
+void frame_hook(void);
 void icon_hook(void);
 void row_hook(void);
 /* Eight words keep the stack 8-byte aligned for the C call, and leave the
@@ -202,6 +219,7 @@ void row_hook(void);
 HOOK(text_hook, text_record, DRAW_STRING_ASM);
 HOOK(clear_hook, clear_record, CLEAR_ALL_ASM);
 HOOK(fill_hook, fill_record, FILL_RECT_ASM);
+HOOK(frame_hook, frame_record, FRAME_RECT_ASM);
 HOOK(icon_hook, icon_record, ICON_DRAW_ASM);
 HOOK(row_hook, row_record, ROW_DRAW_ASM);
 
@@ -284,6 +302,32 @@ __attribute__((used)) static void fill_record(const uint32_t *f)
     d.kind = EV_FILL;
     d.tick = device_ticks();
     d.surf = f[0];
+    d.x = (int16_t)r[0];
+    d.y = (int16_t)r[1];
+    d.x1 = (int16_t)r[2];
+    d.y1 = (int16_t)r[3];
+    push(&d);
+}
+
+/* An outline, its corners as the fill's, and the code that drew it when that
+   went through FUN_800CE548. */
+__attribute__((used)) static void frame_record(const uint32_t *f)
+{
+    struct draw d;
+    const int32_t *r = (const int32_t *)f[1];
+
+    if (!screen_hooked || f[0] == 0 || r == NULL)
+        return;
+    memset(&d, 0, sizeof d);
+    d.kind = EV_FRAME;
+    d.tick = device_ticks();
+    d.surf = f[0];
+    d.lr = f[7];
+#ifndef SIM
+    d.site = d.lr == WRAP_FRAME ? f[8 + 7] : 0;
+#else
+    d.site = sim_site;
+#endif
     d.x = (int16_t)r[0];
     d.y = (int16_t)r[1];
     d.x1 = (int16_t)r[2];
@@ -458,6 +502,7 @@ void screen_remove(void)
         VT(i, SLOT_TEXT) = DRAW_STRING;
         VT(i, SLOT_CLEAR) = CLEAR_ALL;
         VT(i, SLOT_FILL) = FILL_RECT;
+        VT(i, SLOT_FRAME) = FRAME_RECT;
     }
     if (icons_hooked)
         for (i = 0; i < ICON_SLOTS; i++)
@@ -481,7 +526,7 @@ struct item {
     uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq;
     int32_t  mark, ink;
     int16_t  x, y;
-    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel;
+    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -508,6 +553,15 @@ static struct {
     int16_t  x, y;
     uint8_t  sel, valid;
 } last_icon;
+/* The last outline that marks a choice, and the sites of every outline seen
+   so far, each logged once. */
+static struct {
+    uint32_t surf, tick;
+    int16_t  x0, y0, x1, y1;
+    uint8_t  valid;
+} last_frame;
+static uint32_t frame_sites[64];
+static int nframe_sites;
 
 /* The background colour: white, 0xFFFFFF, on the status bar and on the
    focused item of a menu or grid, 0 or 0x1000000 elsewhere, -1 on the
@@ -551,10 +605,11 @@ int screen_install(int mode, int settle_ms)
 
     for (i = 0; i < VTABLES; i++)
         if (VT(i, SLOT_TEXT) != DRAW_STRING || VT(i, SLOT_CLEAR) != CLEAR_ALL
-            || VT(i, SLOT_FILL) != FILL_RECT) {
-            printf("screen: vtable %08lx reads %08lx %08lx %08lx, not the drawing calls\n",
+            || VT(i, SLOT_FILL) != FILL_RECT || VT(i, SLOT_FRAME) != FRAME_RECT) {
+            printf("screen: vtable %08lx reads %08lx %08lx %08lx %08lx, not the drawing calls\n",
                    (unsigned long)vt_base[i], (unsigned long)VT(i, SLOT_TEXT),
-                   (unsigned long)VT(i, SLOT_CLEAR), (unsigned long)VT(i, SLOT_FILL));
+                   (unsigned long)VT(i, SLOT_CLEAR), (unsigned long)VT(i, SLOT_FILL),
+                   (unsigned long)VT(i, SLOT_FRAME));
             return -1;
         }
     screen_mode = mode;
@@ -566,6 +621,7 @@ int screen_install(int mode, int settle_ms)
         VT(i, SLOT_TEXT) = (uint32_t)(uintptr_t)text_hook | 1u;
         VT(i, SLOT_CLEAR) = (uint32_t)(uintptr_t)clear_hook | 1u;
         VT(i, SLOT_FILL) = (uint32_t)(uintptr_t)fill_hook | 1u;
+        VT(i, SLOT_FRAME) = (uint32_t)(uintptr_t)frame_hook | 1u;
     }
     /* The icon words only all together, and only if every one is still the
        icon draw; the screen reader works without them, reading an icon
@@ -698,11 +754,12 @@ static int is_status(const struct item *it)
     return it->y <= 5 && it->mark == WHITE && !it->title;
 }
 
-/* The focus: white below the status bar, or the label under an icon menu's
-   selected icon. */
+/* The focus: white below the status bar, the label under an icon menu's
+   selected icon, a selected settings row, or a choice in its outline. */
 static int is_lit(const struct item *it)
 {
-    return (it->mark == WHITE && it->y >= 10 && !it->title) || it->icon_sel || it->row_sel;
+    return (it->mark == WHITE && it->y >= 10 && !it->title) || it->icon_sel || it->row_sel
+        || it->framed;
 }
 
 static int is_popup(const struct item *it)
@@ -766,7 +823,7 @@ static void erase(uint32_t surf, int x0, int y0, int x1, int y1, int whole, uint
 static int take(const struct draw *d)
 {
     struct item *it;
-    int was_lit, now_lit, text_changed, counts = 0;
+    int was_lit, now_lit, text_changed, framed, counts = 0;
 
     if (d->kind == EV_CLEAR) {
         erase(d->surf, 0, 0, 0, 0, 1, d->tick);
@@ -808,6 +865,26 @@ static int take(const struct draw *d)
         last_row.valid = 1;
         return 0;
     }
+    if (d->kind == EV_FRAME) {
+        int k;
+        for (k = 0; k < nframe_sites && frame_sites[k] != d->site; k++)
+            ;
+        if (k == nframe_sites && k < (int)(sizeof frame_sites / sizeof frame_sites[0])) {
+            frame_sites[nframe_sites++] = d->site;
+            log_line("%lu outline %08lx %d %d %d %d %08lx\n", (unsigned long)d->tick,
+                     (unsigned long)d->surf, d->x, d->y, d->x1, d->y1, (unsigned long)d->site);
+        }
+        if (role_of(d->site) == ROLE_CHOICE) {
+            last_frame.surf = d->surf;
+            last_frame.x0 = d->x;
+            last_frame.y0 = d->y;
+            last_frame.x1 = d->x1;
+            last_frame.y1 = d->y1;
+            last_frame.tick = d->tick;
+            last_frame.valid = 1;
+        }
+        return 0;
+    }
     if (d->kind == EV_ICON) {
         if (d->mark && (last_icon.surf != d->surf || last_icon.x != d->x
                         || last_icon.y != d->y || !last_icon.sel))
@@ -841,6 +918,15 @@ static int take(const struct draw *d)
             it->icon_sel = (uint8_t)last_icon.sel;
         last_icon.valid = 0;
     }
+    /* A choice's outline is drawn just before its text, which starts inside
+       it; a centred string may start a pixel or two left of it. */
+    framed = last_frame.valid && d->tick - last_frame.tick <= 2 && d->surf == last_frame.surf
+        && d->x >= last_frame.x0 - 3 && d->x <= last_frame.x1
+        && d->y >= last_frame.y0 && d->y <= last_frame.y1;
+    if (framed != it->framed)
+        log_line("%lu %s %08lx %d %d |%s|\n", (unsigned long)d->tick,
+                 framed ? "chosen" : "unchosen", (unsigned long)d->surf, d->x, d->y, d->text);
+    it->framed = (uint8_t)framed;
     it->erased = 0;
     it->draws++;
     it->last_drawn = d->tick;
@@ -1120,13 +1206,13 @@ static int horizontally_near(const struct item *a, const struct item *b)
     return a0 < b1 && b0 < a1;
 }
 
-/* Text that can label a value: not a title, the status bar, a tab, or a
-   highlighted menu item. A settings row's name labels its value whether or
+/* Text that can label a value: not a title, the status bar, a tab, a
+   highlighted menu item or a chosen one. A settings row's name labels its value whether or
    not the row is selected. */
 static int plain(const struct item *it)
 {
     return !is_title(it) && !is_status(it) && it->role != ROLE_TABS && !it->icon_sel
-        && !(it->mark == WHITE && it->y >= 10);
+        && !it->framed && !(it->mark == WHITE && it->y >= 10);
 }
 
 /* A value's label is plain text drawn by other code, and drawn since the
@@ -1434,6 +1520,16 @@ static void same_screen(struct item **order)
     int n, i, k, m, pad_hit = 0;
     uint32_t popup_surf = 0;
 
+    /* A choice newly made says what the screen now shows for it, changed or
+       not: the BPM screen's tempo, when PROJECT gives way to the bank. */
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].framed && items[i].changed)
+            break;
+    if (i < ITEMS)
+        for (k = 0; k < ITEMS; k++)
+            if (live(&items[k]) && is_lit(&items[k]) && drawn_now(&items[k])
+                && !items[k].changed)
+                items[k].changed = 2;
     n = in_order(order, ITEMS, want_changed);
     for (i = 0; i < n; i++) {
         struct item *it = order[i];
