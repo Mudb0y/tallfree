@@ -292,8 +292,23 @@ void audio_flush(void)
     ring_rd = ring_wr;
 }
 
+static int held;
+
+uint32_t audio_making(int making)
+{
+    (void)making;
+    return 0;
+}
+
+void audio_hold(int hold)
+{
+    held = hold != 0;
+}
+
 static void play_one_ms(void)
 {
+    if (held)
+        return;
     play_acc += 11025;
     while (play_acc >= 1000 && ring_rd < ring_wr) {
         if (nplayed == played_cap) {

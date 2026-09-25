@@ -19,6 +19,8 @@ void audio_push(const int16_t *s, size_t n);
 size_t audio_space(void);
 size_t audio_pending(void);
 void audio_flush(void);
+void audio_hold(int hold);
+uint32_t audio_making(int making);
 int  audio_hooked(void);
 
 /* screen.c */

@@ -83,6 +83,8 @@ static int16_t ring[RING];
 static volatile uint32_t ring_wr;            /* samples ever written */
 static volatile uint32_t ring_rd;            /* samples ever passed */
 static volatile uint32_t ring_frac;          /* and the fraction into the next */
+static volatile uint32_t ring_held;          /* nothing played until released */
+static volatile uint32_t ring_making, ring_dry;  /* a phrase is being made; ticks it ran dry */
 
 /* Speech level: a 16-bit sample times g_gain / 32. Set from "#vol N"
    (percent of 128) in SAY.TXT; 50, gain 64, is the level Stas approved. */
@@ -148,8 +150,11 @@ static void our_isr(void)
     }
     rd = ring_rd;
     wr = ring_wr;
-    if (rd >= wr)
+    if (rd >= wr || ring_held) {
+        if (rd >= wr && ring_making && !ring_held)
+            ring_dry++;
         return;
+    }
     /* Line 3 is the only line that reaches the main outputs, and words 0
        and 1 of its frames are one left-right pair there (measured with the
        slot probe). Speech is added to what the firmware put in them and
@@ -177,6 +182,24 @@ static void our_isr(void)
     }
     ring_frac = frac;
     ring_rd = rd;
+}
+
+/* Whether a phrase is still being made, and how many audio interrupts found
+   the ring empty meanwhile: each one is 1.3 ms of a stall. */
+uint32_t audio_making(int making)
+{
+    uint32_t dry = ring_dry;
+
+    ring_making = making != 0;
+    if (making)
+        ring_dry = 0;
+    return dry;
+}
+
+/* Holds back what the ring has until it can play without running dry. */
+void audio_hold(int hold)
+{
+    ring_held = hold != 0;
 }
 
 size_t audio_space(void)

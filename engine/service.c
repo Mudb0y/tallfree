@@ -39,8 +39,8 @@ static char batch[4096];
 static size_t batch_pos;
 static int batch_left;
 
-static int synth_active, discarding, unloading, screen_live, screen_started;
-static uint32_t t_submit, t_first, phrase_no;
+static int synth_active, discarding, unloading, screen_live, screen_started, holding;
+static uint32_t t_submit, t_first, t_released, phrase_no;
 static size_t phrase_samples;
 static char phrase[48];
 
@@ -107,6 +107,8 @@ static void batch_one(const char *text)
 
 static void cut(void)
 {
+    holding = 0;
+    audio_hold(0);
     audio_flush();
     if (synth_active)
         discarding = 1;
@@ -155,6 +157,27 @@ static void service_poll(void)
     }
 }
 
+/* A phrase starting into silence is held back until it can play straight
+   through: until its synthesis is done, or 150 ms of it are waiting and it
+   is being made at least 1.2 times as fast as it plays. The engine's cost is
+   mostly fixed per phrase, so at a fast speed a short phrase is shorter than
+   the time it takes to make, and played as it came it stalled mid-word. */
+
+static void release_when_ahead(void)
+{
+    uint32_t made_ms, since_ms;
+
+    if (!holding)
+        return;
+    made_ms = (uint32_t)(phrase_samples * 1000u / 11025u);
+    since_ms = TICKS_TO_MS(device_ticks() - t_first);
+    if (audio_pending() * 1000u / 11025u >= 150u && since_ms > 0 && made_ms * 10u >= since_ms * 12u) {
+        holding = 0;
+        audio_hold(0);
+        t_released = device_ticks();
+    }
+}
+
 void target_audio(const short *s, size_t n)
 {
     if (discarding || !audio_hooked())
@@ -163,12 +186,15 @@ void target_audio(const short *s, size_t n)
         t_first = device_ticks();
     phrase_samples += n;
     while (audio_space() < n) {
+        holding = 0;
+        audio_hold(0);
         service_poll();
         if (discarding)
             return;
         target_sleep(5);
     }
     audio_push(s, n);
+    release_when_ahead();
 }
 
 static void phrase_start(void)
@@ -184,6 +210,12 @@ static void phrase_start(void)
     discarding = 0;
     t_submit = device_ticks();
     t_first = t_submit;
+    t_released = 0;
+    if (audio_pending() == 0) {
+        holding = 1;
+        audio_hold(1);
+    }
+    audio_making(1);
     if (speech_say(p) == 0)
         synth_active = 1;
 }
@@ -192,15 +224,21 @@ static void phrase_start(void)
    to the end of its synthesis. */
 static void phrase_done(void)
 {
-    uint32_t now = device_ticks();
+    uint32_t now = device_ticks(), dry = audio_making(0);
 
-    printf("say %lu at %lu: first %lu ms, all %lu ms, %lu samples%s |%s|\n",
+    /* played: from handing it over to its sound starting, the first buffer
+       or the release from holding; dry: how long it stalled after that. */
+    printf("say %lu at %lu: first %lu ms, all %lu ms, played %lu ms, dry %lu ms, %lu samples%s |%s|\n",
            (unsigned long)phrase_no, (unsigned long)t_submit,
            (unsigned long)(phrase_samples ? TICKS_TO_MS(t_first - t_submit) : 0),
-           (unsigned long)TICKS_TO_MS(now - t_submit), (unsigned long)phrase_samples,
+           (unsigned long)TICKS_TO_MS(now - t_submit),
+           (unsigned long)TICKS_TO_MS((t_released ? t_released : holding ? now : t_first) - t_submit),
+           (unsigned long)TICKS_TO_MS(dry), (unsigned long)phrase_samples,
            discarding ? ", cut off" : "", phrase);
     synth_active = 0;
     discarding = 0;
+    holding = 0;
+    audio_hold(0);
 }
 
 /* Once the script has been said: the log so far to the card, in case the
