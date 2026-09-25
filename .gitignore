@@ -2,15 +2,13 @@
 # unpack + import steps in notes.md
 work/ghidra_proj/
 
-# Built images: regenerable from firmware/SP404MKII_APP1.bin by the
-# work/make_patchNN.py scripts
-work/patched*/
+# The image and its boot loader, built by image/make_image.py
+image/build/
 
 # Build artefacts
 work/**/*.o
 work/**/*.elf
-work/__pycache__/
-work/**/__pycache__/
+__pycache__/
 
 # Decompressed firmware segments: regenerable by work/unpack.py
 work/sdram_code.bin
