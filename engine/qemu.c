@@ -15,22 +15,16 @@ int  sh_read(int fd, void *buf, int len);
 int  sh_flen(int fd);
 uint32_t sys_heap_used(void);
 
-/* Samples collect here as the engine makes them and go to out.raw at the end,
-   for compare.sh to hold against the desktop engine. */
-static short *samples;
-static size_t nsamples, cap;
+/* Samples go to out.raw as the engine makes them, for compare.sh to hold
+   against the desktop engine. Kept off the heap, which holds no more than
+   the instrument's: a store of the whole utterance ran out seven seconds in. */
+static int out_fd = -1;
+static size_t nsamples;
 
 void target_audio(const short *s, size_t n)
 {
-    if (nsamples + n > cap) {
-        short *more;
-        cap = (nsamples + n) * 2 + 4096;
-        more = realloc(samples, cap * sizeof *samples);
-        if (more == NULL)
-            return;
-        samples = more;
-    }
-    memcpy(samples + nsamples, s, n * sizeof *s);
+    if (out_fd >= 0)
+        sh_write(out_fd, s, (int)(n * sizeof *s));
     nsamples += n;
 }
 
@@ -59,10 +53,12 @@ static const char *input(void)
 int target_main(void)
 {
     const char *text = input();
-    int fd;
 
     if (text == NULL)
         text = "Hello, I am the SP four oh four, and I can talk now.";
+    out_fd = sh_open("out.raw", 4 | 1);   /* "wb" */
+    if (out_fd < 0)
+        return 1;
     if (speech_open(FRAME))
         return 1;
     /* "#param N V" lines at the head of in.txt set the engine's settings. */
@@ -81,11 +77,7 @@ int target_main(void)
     speech_close();
     printf("engine: %u samples, heap %lu bytes\n", (unsigned)nsamples,
            (unsigned long)sys_heap_used());
-    fd = sh_open("out.raw", 4 | 1);   /* "wb" */
-    if (fd < 0)
-        return 1;
-    sh_write(fd, samples, (int)(nsamples * sizeof *samples));
-    sh_close(fd);
+    sh_close(out_fd);
     return 0;
 }
 

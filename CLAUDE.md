@@ -178,7 +178,7 @@ function two slots over. `ghidra/regions/itcm_code.bin` starts at runtime 0x400.
 
 **The engine, as it runs now.** OpenEVV is one image, `engine/build/ENGINE.BIN`,
 linked to run at 0x83AC0000, header "EVV2", with OpenEVV's rules compiled
-to C (`make lib` builds build-m7c with RULES=c). Images 30 and 31 point
+to C (RULES=c). Images 30 and 31 point
 the main screen's status-line draw, vtable word 0x80226E98, at
 `image/boot.c` in flash; on its first call that puts the word back and
 loads the engine from the card, else the eMMC, checking its header and
@@ -186,11 +186,15 @@ CRC, or plays a clip saying there is no engine; it refuses image 29's
 "EVV1" engines, linked 1 MB higher. Image 31's boot loader writes nothing
 to the card; it passes the engine where it found it instead. The room
 comes from the looper and skip-back buffer, cut from 7.25 MB to 2.5 MB
-(13.65 s a channel). `engine/` builds it: `make lib` builds OpenEVV's
-library from its `sp404` branch, in the checkout `OPENEVV` names, with
-PORT=none; `make check` runs it under QEMU's Cortex-M7 against the desktop
-engine, and `cases.sh run` then `compare` does 80 cases. QEMU starts the
-engine on junk memory, because the instrument does.
+(13.65 s a channel). `engine/` builds it: OpenEVV is the submodule
+`engine/openevv`, pinned to the commit the engine was tested against (`git
+submodule update --init`), and `make lib` builds its library there with
+PORT=none into its `build/m7c`; `make check` runs the engine under QEMU's
+Cortex-M7 against the desktop engine built from the same tree, and
+`cases.sh run` then `compare` does 80 cases. QEMU starts the
+engine on junk memory, because the instrument does, and gives it no more
+heap than the instrument is sure of, 1280 KB, which the device link
+asserts; the harnesses stream their output rather than store it there.
 
 **The engine is resident from boot.** It says "speech on", speaks any
 script in `A:/EVV/SAY.TXT` (its settings, `#vol`, `#mode`, `#settle`,

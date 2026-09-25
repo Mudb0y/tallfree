@@ -277,8 +277,18 @@ uint32_t device_ticks(void)
 static int16_t ring[RING];
 static volatile uint32_t ring_wr, ring_rd;
 static uint32_t play_acc, flushes;
-static int16_t *played;
-static size_t nplayed, played_cap;
+/* What was played goes to sim.raw through a fixed buffer, off the heap, which
+   holds no more than the instrument's. */
+static int16_t played[4096];
+static size_t nbuffered, nplayed;
+static int raw_fd = -1;
+
+static void played_flush(void)
+{
+    if (raw_fd >= 0 && nbuffered > 0)
+        sh_write(raw_fd, played, (int)(nbuffered * sizeof *played));
+    nbuffered = 0;
+}
 
 size_t audio_space(void) { return RING - 1u - (ring_wr - ring_rd); }
 size_t audio_pending(void) { return ring_wr - ring_rd; }
@@ -319,11 +329,10 @@ static void play_one_ms(void)
         return;
     play_acc += 11025;
     while (play_acc >= 1000 && ring_rd < ring_wr) {
-        if (nplayed == played_cap) {
-            played_cap = played_cap * 2 + 65536;
-            played = realloc(played, played_cap * sizeof *played);
-        }
-        played[nplayed++] = ring[ring_rd % RING];
+        if (nbuffered == sizeof played / sizeof played[0])
+            played_flush();
+        played[nbuffered++] = ring[ring_rd % RING];
+        nplayed++;
         ring_rd++;
         play_acc -= 1000;
     }
@@ -496,13 +505,14 @@ void target_enter(void)
     for (i = 0; i < 94; i++)
         sim_page_table[i] = (uint32_t)(uintptr_t)sim_page_factory;
     load_events();
+    raw_fd = sh_open("sim.raw", 4 | 1);
 }
 
 void target_leave(void) { }
 
 int target_launch(int (*body)(void))
 {
-    int rc = body(), i, fd, restored = 1;
+    int rc = body(), i, restored = 1;
 
     for (i = 0; i < 7; i++)
         if (sim_vtables[i][0x12C / 4] != (uint32_t)(uintptr_t)sim_draw_string
@@ -517,10 +527,8 @@ int target_launch(int (*body)(void))
     for (i = 0; i < nsaid; i++)
         printf("said %d: %s\n", i + 1, said[i]);
     check_expected();
-    fd = sh_open("sim.raw", 4 | 1);
-    if (fd >= 0) {
-        sh_write(fd, played, (int)(nplayed * sizeof *played));
-        sh_close(fd);
-    }
+    played_flush();
+    if (raw_fd >= 0)
+        sh_close(raw_fd);
     return rc;
 }

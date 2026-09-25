@@ -71,11 +71,18 @@ SECTIONS
     __bss_end = .;
   }
 
+  /* The heap the instrument is sure of having. Under QEMU it is all there
+     is, so a build that needs more fails make check and the simulator
+     rather than the unit, which QEMU's 16 MB would otherwise hide; on the
+     instrument the heap is everything up to the stack, and must be at least
+     this much. */
+  HEAP_FLOOR = 1280K;
   __heap_start = ALIGN(8);
   __stack_top = ENGINE_BASE + ENGINE_SIZE;
-  __heap_end = __stack_top - STACK_SIZE;
+  __heap_end = DEFINED(HEAP_FLOOR_ONLY) ? __heap_start + HEAP_FLOOR : __stack_top - STACK_SIZE;
 
-  ASSERT(__heap_end > __heap_start + 1024K, "engine image leaves under a megabyte of heap")
+  ASSERT(__heap_end >= __heap_start + HEAP_FLOOR && __heap_end <= __stack_top - STACK_SIZE,
+         "engine image leaves under 1280 KB of heap, what QEMU tests it with")
 
   /DISCARD/ : { *(.ARM.attributes) *(.comment) }
 }

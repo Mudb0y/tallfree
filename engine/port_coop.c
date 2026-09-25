@@ -356,6 +356,12 @@ evv_task *evv_task_start(void (*entry)(void *), void *arg, int stack_bytes)
         return NULL;
     if (stack_bytes < 16384)
         stack_bytes = 16384;
+    /* OpenEVV asks a desktop's megabyte for its synthesis thread, for rules
+       as bytecode, which recurse 32 KB deep. The compiled rules built here
+       start their deepest rule 14 KB down, the thread ran on IBM's 40,000
+       bytes for every session before, and the unit's whole heap is 1.28 MB. */
+    if (stack_bytes > 65536)
+        stack_bytes = 65536;
     stack_bytes = (stack_bytes + 7) & ~7;
     t->stack = malloc((size_t)stack_bytes);
     t->tls = tls_new();
