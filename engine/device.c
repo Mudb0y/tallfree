@@ -132,6 +132,60 @@ static void probe_fill(void)
     }
 }
 
+/* The receive probe: what comes back in from the hardware of each output
+   slot. A tone goes into one set of transmit slots at a time, and the level
+   of every word of the receive buffers is measured meanwhile. The firmware's
+   audio task points eDMA channel 4 at them, 0x20008000, two halves of 64
+   frames of eight 32-bit words, and its receive handler takes a slot's two
+   16-bit halves as a left-right pair. Word 13 of line 3 is the firmware's
+   bus mask, not audio, and is left alone. */
+#define RXP_BUF    ((const volatile int32_t *)0x20008000u)
+#define RXP_WORDS  (2u * 64u * 8u)
+#define RXP_AMP    16384                      /* 2^19 / 32, about -22 dBFS out */
+#define RXP_SETTLE 150u                       /* ticks to skip at a set's start */
+static const struct { uint8_t line; uint16_t words; const char *name; } rxp_sets[] = {
+    { 0, 0,        "nothing" },
+    { 3, 1u << 0,  "line 3 word 0" },
+    { 3, 1u << 1,  "line 3 word 1" },
+    { 3, 3u << 2,  "line 3 words 2 3" },
+    { 3, 3u << 4,  "line 3 words 4 5" },
+    { 3, 3u << 6,  "line 3 words 6 7" },
+    { 3, 3u << 8,  "line 3 words 8 9" },
+    { 3, 3u << 10, "line 3 words 10 11" },
+    { 3, 1u << 12, "line 3 word 12" },
+    { 3, 3u << 14, "line 3 words 14 15" },
+    { 0, 3u << 0,  "line 0 words 0 1" },
+    { 0, 0,        "nothing" },
+};
+#define RXP_SETS (sizeof rxp_sets / sizeof rxp_sets[0])
+static volatile uint32_t rxp_set, rxp_t0, rxp_phase;
+static uint64_t rxp_hi[RXP_SETS][8], rxp_lo[RXP_SETS][8];
+static uint32_t rxp_n[RXP_SETS];
+
+static void rxp_fill(void)
+{
+    uint32_t k = rxp_set, f, s, i;
+    volatile int32_t *q = (volatile int32_t *)*(volatile uint32_t *)
+        (0x400E9000u + rxp_sets[k].line * 32u);
+
+    for (f = 0; f < SAMPLES; f++) {
+        int32_t v = (probe_sine[rxp_phase >> 22] * RXP_AMP) >> 15;
+        rxp_phase += probe_inc[0];
+        for (s = 0; s < SLOTS; s++)
+            if (rxp_sets[k].words & (1u << s))
+                q[f * SLOTS + s] += v;
+    }
+    if (g_ticks - rxp_t0 < RXP_SETTLE)
+        return;
+    for (i = 0; i < RXP_WORDS; i++) {
+        int32_t w = RXP_BUF[i];
+        int32_t hi = (int16_t)(w >> 16), lo = (int16_t)w;
+        rxp_hi[k][i & 7u] += (uint64_t)(hi * hi);
+        rxp_lo[k][i & 7u] += (uint64_t)(lo * lo);
+    }
+    rxp_n[k] += RXP_WORDS / 8u;
+}
+
 static void our_isr(void)
 {
     /* Read before the original handler runs: it clears the flag, so a check
@@ -145,6 +199,10 @@ static void our_isr(void)
     if (!mine)
         return;
     g_ticks++;
+    if (g_probe == 2) {
+        rxp_fill();
+        return;
+    }
     if (g_probe) {
         probe_fill();
         return;
@@ -281,6 +339,45 @@ void target_probe_slots(void)
         target_sleep(20);
     g_probe = 0;
     printf("probe: ran %lu ticks\n", (unsigned long)(g_ticks - t0));
+}
+
+/* Each set for 1.5 s, then the RMS of both halves of each receive word under
+   each, in 16-bit units, to A:/EVV/RXPROBE.TXT. */
+void target_probe_rx(void)
+{
+    static char text[4096];
+    uint32_t k, w, n = 0;
+
+    for (k = 0; k < 1024; k++)
+        probe_sine[k] = (int16_t)(32767.0f * sinf(6.28318530718f * (float)k / 1024.0f));
+    probe_inc[0] = (uint32_t)(((uint64_t)1000u << 32) / 48000u);
+    if (!g_hooked) {
+        printf("rxprobe: audio hook not installed\n");
+        return;
+    }
+    for (k = 0; k < RXP_SETS; k++) {
+        rxp_t0 = g_ticks;
+        rxp_set = k;
+        g_probe = 2;
+        while (g_ticks - rxp_t0 < 1125u)
+            target_sleep(20);
+    }
+    g_probe = 0;
+    n += (uint32_t)snprintf(text + n, sizeof text - n,
+                            "# 1 kHz at 2^14 into each set; RMS of each receive word's high"
+                            " and low 16 bits\n# set: w0 hi lo | w1 hi lo | ... | w7 hi lo\n");
+    for (k = 0; k < RXP_SETS && n < sizeof text - 256; k++) {
+        n += (uint32_t)snprintf(text + n, sizeof text - n, "%-20s", rxp_sets[k].name);
+        for (w = 0; w < 8u; w++) {
+            uint32_t c = rxp_n[k] ? rxp_n[k] : 1u;
+            n += (uint32_t)snprintf(text + n, sizeof text - n, " %5lu %5lu",
+                                    (unsigned long)sqrtf((float)(rxp_hi[k][w] / c)),
+                                    (unsigned long)sqrtf((float)(rxp_lo[k][w] / c)));
+        }
+        n += (uint32_t)snprintf(text + n, sizeof text - n, "\n");
+    }
+    printf("%s", text);
+    write_file("A:/EVV/RXPROBE.TXT", text, n);
 }
 
 /* The engine copies itself to the eMMC, so the boot loader finds it there

@@ -19,6 +19,7 @@ extern int card_log;
 extern unsigned int engine_loaded_from, engine_card_refusal;
 void target_volume(uint32_t percent);
 void target_probe_slots(void);
+void target_probe_rx(void);
 int  engine_task_id(void);
 void write_file(const char *path, const void *buf, size_t len);
 const char *read_text(const char *path);

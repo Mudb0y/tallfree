@@ -16,6 +16,8 @@
                  cutting that one off; without it, a line waits for the one
                  before to finish
      #slots      the slot probe instead of any of this
+     #rxprobe    the receive probe instead: which output slots come back in
+                 from the hardware, to A:/EVV/RXPROBE.TXT
    and any other line is said.
 
    Speech is a batch of phrases said in turn. A new batch, from the screen or
@@ -30,7 +32,8 @@
 #include "device.h"
 #include "say.h"
 
-static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, dictionary, volume = 50;
+static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, rxprobe, dictionary,
+    volume = 50;
 int card_log;
 
 #define SCRIPT 64
@@ -75,6 +78,8 @@ static void configure(char *text)
             wait_ms = atoi(line + 6);
         else if (strncmp(line, "#slots", 6) == 0)
             slots = 1;
+        else if (strncmp(line, "#rxprobe", 8) == 0)
+            rxprobe = 1;
         else if (*line && *line != '#' && nscript < SCRIPT) {
             script[nscript].text = line;
             script[nscript].wait_ms = wait_ms;
@@ -274,6 +279,10 @@ int target_main(void)
     }
     if (slots) {
         target_probe_slots();
+        return 0;
+    }
+    if (rxprobe) {
+        target_probe_rx();
         return 0;
     }
     if (!audio_hooked())
