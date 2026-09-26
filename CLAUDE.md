@@ -28,8 +28,9 @@ stalls at speed 135.
 
 How the screen is read: hooks, all data writes, on the seven surface
 vtables' DrawString, clear, fill and rectangle outline; the 76 icon menus'
-icon draw; the SYSTEM page's row draw; and the 94 page handlers, which also
-carry every key and knob. Read the kernel's and the firmware's own code
+icon draw; the SYSTEM page's row draw; the tab strip's draw, which names
+the current tab; and the 94 page handlers, which also carry every key and
+knob. Read the kernel's and the firmware's own code
 before trusting any record layout or vtable slot.
 
 Not solved: say-all and speech off, which the key hook makes easy; dialogs

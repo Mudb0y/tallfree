@@ -20,6 +20,7 @@
                                a rectangle's outline, drawn from that site
      MS [sN] ICON X Y SEL NAME an icon menu's icon, selected if SEL is 1
      MS [sN] ROW Y SEL         a settings row whose text is at Y, selected if 1
+     MS [sN] TAB CUR A,B,...   a tab strip drawn, tab CUR of those current
      MS PAGE N                 page factory N called: a page being built
      MS KEY DOWN|UP HEX        a key sent to the main screen's page, 84
      MS KNOB N STEP            knob N turned by STEP, to page 84
@@ -46,12 +47,18 @@ int  sh_flen(int fd);
 
 volatile uint32_t sim_vtables[7][0x130 / 4], sim_site;
 volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
-volatile uint32_t sim_page_table[94], sim_row_word;
+volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
 
 void sim_draw_row(void *page, void *ctx, const int16_t *rect, int a, int b, int sel, int c)
 {
     (void)page; (void)ctx; (void)rect; (void)a; (void)b; (void)sel; (void)c;
 }
+
+/* A tab widget as FUN_80121478 reads one: the current index at +0x320, the
+   count at +0x328, the names from +0x29C, the drawing context at +0x84. */
+void sim_draw_tabs(void *widget) { (void)widget; }
+static uint32_t tab_widget[0x340 / 4], tab_ctx[8];
+static char tab_names[16][24];
 
 static unsigned page_saw_keys;
 
@@ -121,7 +128,7 @@ static char *slurp(const char *name)
     return t;
 }
 
-enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_BOX };
+enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_BOX, E_TAB };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -170,6 +177,12 @@ static void load_events(void)
             p += 3;
             ev[nev].y = (int)strtol(p, &p, 10);
             ev[nev].x1 = (int)strtol(p, &p, 10);
+        } else if (strncmp(p, "TAB ", 4) == 0) {
+            ev[nev].kind = E_TAB;
+            ev[nev].x = (int)strtol(p + 4, &p, 10);
+            while (*p == ' ')
+                p++;
+            ev[nev].text = p;
         } else if (strncmp(p, "PAGE", 4) == 0) {
             ev[nev].kind = E_PAGE;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
@@ -361,6 +374,25 @@ static void fire(int i)
             s, icon_ctx, rect, 0, 0, ev[i].x1, 0);
         break;
     }
+    case E_TAB: {
+        const char *t = ev[i].text;
+        int n = 0, k;
+        while (*t && n < 16) {
+            for (k = 0; *t && *t != ',' && k < 23; t++)
+                tab_names[n][k++] = *t;
+            tab_names[n][k] = 0;
+            *(const char **)((char *)tab_widget + 0x29C + 4 * n) = tab_names[n];
+            n++;
+            if (*t == ',')
+                t++;
+        }
+        tab_ctx[0] = (uint32_t)(uintptr_t)s;
+        *(uint32_t *)((char *)tab_widget + 0x84) = (uint32_t)(uintptr_t)tab_ctx;
+        *(int32_t *)((char *)tab_widget + 0x320) = ev[i].x;
+        *(int32_t *)((char *)tab_widget + 0x328) = n;
+        ((void (*)(void *))sim_tab_word)(tab_widget);
+        break;
+    }
     case E_KEY: {
         int16_t m[3] = { (int16_t)ev[i].x, (int16_t)ev[i].y, 0 };
         ((int (*)(void *))sim_page_table[84])(m);
@@ -504,6 +536,7 @@ void target_enter(void)
     sim_icon_slots[0] = sim_icon_slots[1] = (uint32_t)(uintptr_t)sim_draw_icon;
     sim_icon_ctx = (uint32_t)(uintptr_t)icon_ctx;
     sim_row_word = (uint32_t)(uintptr_t)sim_draw_row;
+    sim_tab_word = (uint32_t)(uintptr_t)sim_draw_tabs;
     for (i = 0; i < 94; i++)
         sim_page_table[i] = (uint32_t)(uintptr_t)sim_page_factory;
     load_events();

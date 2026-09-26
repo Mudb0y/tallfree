@@ -353,6 +353,41 @@ def bpm():
                      'BANK A | 118.50', 'PROJECT | 121.00', '118.50', 'BANK A | 118.50',
                      'C1:CTR1', 'C1:TEMPO SEL | BANK A | 118.50', 'A 13'])
 
+# The SYSTEM page's tabs as the unit drew them (runs/52): the strip shows
+# four tabs and scrolls, so the page count cannot name a tab by position;
+# the tab widget says which is current. On GAIN, VALUE is turned down the
+# list and on past its end, redrawing the rows unchanged; then the VERSION
+# tab, which only draws its version line over them.
+def tabs():
+    names = ['GENERAL', 'CLICK', 'MIDI', 'GAIN', 'VERSION']
+    def strip(t, cur, first, xs):
+        out = [f'{t} s0 FILL 0 0 127 8', f'{t} s0 103 2  {cur + 1}/ 5']
+        out += [f'{t} s0 {x} 2 {TABS}{names[first + k]}' for k, x in enumerate(xs)]
+        return out + [f'{t} s0 TAB {cur} ' + ','.join(names)]
+    def rows(t, rows, sel):
+        out = [f'{t} s0 FILL 0 9 119 60']
+        for k, (name, x, value) in enumerate(rows):
+            y = 13 + 8 * k
+            out += [f'{t} s0 ROW {y} {int(k == sel)}',
+                    f'{t} s0 6 {y} _{ROWLABEL}{name}', f'{t} s0 {x} {y} {value}']
+        return out
+    general = [('Edit Knob Mode', 93, 'Direct'), ('EFX Knob Mode', 93, 'Direct'),
+               ('Load Project', 100, 'Last'), ('Sub Pad Mode', 93, 'Retrig')]
+    gain = [('Attenuator', 104, 'OFF'), ('Noise Gate', 96, '  OFF'), ('Line Out', 96, '  0dB'),
+            ('Phones Out', 96, '  0dB'), ('USB Out', 96, '  0dB'), ('Anti Feedback', 104, 'OFF')]
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 79', '1000 s0 CLEAR'] + rows(1000, general, 0)
+    d += strip(1000, 0, 0, [5, 48, 76, 102, 127])
+    d += rows(3000, gain, 0) + strip(3000, 3, 1, [15, 43, 69, 96])
+    for k, t in enumerate(range(5000, 7000, 400)):
+        d += rows(t, gain, k + 1)
+    d += rows(7500, gain, 5) + rows(7900, gain, 5)
+    d += ['9000 s0 10 20 _=8014B161:Version: 5.52'] + strip(9000, 4, 3, [15, 40])
+    d += ['11000 VALUE']
+    write('tabs', d, ['A 13', 'GENERAL | Edit Knob Mode Direct', 'GAIN | Attenuator OFF',
+                      'Noise Gate OFF', 'Line Out 0dB', 'Phones Out 0dB', 'USB Out 0dB',
+                      'Anti Feedback OFF', 'VERSION | Version: 5.52'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -368,3 +403,4 @@ dialog()
 pages()
 settings()
 bpm()
+tabs()

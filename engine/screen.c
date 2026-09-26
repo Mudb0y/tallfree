@@ -65,6 +65,14 @@ static const uint32_t vt_base[] = {
 #define ROW_WORD        (*(volatile uint32_t *)0x80226C08u)
 #define ROW_DRAW        0x801489B9u
 #define ROW_DRAW_ASM    "0x801489B9"
+/* A page's tab strip is drawn by FUN_80121478(widget), reached only through
+   the vtable word at 0x80221D10. The widget knows
+   which tab is current: its index at +0x320, the count at +0x328, the names
+   at +0x29C, the drawing context at +0x84. The strip scrolls, four tabs to a
+   view, so the page count cannot name the tab by position. */
+#define TAB_WORD        (*(volatile uint32_t *)0x80221D10u)
+#define TAB_DRAW        0x80121479u
+#define TAB_DRAW_ASM    "0x80121479"
 static const uint32_t icon_slots[] = {
     0x8021CF38u, 0x8021DA78u, 0x8021DC38u, 0x8021DDFCu, 0x8021DFBCu, 0x8021E8B4u,
     0x8021EA40u, 0x8021EBCCu, 0x8021ED58u, 0x8021EEE4u, 0x8021F1F8u, 0x8021F9ACu,
@@ -89,9 +97,13 @@ void sim_fill(void);
 void sim_frame(void);
 void sim_batch(const char *phrases, int count);
 extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
-extern volatile uint32_t sim_page_table[94], sim_row_word;
+extern volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
 void sim_draw_icon(void);
 void sim_draw_row(void);
+void sim_draw_tabs(void);
+#define TAB_WORD        sim_tab_word
+#define TAB_DRAW        ((uint32_t)(uintptr_t)sim_draw_tabs)
+#define TAB_DRAW_ASM    "sim_draw_tabs"
 #define PAGE_TABLE      sim_page_table
 #define ROW_WORD        sim_row_word
 #define ROW_DRAW        ((uint32_t)(uintptr_t)sim_draw_row)
@@ -167,7 +179,8 @@ static uint8_t role_of(uint32_t site)
     return ROLE_NONE;
 }
 
-static volatile int unload_flag, screen_hooked, icons_hooked, rows_hooked, pages_hooked,
+static volatile int unload_flag, screen_hooked, icons_hooked, rows_hooked, tabs_hooked,
+    pages_hooked,
     screen_mode;
 
 /* The engine runs from boot until the instrument is switched off; nothing
@@ -184,7 +197,7 @@ int unload_requested(void)
 }
 
 /* One call as a hook saw it. */
-enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON, EV_ROW, EV_PAGE, EV_MENU, EV_FRAME };
+enum { EV_TEXT, EV_CLEAR, EV_FILL, EV_ICON, EV_ROW, EV_PAGE, EV_MENU, EV_FRAME, EV_TAB };
 #define DRAW_TEXT 64
 struct draw {
     uint32_t tick, surf, lr, site;
@@ -204,6 +217,7 @@ void fill_hook(void);
 void frame_hook(void);
 void icon_hook(void);
 void row_hook(void);
+void tab_hook(void);
 /* Eight words keep the stack 8-byte aligned for the C call, and leave the
    caller's fifth argument at sp + 32. */
 #define HOOK(name, record, target)                                        \
@@ -222,6 +236,7 @@ HOOK(fill_hook, fill_record, FILL_RECT_ASM);
 HOOK(frame_hook, frame_record, FRAME_RECT_ASM);
 HOOK(icon_hook, icon_record, ICON_DRAW_ASM);
 HOOK(row_hook, row_record, ROW_DRAW_ASM);
+HOOK(tab_hook, tab_record, TAB_DRAW_ASM);
 
 static void push(const struct draw *d)
 {
@@ -385,6 +400,37 @@ __attribute__((used)) static void row_record(const uint32_t *f)
     push(&d);
 }
 
+/* A tab strip: the current tab's name, from the widget itself, and the
+   surface it draws on, the first word of its drawing context. */
+__attribute__((used)) static void tab_record(const uint32_t *f)
+{
+    struct draw d;
+    uint32_t w = f[0], ctx;
+    int32_t cur, n;
+    const char *name;
+    int k;
+
+    if (!screen_hooked || w == 0)
+        return;
+    cur = *(const volatile int32_t *)(w + 0x320);
+    n = *(const volatile int32_t *)(w + 0x328);
+    ctx = *(const volatile uint32_t *)(w + 0x84);
+    if (cur < 0 || cur >= n || n > 32 || ctx == 0)
+        return;
+    name = *(const char *const volatile *)(w + 0x29C + 4u * (uint32_t)cur);
+    if (name == NULL)
+        return;
+    memset(&d, 0, sizeof d);
+    d.kind = EV_TAB;
+    d.tick = device_ticks();
+    d.surf = *(const volatile uint32_t *)ctx;
+    d.mark = cur;
+    for (k = 0; name[k] && k < DRAW_TEXT - 1; k++)
+        d.text[k] = name[k];
+    d.text[k] = 0;
+    push(&d);
+}
+
 /* The page handlers, their stubs, and what they were. Each is sent a
    message whose first halfword is its type; FUN_80063B68, the UTILITY
    page's, builds the page on type 1. The interface sends the page it is on
@@ -511,6 +557,9 @@ void screen_remove(void)
     if (rows_hooked)
         ROW_WORD = ROW_DRAW;
     rows_hooked = 0;
+    if (tabs_hooked)
+        TAB_WORD = TAB_DRAW;
+    tabs_hooked = 0;
     if (pages_hooked)
         for (i = 0; i < PAGES; i++)
             PAGE_TABLE[i] = page_orig[i];
@@ -553,6 +602,12 @@ static struct {
     int16_t  x, y;
     uint8_t  sel, valid;
 } last_icon;
+/* The tab a tab strip last said was current, when, and whether it changed
+   since the last batch. */
+static char tab_now[ITEM_TEXT];
+static uint32_t tab_tick;
+static int tab_changed;
+
 /* The last outline that marks a choice, and the sites of every outline seen
    so far, each logged once. */
 static struct {
@@ -635,6 +690,12 @@ int screen_install(int mode, int settle_ms)
             ICON_SLOT(i) = (uint32_t)(uintptr_t)icon_hook | 1u;
     else
         printf("screen: an icon slot is not the icon draw; icons not hooked\n");
+    if (TAB_WORD == TAB_DRAW) {
+        TAB_WORD = (uint32_t)(uintptr_t)tab_hook | 1u;
+        tabs_hooked = 1;
+    } else {
+        printf("screen: the tab strip word is not the tab draw; tabs not hooked\n");
+    }
     if (ROW_WORD == ROW_DRAW) {
         ROW_WORD = (uint32_t)(uintptr_t)row_hook | 1u;
         rows_hooked = 1;
@@ -856,6 +917,15 @@ static int take(const struct draw *d)
             return 0;
         page_pending = 1;
         page_seq = draw_seq;
+        return 1;
+    }
+    if (d->kind == EV_TAB) {
+        tab_tick = d->tick;
+        if (strcmp(tab_now, d->text) == 0)
+            return 0;
+        memcpy(tab_now, d->text, ITEM_TEXT);
+        tab_changed = 1;
+        log_line("%lu tab %ld |%s|\n", (unsigned long)d->tick, (long)d->mark, d->text);
         return 1;
     }
     if (d->kind == EV_ROW) {
@@ -1304,11 +1374,14 @@ static int want_title(const struct item *it)
 {
     return is_title(it) && (int32_t)(it->last_drawn - b_prev) > 0;
 }
-/* The focus drawn since the last batch: an icon menu's layer may never be
-   wiped either, and its selected label would stay the focus for good. */
+/* The focus drawn since the change that began this screen: an icon menu's
+   layer may never be wiped either, and its selected label would stay the
+   focus for good; and a settings row redrawn by turns of VALUE that changed
+   nothing, before the tab changed, is the tab before's. */
 static int want_lit(const struct item *it)
 {
-    return is_lit(it) && (int32_t)(it->last_drawn - b_prev) > 0;
+    return is_lit(it) && (int32_t)(it->last_drawn - b_prev) > 0
+        && (int32_t)(it->last_drawn - screen_epoch) >= 0;
 }
 static int want_popup(const struct item *it) { return is_popup(it); }
 static int want_new_popup(const struct item *it)
@@ -1316,10 +1389,19 @@ static int want_new_popup(const struct item *it)
     return is_popup(it) && (it->fresh || it->changed == 1);
 }
 static int want_changed(const struct item *it) { return it->changed != 0; }
+static int page_number(const struct item *it);
+
+/* A tab strip drawn for this screen, which names the current tab itself. */
+static int tab_known(void)
+{
+    return tab_now[0] != 0 && (int32_t)(tab_tick - screen_epoch) >= 0;
+}
+
+/* What a screen shows; a page count is left to the tab it counts. */
 static int want_fresh(const struct item *it)
 {
     return !is_status(it) && !is_title(it) && it->role != ROLE_TABS
-        && (it->fresh || it->changed == 1);
+        && (it->fresh || it->changed == 1) && !(tab_known() && page_number(it));
 }
 
 /* A screen with no title and no focus: what it shows, each value read with
@@ -1455,7 +1537,12 @@ static void new_screen(struct item **order)
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
         say(order[i]);
-    if ((tab = current_tab()) != NULL && strcmp(tab->text, last_tab) != 0) {
+    if (tab_known()) {
+        if (strcmp(tab_now, last_tab) != 0) {
+            memcpy(last_tab, tab_now, ITEM_TEXT);
+            say3(tab_now, NULL, NULL);
+        }
+    } else if ((tab = current_tab()) != NULL && strcmp(tab->text, last_tab) != 0) {
         memcpy(last_tab, tab->text, ITEM_TEXT);
         say(tab);
     }
@@ -1657,7 +1744,7 @@ static int screen_changed(void)
     uint32_t surf[16];
     int nsurf = 0, i, k, alive = 0, fresh = 0, replaced = 0;
 
-    if (page_pending)
+    if (page_pending || tab_changed)
         return 1;
 
     for (i = 0; i < ITEMS; i++) {
@@ -1734,6 +1821,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < ITEMS; i++)
             items[i].changed = items[i].fresh = 0;
         pending = 0;
+        tab_changed = 0;
         b_prev = now;
         *count = b_count;
 #ifdef SIM
@@ -1747,6 +1835,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
             items[i].changed = items[i].fresh = 0;
         pending = 0;
         page_pending = 0;
+        tab_changed = 0;
         return 0;
     }
     if (pending && (now - last_change >= settle_ticks || now - first_pending >= 750u))
@@ -1813,6 +1902,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
     for (i = 0; i < ITEMS; i++)
         items[i].fresh = 0;
     wiped = 0;
+    tab_changed = 0;
     b_prev = now;
     *count = b_count;
 #ifdef SIM
