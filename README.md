@@ -54,7 +54,7 @@ speech engine, `TALLFREE.BIN`, in a folder called `TALLFREE`.
 3. With the SP off, put the card in, hold SHIFT, switch on and press the VALUE
    knob. The update makes no sound. When it has worked, the screen shows
    `APP0 UPDATER OK` and `APP1 UPDATER OK`; check that with a phone app that
-   reads text if you can, and otherwise wait at least ten minutes. Don't
+   reads text if you can, and otherwise wait at least three minutes. Don't
    switch off in the middle.
 4. Switch off and on again. You'll hear "ready".
 5. Delete `SP404MKII_APP0.bin` and `SP404MKII_APP1.bin` from the card. They
