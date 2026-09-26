@@ -1,16 +1,16 @@
 /* Seeing what the engine does on the instrument, where nothing can watch.
 
-   Stage markers rewrite A:/EVV/STAGE.TXT at each step, so a hang leaves the
-   last step reached on the card.
+   Stage markers rewrite A:/TALLFREE/STAGE.TXT at each step, so a hang leaves
+   the last step reached on the card.
 
    The fault catcher takes over the four fault vectors for the length of a
    run (VTOR is 0 and the table is in ITCM, which is writable). A fault from
    thread mode records the fault status registers and the stacked frame, then
    rewrites the stacked return address so that returning from the exception
    lands in fault_recover, still in thread mode, on the faulting context's
-   stack. That writes A:/EVV/FAULT.TXT and leaves through engine_exit, so the
-   firmware gets its task back instead of freezing. A fault in handler mode
-   cannot be walked back like that; it records and stops. */
+   stack. That writes A:/TALLFREE/FAULT.TXT and leaves through engine_exit,
+   so the firmware gets its task back instead of freezing. A fault in handler
+   mode cannot be walked back like that; it records and stops. */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -95,7 +95,7 @@ static void fault_recover(void)
         text[n++] = '\n';
     }
     if (card_log)
-        write_text("A:/EVV/FAULT.TXT", text, n);
+        write_text("A:/TALLFREE/FAULT.TXT", text, n);
     engine_exit(99);
 }
 

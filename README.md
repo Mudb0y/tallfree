@@ -41,12 +41,12 @@ to 13.65 seconds a channel.** Nothing else about the instrument changes.
 ## Installing
 
 You need an SD card and a computer. From the latest release, download
-`SP404MKII_APP1.bin`, the firmware, and `ENGINE.BIN`, the speech engine.
+`SP404MKII_APP1.bin`, the firmware, and `TALLFREE.BIN`, the speech engine.
 
 1. Format the SD card as FAT32 on the computer. Use a freshly formatted card:
    leftover deleted files can stop the instrument finding the update.
 2. Copy `SP404MKII_APP1.bin` to the top level of the card. Make a folder called
-   `EVV` on the card and copy `ENGINE.BIN` into it.
+   `TALLFREE` on the card and copy `TALLFREE.BIN` into it.
 3. With the instrument off, put the card in. Hold SHIFT, switch on, and press
    the VALUE knob. The update takes about 90 seconds and makes no sound; when it
    is done the screen says `UPDATE COMPLETE!`. If you can, check that with a
@@ -56,32 +56,18 @@ You need an SD card and a computer. From the latest release, download
 
 Within a few seconds of starting, the engine copies itself into the
 instrument's internal memory, so from then on it starts without the card. To
-update the engine, put a new `ENGINE.BIN` in the card's `EVV` folder and
-restart; it replaces the internal copy.
+update the engine, put a new `TALLFREE.BIN` in the card's `TALLFREE` folder
+and restart; it replaces the internal copy.
 
 If you hear "No speech engine found", the firmware is installed but found no
-engine on the card or in internal memory. Put `ENGINE.BIN` in the card's `EVV`
-folder and restart.
-
-### Settings file
-
-A text file `EVV/SAY.TXT` on the card is read at start-up. Each line is either
-a setting or something to say:
-
-- `#vol N` sets the speech volume, 50 by default. The speech settings menu,
-  once saved, takes precedence.
-- `#mode off` starts with screen reading off; `#mode all` speaks every change
-  on the screen instead of reading it as a screen reader would.
-- `#dict on` turns the engine's abbreviation dictionary on.
-- `#log on` writes logs to the card, which help with a bug report. Leave it off
-  otherwise.
-- Any other line is spoken when the instrument starts.
+engine on the card or in internal memory. Put `TALLFREE.BIN` in the card's
+`TALLFREE` folder and restart.
 
 ## If something goes wrong
 
 - If the instrument stops starting after an engine update, put an empty file
-  named `NOENGINE` in the card's `EVV` folder. The firmware then starts without
-  loading any engine.
+  named `NOENGINE` in the card's `TALLFREE` folder. The firmware then starts
+  without loading any engine.
 - To go back to Roland's firmware, download the system program from Roland's
   website and install it exactly as in step 3 above. The updater cannot touch
   the part of the instrument that runs it, so this always works.
@@ -97,7 +83,7 @@ fetch it after cloning. The rest builds in Nix development shells:
     nix develop .. -c make lib device sims check
 
 The third line builds the desktop OpenEVV in its own shell, for the
-comparison. `make device` writes `engine/build/ENGINE.BIN`, `make sims` runs
+comparison. `make device` writes `engine/build/TALLFREE.BIN`, `make sims` runs
 the screen reader against recorded screens under QEMU, and `make check`
 compares the engine's speech with the desktop OpenEVV's, sample for sample,
 with no more memory than the instrument has. To build the
@@ -108,7 +94,7 @@ explains how all of it works.
 ## Licence
 
 Tallfree's own code is under the MIT licence in `LICENSE`. The firmware in the
-releases contains Roland's system program, which is Roland's. `ENGINE.BIN`
+releases contains Roland's system program, which is Roland's. `TALLFREE.BIN`
 contains OpenEVV, under the MIT licence, and IBM's language data, on the terms
 set out in [OpenEVV's NOTICE](https://github.com/Mudb0y/openevv/blob/main/NOTICE).
 Roland and SP-404 are trademarks of Roland Corporation.

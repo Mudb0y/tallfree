@@ -1957,6 +1957,6 @@ int screen_log_write(void)
         if (k > 0)
             n += (size_t)k;
     }
-    write_file("A:/EVV/DRAWS.TXT", draw_log, n);
+    write_file("A:/TALLFREE/DRAWS.TXT", draw_log, n);
     return 1;
 }

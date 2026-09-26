@@ -3,10 +3,10 @@
    The image points the main screen's status-line draw, the vtable word at
    0x80226E98, at boot_hook here in flash. The first time the main screen
    draws, which is after start-up, boot_hook puts the word back, so it never
-   runs again, and then loads the engine: from A:/EVV/ENGINE.BIN on the
+   runs again, and then loads the engine: from A:/TALLFREE/TALLFREE.BIN on the
    card, or failing that from B:/TALLFREE.BIN on the eMMC, where the engine
-   copies itself. A card holding A:/EVV/NOENGINE loads nothing, which is the
-   way back from an engine that stops the unit starting. With no engine
+   copies itself. A card holding A:/TALLFREE/NOENGINE loads nothing, which is
+   the way back from an engine that stops the unit starting. With no engine
    anywhere, a clip in flash says so, through the same audio interrupt the
    engine uses, without holding up the start.
 
@@ -226,9 +226,9 @@ void boot_main(void)
 
     STATUS_WORD = STATUS_DRAW;
     __asm__ volatile("dsb" ::: "memory");
-    if (exists("A:/EVV/NOENGINE"))
+    if (exists("A:/TALLFREE/NOENGINE"))
         return;
-    if ((card = load("A:/EVV/ENGINE.BIN")) == 0)
+    if ((card = load("A:/TALLFREE/TALLFREE.BIN")) == 0)
         from = 1;
     else if (load("B:/TALLFREE.BIN") == 0)
         from = 2;

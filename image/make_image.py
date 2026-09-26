@@ -1,6 +1,7 @@
-# Image 31: Roland's APP1 but for room for the engine, whose compiled rules
+# Image 32: Roland's APP1 but for room for the engine, whose compiled rules
 # need 1 MB more than image 29 gave it, and the engine started at boot by a
-# boot loader that, unlike image 30's, writes nothing to the card.
+# boot loader that writes nothing to the card and finds the engine at
+# A:/TALLFREE/TALLFREE.BIN (image 31's looked in A:/EVV/).
 #
 # The looper and skip-back buffer loses its top 4.75 MB: its end moves from
 # 0x83F7A424 to 0x83ABA424. Every user computes its planes and lengths from

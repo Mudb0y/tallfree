@@ -11,7 +11,7 @@ void target_sleep(int ms);
 void target_wake(void);
 void target_checkpoint(void);
 /* Whether the log, the draw log and a fault's record go to the card: only
-   when SAY.TXT asks, "#log on", since a stranger's card may be one whose
+   when TALLFREE.DEBUG asks, "#log on", since a stranger's card may be one whose
    FAT the unit's file system hangs on. */
 extern int card_log;
 /* Where image 31's boot loader found the engine, and why it did not use the

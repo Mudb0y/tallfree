@@ -87,8 +87,8 @@ static volatile uint32_t ring_frac;          /* and the fraction into the next *
 static volatile uint32_t ring_held;          /* nothing played until released */
 static volatile uint32_t ring_making, ring_dry;  /* a phrase is being made; ticks it ran dry */
 
-/* Speech level: a 16-bit sample times g_gain / 32. Set from "#vol N"
-   (percent of 128) in SAY.TXT; 50, gain 64, is the level chosen by ear. */
+/* Speech level: a 16-bit sample times g_gain / 32. Set from "#vol N" (percent
+   of 128) in TALLFREE.DEBUG; 50, gain 64, is the level chosen by ear. */
 static volatile uint32_t g_gain = 64;
 
 /* Which words of line 3 the speech goes into. Words 0 and 1 are a left-right
@@ -368,7 +368,7 @@ void target_probe_slots(void)
 }
 
 /* Each set for 1.5 s, then the RMS of both halves of each receive word under
-   each, in 16-bit units, to A:/EVV/RXPROBE.TXT. */
+   each, in 16-bit units, to A:/TALLFREE/RXPROBE.TXT. */
 void target_probe_rx(void)
 {
     static char text[4096];
@@ -403,7 +403,7 @@ void target_probe_rx(void)
         n += (uint32_t)snprintf(text + n, sizeof text - n, "\n");
     }
     printf("%s", text);
-    write_file("A:/EVV/RXPROBE.TXT", text, n);
+    write_file("A:/TALLFREE/RXPROBE.TXT", text, n);
 }
 
 /* The engine copies itself to the eMMC, so the boot loader finds it there
@@ -413,7 +413,7 @@ void target_probe_rx(void)
    exactly the image that is running, and it is read back and checked. A
    copy cut short by switching off fails the loader's own check, which then
    says there is no engine rather than running it. */
-#define ENGINE_CARD "A:/EVV/ENGINE.BIN"
+#define ENGINE_CARD "A:/TALLFREE/TALLFREE.BIN"
 #define ENGINE_EMMC "B:/TALLFREE.BIN"
 
 extern char __image_start[];
@@ -556,7 +556,7 @@ void target_checkpoint(void)
     printf("kernel code crc %08lx at launch, %08lx now, %s\n", (unsigned long)g_kernel_crc,
            (unsigned long)crc, crc == g_kernel_crc ? "unchanged" : "CHANGED");
     log = sys_log(&len);
-    write_file("A:/EVV/LOG.TXT", log, len);
+    write_file("A:/TALLFREE/LOG.TXT", log, len);
 }
 
 void target_done(int rc)

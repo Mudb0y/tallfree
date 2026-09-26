@@ -35,7 +35,7 @@ TEXT ?= Hello, I am the SP four oh four, and I can talk now.
 
 .PHONY: qemu device check sim sims lib clean
 qemu: $(BUILD)/qemu.elf
-device: $(BUILD)/ENGINE.BIN
+device: $(BUILD)/TALLFREE.BIN
 
 lib:
 	$(MAKE) -C $(OPENEVV) PORT=none BUILD=build/m7c RULES=c \
@@ -58,7 +58,7 @@ $(BUILD)/device.elf: $(COMMON) device.c device.h service.c screen.c menu.c pages
 	$(CC) $(CFLAGS) -fno-delete-null-pointer-checks $(LDFLAGS) -Wl,-Map=$(BUILD)/device.map \
 	  -T device.ld $(filter %.c,$(COMMON)) device.c service.c screen.c menu.c diag.c kernel.c $(LIB) -lm -lc -lgcc -o $@
 
-$(BUILD)/ENGINE.BIN: $(BUILD)/device.elf mkimage.py
+$(BUILD)/TALLFREE.BIN: $(BUILD)/device.elf mkimage.py
 	python3 mkimage.py $< $@
 
 # The run leaves out.raw in this directory; the desktop evv built from the

@@ -98,8 +98,8 @@ static void save(void)
     write_file("B:/TALLFREE.CFG", text, n);
 }
 
-/* Saved settings, if any, over the defaults and whatever SAY.TXT set; the
-   voice first, since it brings a pitch of its own. */
+/* Saved settings, if any, over the defaults and whatever TALLFREE.DEBUG set;
+   the voice first, since it brings a pitch of its own. */
 void settings_load(int volume, int abbreviations)
 {
     const char *t = read_text("B:/TALLFREE.CFG");

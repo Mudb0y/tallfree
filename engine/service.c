@@ -1,9 +1,9 @@
 /* The resident engine on the instrument: the boot loader starts it, and it
-   says "speech on", speaks any script in A:/EVV/SAY.TXT, reads the screen
-   from then until the instrument is switched off, and copies itself to the
-   eMMC if that has an older copy or none.
+   says "speech on", speaks any script in A:/TALLFREE/TALLFREE.DEBUG, reads
+   the screen from then until the instrument is switched off, and copies
+   itself to the eMMC if that has an older copy or none.
 
-   SAY.TXT holds settings and a script, one per line:
+   TALLFREE.DEBUG holds settings and a script, one per line:
      #vol N      speech level, percent; 50 by default
      #mode M     screen reading: changed (the default), all, or off
      #settle N   ms without a change before speaking what changed; 40
@@ -17,7 +17,7 @@
                  before to finish
      #slots      the slot probe instead of any of this
      #rxprobe    the receive probe instead: which output slots come back in
-                 from the hardware, to A:/EVV/RXPROBE.TXT
+                 from the hardware, to A:/TALLFREE/RXPROBE.TXT
      #out N      speech into line 3 words 14 and 15 (the default), word 12,
                  the metronome's, or 0, words 0 and 1, which recordings
                  catch; among the script's lines, from the next line on, and
@@ -283,7 +283,7 @@ static void start_screen(void)
 
 int target_main(void)
 {
-    const char *text = read_text("A:/EVV/SAY.TXT");
+    const char *text = read_text("A:/TALLFREE/TALLFREE.DEBUG");
     static char config[4096];
     uint32_t last_flush = 0, started = device_ticks();
     int installed = 0;
@@ -304,8 +304,8 @@ int target_main(void)
         printf("audio hook not installed\n");
     if (speech_open(frame))
         return 1;
-    /* The saved speech settings over SAY.TXT's: speed, pitch, voice, volume,
-       the abbreviation dictionary and screen reading. */
+    /* The saved speech settings over TALLFREE.DEBUG's: speed, pitch, voice,
+       volume, the abbreviation dictionary and screen reading. */
     settings_load(volume, dictionary);
     batch_one("speech on");
 

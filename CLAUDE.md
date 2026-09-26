@@ -62,8 +62,8 @@ unpacked into `firmware/`: `SP404MKII_APP1.bin`, sha256
 `4a3d67711e14dcc97d50249a4eee7dd6df0251a2f37757cbbe2556c233730d80`.
 
 **An engine change is a file copy and a restart.** Build `engine/`, run
-`make sims` and `make check`, copy `engine/build/ENGINE.BIN` to the card as
-`A:/EVV/ENGINE.BIN`, power the unit off and on. The engine then copies
+`make sims` and `make check`, copy `engine/build/TALLFREE.BIN` to the card as
+`A:/TALLFREE/TALLFREE.BIN`, power the unit off and on. The engine then copies
 itself to the eMMC as `B:/TALLFREE.BIN` five seconds in, so it also starts
 with no card.
 
@@ -82,7 +82,7 @@ with no card.
    This is not optional — see the hazards.
 
 **If an engine stops the unit starting**, a card holding a file
-`A:/EVV/NOENGINE` makes the boot loader load nothing; flashing Roland's
+`A:/TALLFREE/NOENGINE` makes the boot loader load nothing; flashing Roland's
 original is the fallback behind that.
 
 ## Rules that were learned the hard way
@@ -177,40 +177,40 @@ function two slots over. `ghidra/regions/itcm_code.bin` starts at runtime 0x400.
 
 ## How the engine runs
 
-**The engine, as it runs now.** OpenEVV is one image, `engine/build/ENGINE.BIN`,
-linked to run at 0x83AC0000, header "EVV2", with OpenEVV's rules compiled
-to C (RULES=c). Images 30 and 31 point
-the main screen's status-line draw, vtable word 0x80226E98, at
-`image/boot.c` in flash; on its first call that puts the word back and
-loads the engine from the card, else the eMMC, checking its header and
-CRC, or plays a clip saying there is no engine; it refuses image 29's
-"EVV1" engines, linked 1 MB higher. Image 31's boot loader writes nothing
-to the card; it passes the engine where it found it instead. The room
-comes from the looper and skip-back buffer, cut from 7.25 MB to 2.5 MB
-(13.65 s a channel). `engine/` builds it: OpenEVV is the submodule
-`engine/openevv`, pinned to the commit the engine was tested against (`git
-submodule update --init`), and `make lib` builds its library there with
-PORT=none into its `build/m7c`; `make check` runs the engine under QEMU's
-Cortex-M7 against the desktop engine built from the same tree, and
-`cases.sh run` then `compare` does 80 cases. QEMU starts the
+**The engine, as it runs now.** OpenEVV is one image,
+`engine/build/TALLFREE.BIN`, linked to run at 0x83AC0000, header "EVV2",
+with OpenEVV's rules compiled to C (RULES=c). Images 30 to 32 point the main
+screen's status-line draw, vtable word 0x80226E98, at `image/boot.c` in
+flash; on its first call that puts the word back and loads the engine from
+the card, else the eMMC, checking its header and CRC, or plays a clip saying
+there is no engine; it refuses image 29's "EVV1" engines, linked 1 MB
+higher. Since image 31 the boot loader writes nothing to the card and passes
+the engine where it found it instead; image 32's looks in `A:/TALLFREE/`,
+where 31's looked in `A:/EVV/`. The room comes from the looper and skip-back
+buffer, cut from 7.25 MB to 2.5 MB (13.65 s a channel). `engine/` builds it:
+OpenEVV is the submodule `engine/openevv`, pinned to the commit the engine
+was tested against (`git submodule update --init`), and `make lib` builds
+its library there with PORT=none into its `build/m7c`; `make check` runs the
+engine under QEMU's Cortex-M7 against the desktop engine built from the same
+tree, and `cases.sh run` then `compare` does 80 cases. QEMU starts the
 engine on junk memory, because the instrument does, and gives it no more
-heap than the instrument is sure of, 1280 KB, which the device link
-asserts; the harnesses stream their output rather than store it there.
+heap than the instrument is sure of, 1280 KB, which the device link asserts;
+the harnesses stream their output rather than store it there.
 
 **The engine is resident from boot.** It says "speech on", speaks any script
-in `A:/EVV/SAY.TXT` (its settings, `#vol`, `#mode`, `#settle`, `#frame`,
-`#dict`, `#log`, `#out`, `#wait`, `#slots`, `#rxprobe`, are listed at the
-top of `engine/service.c`), then hooks the drawing vtables and reads the
-screen until switched off. It runs in a kernel task at priority 30; inside
-it, OpenEVV's cooperative scheduler still runs synthesis. **`make sims` runs
-the service and the hook under QEMU** against scenarios in `engine/sim/*/`,
-written by `sim/scenarios.py` from what the unit's logs recorded, each with
-the batches it must say; run it before every card test. With `#log on` in
-`SAY.TXT`, each run leaves `LOG.TXT` (where the engine was loaded from,
-phrase timings, kernel-code checksum), `DRAWS.TXT` (every change the hook
-saw), and `FAULT.TXT` if the fault catcher fired, checkpointed before the
-hook goes in and every ten seconds after; without it nothing goes to the
-card.
+in `A:/TALLFREE/TALLFREE.DEBUG` (its settings, `#vol`, `#mode`, `#settle`,
+`#frame`, `#dict`, `#log`, `#out`, `#wait`, `#slots`, `#rxprobe`, are listed
+at the top of `engine/service.c`), then hooks the drawing vtables and reads
+the screen until switched off. It runs in a kernel task at priority 30;
+inside it, OpenEVV's cooperative scheduler still runs synthesis. **`make
+sims` runs the service and the hook under QEMU** against scenarios in
+`engine/sim/*/`, written by `sim/scenarios.py` from what the unit's logs
+recorded, each with the batches it must say; run it before every card test.
+With `#log on` in `TALLFREE.DEBUG`, each run leaves `LOG.TXT` (where the
+engine was loaded from, phrase timings, kernel-code checksum), `DRAWS.TXT`
+(every change the hook saw), and `FAULT.TXT` if the fault catcher fired,
+checkpointed before the hook goes in and every ten seconds after; without it
+nothing goes to the card.
 
 **Hook text by vtable swap.** Every string on the normal screens ends in
 `FUN_800EE530(this, x, y, str, len)`, the surface's DrawString at vtable slot
@@ -232,10 +232,10 @@ Words 8 to 11 and 13 do not reach the main outputs.
 **What the recorder hears.** Sampling and resampling both take audio only
 from the receive side (eDMA channel 4, 0x20008000), and the hardware sends
 back on receive words 0 and 1, digitally, the sum of line 3 words 0 to 7,
-and never words 12, 14 or 15 (`#rxprobe` measures it). So speech is added
-to **words 14 and 15**, clamped to +/-2^19, where recordings cannot catch
-it; in words 0 and 1 it was sampled. Word 12 is no better: the click's
-Output Assign silences it. `#out` chooses among them, `#vol N` sets the
-level, 50 by default. `SAY.TXT` beginning `#slots` runs the 64-tone probe,
-and `engine/slotmap.py` reads a recording of it, taking the two loudest
-channels as the SP's outputs unless told which.
+and never words 12, 14 or 15 (`#rxprobe` measures it). So speech is added to
+**words 14 and 15**, clamped to +/-2^19, where recordings cannot catch it;
+in words 0 and 1 it was sampled. Word 12 is no better: the click's Output
+Assign silences it. `#out` chooses among them, `#vol N` sets the level, 50
+by default. `TALLFREE.DEBUG` beginning `#slots` runs the 64-tone probe, and
+`engine/slotmap.py` reads a recording of it, taking the two loudest channels
+as the SP's outputs unless told which.
