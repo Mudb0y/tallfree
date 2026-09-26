@@ -18,9 +18,10 @@
      #slots      the slot probe instead of any of this
      #rxprobe    the receive probe instead: which output slots come back in
                  from the hardware, to A:/EVV/RXPROBE.TXT
-     #out N      speech into line 3 word 12, words 14 and 15, or (0, the
-                 default) words 0 and 1; among the script's lines, from the
-                 next line on, and after the last, once the script is said
+     #out N      speech into line 3 words 14 and 15 (the default), word 12,
+                 the metronome's, or 0, words 0 and 1, which recordings
+                 catch; among the script's lines, from the next line on, and
+                 after the last, once the script is said
    and any other line is said.
 
    Speech is a batch of phrases said in turn. A new batch, from the screen or
@@ -326,8 +327,6 @@ int target_main(void)
             start_screen();
             continue;
         }
-        if (card_log)
-            target_watch();
         /* Five seconds in, with the start-up quiet, once. */
         if (!installed && screen_started && idle() && device_ticks() - started >= 3750u) {
             installed = 1;

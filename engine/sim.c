@@ -458,7 +458,6 @@ void target_volume(uint32_t percent) { (void)percent; }
 void target_probe_slots(void) { }
 void target_probe_rx(void) { }
 void target_output(int word) { (void)word; }
-void target_watch(void) { }
 int engine_task_id(void) { return 1; }
 int kernel_task_self(void) { return 1; }
 

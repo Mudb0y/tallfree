@@ -125,7 +125,7 @@ logged to it.
 hook the eDMA channel-3 vector at 0x0000004C   (VTOR is 0, ITCM is writable)
 read EDMA_INT bit 3 FIRST, then call the original handler (it clears the bit)
 re-read the four descriptors at 0x400E9000 + n*32 EVERY interrupt
-write 64 samples per interrupt; to mix, ADD each to line 3 words 0 and 1 only
+write 64 samples per interrupt; to mix, ADD each to line 3 words 14 and 15 only
 keep |sample| below 2^19 — a 16-bit source shifted left by 3
 restore the vector when finished
 ```
@@ -198,7 +198,7 @@ asserts; the harnesses stream their output rather than store it there.
 
 **The engine is resident from boot.** It says "speech on", speaks any
 script in `A:/EVV/SAY.TXT` (its settings, `#vol`, `#mode`, `#settle`,
-`#frame`, `#dict`, `#log`, `#wait`, `#slots`, are listed at the top of
+`#frame`, `#dict`, `#log`, `#out`, `#wait`, `#slots`, `#rxprobe`, are listed at the top of
 `engine/service.c`), then hooks the drawing vtables and reads the screen
 until switched off. It runs in a kernel task at priority 30; inside it,
 OpenEVV's cooperative scheduler still runs synthesis. **`make sims` runs the
@@ -223,9 +223,18 @@ enough on an M7. Menu icons carry baked-in words and bypass the text path.
 **Slots, measured.** Only SAI line 3 reaches the main outputs: left from
 words 0, 2, 4, 6, 12 and 14, right from 1, 3, 5, 7, 12 and 15, each at unity.
 Writing all sixteen summed six copies per side, which is why early speech was
-so loud. Speech is added to words 0 and 1 and clamped to +/-2^19; `#vol N` at
-the head of `A:/EVV/SAY.TXT` sets its level, 50 by default. Words 8 to 11 and
-13 do not reach the main outputs; speech in words 0 and 1 reaches the
-headphone output as well. `SAY.TXT` beginning `#slots` runs the 64-tone
-probe, and `engine/slotmap.py` reads a recording of it, taking the two
-loudest channels as the SP's outputs unless told which.
+so loud. The firmware's mixer (ITCM 0x1C2D0) fills words 0 to 11, 14 and 15
+with its fourteen bus channels, word 12 with a mono stream of its own, the
+metronome, and word 13 with a bitmask of the buses in use, not audio.
+Words 8 to 11 and 13 do not reach the main outputs.
+
+**What the recorder hears.** Sampling and resampling both take audio only
+from the receive side (eDMA channel 4, 0x20008000), and the hardware sends
+back on receive words 0 and 1, digitally, the sum of line 3 words 0 to 7,
+and never words 12, 14 or 15 (`#rxprobe` measures it). So speech is added
+to **words 14 and 15**, clamped to +/-2^19, where recordings cannot catch
+it; in words 0 and 1 it was sampled. Word 12 is no better: the click's
+Output Assign silences it. `#out` chooses among them, `#vol N` sets the
+level, 50 by default. `SAY.TXT` beginning `#slots` runs the 64-tone probe,
+and `engine/slotmap.py` reads a recording of it, taking the two loudest
+channels as the SP's outputs unless told which.

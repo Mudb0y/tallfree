@@ -1,12 +1,12 @@
 /* What only the instrument needs: files through the firmware's own calls,
    the engine's kernel task, and the speech through the audio engine.
 
-   Playback hooks the eDMA channel-3 vector exactly as work/ext/isr.c, the
-   payload of images 17 to 25 and at the tag pre-cleanup, proved: note
-   whether the event is ours, call the original handler, re-read the
-   descriptors every interrupt. Speech is added, clamped, to line 3 words 0
-   and 1, the one left-right pair of the main outputs the slot probe found,
-   so it mixes with the instrument instead of replacing it.
+   Playback hooks the eDMA channel-3 vector as the early payloads proved:
+   note whether the event is ours, call the original handler, re-read the
+   descriptors every interrupt. Speech is added, clamped, to line 3 words 14
+   and 15, a left-right pair of the main outputs that the hardware never
+   sends back to the recorder, so it mixes with the instrument instead of
+   replacing it and stays out of samples.
 
    The engine speaks at 11025 Hz into a ring, and the interrupt raises it to
    48000 by linear interpolation as it takes from the ring, so playback starts
@@ -93,9 +93,11 @@ static volatile uint32_t g_gain = 64;
 
 /* Which words of line 3 the speech goes into. Words 0 and 1 are a left-right
    pair on the main outputs, and the hardware sends them back to the recorder
-   with words 2 to 7; word 12, mono on both outputs, and words 14 and 15, a
-   pair, reach the main outputs and are never sent back (the receive probe). */
-static uint8_t g_out[2] = { 0, 1 };
+   with words 2 to 7, so speech there was sampled; word 12, mono on both
+   outputs, and words 14 and 15, a pair, reach the main outputs and are never
+   sent back (the receive probe). Word 12 is the metronome's, and the click's
+   Output Assign silences it; no setting touched 14 and 15. */
+static uint8_t g_out[2] = { 14, 15 };
 static volatile uint32_t g_nout = 2;
 
 void target_output(int word)
@@ -103,13 +105,13 @@ void target_output(int word)
     if (word == 12) {
         g_out[0] = 12;
         g_nout = 1;
-    } else if (word == 14) {
-        g_out[0] = 14;
-        g_out[1] = 15;
-        g_nout = 2;
-    } else {
+    } else if (word == 0) {
         g_out[0] = 0;
         g_out[1] = 1;
+        g_nout = 2;
+    } else {
+        g_out[0] = 14;
+        g_out[1] = 15;
         g_nout = 2;
     }
     printf("speech into line 3 word%s %u%s\n", g_nout > 1 ? "s" : "", g_out[0],
@@ -363,29 +365,6 @@ void target_probe_slots(void)
         target_sleep(20);
     g_probe = 0;
     printf("probe: ran %lu ticks\n", (unsigned long)(g_ticks - t0));
-}
-
-/* SAI1's transmit mask and line enables, logged when they change: whether a
-   setting silences output words at the source, as Output Assign silences
-   word 12. Named registers, read one at a time. */
-#define SAI1_TCR3 (*(volatile uint32_t *)0x4038400Cu)
-#define SAI1_TMR  (*(volatile uint32_t *)0x40384060u)
-
-void target_watch(void)
-{
-    static uint32_t last_tick, tmr = 0xFFFFFFFFu, tcr3 = 0xFFFFFFFFu;
-    uint32_t m, c;
-
-    if (g_ticks - last_tick < 75u)
-        return;
-    last_tick = g_ticks;
-    m = SAI1_TMR;
-    c = SAI1_TCR3;
-    if (m != tmr || c != tcr3)
-        printf("%lu sai: TMR %08lx TCR3 %08lx\n", (unsigned long)g_ticks, (unsigned long)m,
-               (unsigned long)c);
-    tmr = m;
-    tcr3 = c;
 }
 
 /* Each set for 1.5 s, then the RMS of both halves of each receive word under
