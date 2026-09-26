@@ -4,7 +4,7 @@ Tallfree is a screen reader for the Roland SP-404MKII. It's modified firmware
 that reads the screen aloud, so a blind musician can get at the menus,
 settings and sample names that are otherwise locked behind the display.
 
-The voice is [OpenEVV](https://github.com/Mudb0y/openevv), my reimplementation
+The voice is [OpenEVV](https://github.com/Mudb0y/openevv), a reimplementation
 of IBM's Embedded ViaVoice, running on the SP itself. If you've used
 Eloquence, it will sound familiar.
 
