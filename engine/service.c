@@ -1,5 +1,5 @@
 /* The resident engine on the instrument: the boot loader starts it, and it
-   says "speech on", speaks any script in A:/TALLFREE/TALLFREE.DEBUG, reads
+   says "ready", speaks any script in A:/TALLFREE/TALLFREE.DEBUG, reads
    the screen from then until the instrument is switched off, and copies
    itself to the eMMC if that has an older copy or none.
 
@@ -307,7 +307,7 @@ int target_main(void)
     /* The saved speech settings over TALLFREE.DEBUG's: speed, pitch, voice,
        volume, the abbreviation dictionary and screen reading. */
     settings_load(volume, dictionary);
-    batch_one("speech on");
+    batch_one("ready");
 
     for (;;) {
         service_poll();

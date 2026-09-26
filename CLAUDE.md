@@ -4,7 +4,8 @@ Making the SP-404MKII speak. The instrument has no accessibility of any kind,
 so to a blind musician every menu, parameter and sample name on it is
 unreachable. Tallfree is a modified firmware that says what is on the screen,
 with [OpenEVV](https://github.com/Mudb0y/openevv), a reimplementation of IBM's
-Eloquence, synthesising on the device rather than playing pre-rendered clips.
+Embedded ViaVoice, which sounds much like Eloquence, synthesising on the
+device rather than playing pre-rendered clips.
 
 The name comes from the first patched image, which renamed the USB product
 string to `Roland SP-404TALL` to prove a three-byte change would run.
@@ -14,9 +15,9 @@ record: `engine/screen.c` says what each hook is for and how the screen is
 read, `image/boot.c` how the engine is loaded, `image/make_image.py` every
 byte the image changes and why.
 
-## Status, 25 September 2026
+## Status, 26 September 2026
 
-**It is a working screen reader.** Image 31 starts OpenEVV at boot, from the
+**It is a working screen reader.** Image 32 starts OpenEVV at boot, from the
 card or the eMMC, and it reads the screen as a screen reader should: on
 entering a screen its title and the focused item, then only what changes;
 settings rows with their values, tabs, dialogs on their own, the main
@@ -197,7 +198,7 @@ engine on junk memory, because the instrument does, and gives it no more
 heap than the instrument is sure of, 1280 KB, which the device link asserts;
 the harnesses stream their output rather than store it there.
 
-**The engine is resident from boot.** It says "speech on", speaks any script
+**The engine is resident from boot.** It says "ready", speaks any script
 in `A:/TALLFREE/TALLFREE.DEBUG` (its settings, `#vol`, `#mode`, `#settle`,
 `#frame`, `#dict`, `#log`, `#out`, `#wait`, `#slots`, `#rxprobe`, are listed
 at the top of `engine/service.c`), then hooks the drawing vtables and reads
