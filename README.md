@@ -42,19 +42,25 @@ per channel.** Nothing else changes.
 
 ## Installing
 
-You need an SD card and a computer. Download `SP404MKII_APP1.bin`, the
-firmware, and `TALLFREE.BIN`, the speech engine, from the latest release.
+You need an SD card of up to 32 GB and a computer. Each release is a zip laid
+out the way the card should be: Tallfree's firmware, `SP404MKII_APP1.bin`;
+Roland's own `SP404MKII_APP0.bin` from the same system program, unchanged, so
+the update brings the whole SP to 5.52 as Roland's update would; and the
+speech engine, `TALLFREE.BIN`, in a folder called `TALLFREE`.
 
 1. Format the card as FAT32. Use a freshly formatted card: old deleted files
    can stop the SP finding the update.
-2. Copy `SP404MKII_APP1.bin` to the top of the card. Make a folder called
-   `TALLFREE` and copy `TALLFREE.BIN` into it.
+2. Unzip everything onto the top of the card, keeping the `TALLFREE` folder.
 3. With the SP off, put the card in, hold SHIFT, switch on and press the VALUE
-   knob. The update takes about 90 seconds and makes no sound. When it's done
-   the screen says `UPDATE COMPLETE!`; check that with a phone app that reads
-   text if you can, and otherwise wait at least three minutes. Don't switch
-   off in the middle.
+   knob. The update makes no sound. When it has worked, the screen shows
+   `APP0 UPDATER OK` and `APP1 UPDATER OK`; check that with a phone app that
+   reads text if you can, and otherwise wait at least ten minutes. Don't
+   switch off in the middle.
 4. Switch off and on again. You'll hear "ready".
+5. Delete `SP404MKII_APP0.bin` and `SP404MKII_APP1.bin` from the card. They
+   are only needed for the update, and while they're there, starting with
+   SHIFT held runs it again, which rewrites the SP's USB and control chip for
+   nothing.
 
 A few seconds after it starts, the engine copies itself into the SP's
 internal memory, so from then on it works without the card. To update the
@@ -70,8 +76,8 @@ If the SP won't start after an engine update, put an empty file called
 `NOENGINE` in the `TALLFREE` folder, and it will start without the engine.
 
 To go back to Roland's firmware, download the system program from Roland's
-website and install it the same way as in step 3. The updater can't touch the
-part of the SP that runs it, so this always works.
+website and install it the same way as in steps 1 to 3. The updater can't
+touch the part of the SP that runs it, so this always works.
 
 ## Building
 
@@ -90,13 +96,14 @@ sure the engine's speech matches the desktop OpenEVV's sample for sample,
 with no more memory than the SP has.
 
 To build the firmware, put `SP404MKII_APP1.bin` from Roland's 5.52 system
-program in `firmware/` and run `python3 image/make_image.py`. `CLAUDE.md`
-explains how it all fits together.
+program in `firmware/` and run `python3 image/make_image.py`. With
+`SP404MKII_APP0.bin` there too, `python3 release/make_zip.py` builds the
+release zip. `CLAUDE.md` explains how it all fits together.
 
 ## Licence
 
-Tallfree's code is under the MIT licence in `LICENSE`. The firmware in the
-releases contains Roland's system program, which belongs to Roland.
+Tallfree's code is under the MIT licence in `LICENSE`. The release zips
+contain Roland's system program, which belongs to Roland.
 `TALLFREE.BIN` includes OpenEVV, under the MIT licence, and IBM's language
 data, under the terms in [OpenEVV's
 NOTICE](https://github.com/Mudb0y/openevv/blob/main/NOTICE). Roland and SP-404

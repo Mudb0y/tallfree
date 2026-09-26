@@ -30,3 +30,6 @@ engine/rebuild.log
 # Simulator outputs
 engine/sim/*/sim.raw
 engine/sim/*/sim_*.TXT
+
+# The release zip, built by release/make_zip.py
+release/build/

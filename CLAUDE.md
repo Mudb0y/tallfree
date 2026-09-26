@@ -82,6 +82,16 @@ with no card.
 4. **Confirm the screen says UPDATE COMPLETE! before doing anything else.**
    This is not optional — see the hazards.
 
+**A release** is one zip laid out as the card: `python3 release/make_zip.py
+[yyyy.mm.dd]` rebuilds the image and the engine and packs Tallfree's
+`SP404MKII_APP1.bin`, Roland's untouched `SP404MKII_APP0.bin` (the companion
+chip's half of 5.52, checked against Roland's checksum) and
+`TALLFREE/TALLFREE.BIN` into `release/build/tallfree-<date>.zip`, the same
+bytes for the same tree. The version is the date of publishing; the release
+title adds "(SP-404MKII System Program Ver.5.52)". The updater rewrites the
+companion chip whenever APP0 is on the card, so users are told to delete
+both firmware files once the update is done.
+
 **If an engine stops the unit starting**, a card holding a file
 `A:/TALLFREE/NOENGINE` makes the boot loader load nothing; flashing Roland's
 original is the fallback behind that.
