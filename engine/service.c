@@ -326,6 +326,8 @@ int target_main(void)
             start_screen();
             continue;
         }
+        if (card_log)
+            target_watch();
         /* Five seconds in, with the start-up quiet, once. */
         if (!installed && screen_started && idle() && device_ticks() - started >= 3750u) {
             installed = 1;

@@ -365,6 +365,29 @@ void target_probe_slots(void)
     printf("probe: ran %lu ticks\n", (unsigned long)(g_ticks - t0));
 }
 
+/* SAI1's transmit mask and line enables, logged when they change: whether a
+   setting silences output words at the source, as Output Assign silences
+   word 12. Named registers, read one at a time. */
+#define SAI1_TCR3 (*(volatile uint32_t *)0x4038400Cu)
+#define SAI1_TMR  (*(volatile uint32_t *)0x40384060u)
+
+void target_watch(void)
+{
+    static uint32_t last_tick, tmr = 0xFFFFFFFFu, tcr3 = 0xFFFFFFFFu;
+    uint32_t m, c;
+
+    if (g_ticks - last_tick < 75u)
+        return;
+    last_tick = g_ticks;
+    m = SAI1_TMR;
+    c = SAI1_TCR3;
+    if (m != tmr || c != tcr3)
+        printf("%lu sai: TMR %08lx TCR3 %08lx\n", (unsigned long)g_ticks, (unsigned long)m,
+               (unsigned long)c);
+    tmr = m;
+    tcr3 = c;
+}
+
 /* Each set for 1.5 s, then the RMS of both halves of each receive word under
    each, in 16-bit units, to A:/EVV/RXPROBE.TXT. */
 void target_probe_rx(void)
