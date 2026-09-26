@@ -196,13 +196,13 @@ engine on junk memory, because the instrument does, and gives it no more
 heap than the instrument is sure of, 1280 KB, which the device link
 asserts; the harnesses stream their output rather than store it there.
 
-**The engine is resident from boot.** It says "speech on", speaks any
-script in `A:/EVV/SAY.TXT` (its settings, `#vol`, `#mode`, `#settle`,
-`#frame`, `#dict`, `#log`, `#out`, `#wait`, `#slots`, `#rxprobe`, are listed at the top of
-`engine/service.c`), then hooks the drawing vtables and reads the screen
-until switched off. It runs in a kernel task at priority 30; inside it,
-OpenEVV's cooperative scheduler still runs synthesis. **`make sims` runs the
-service and the hook under QEMU** against scenarios in `engine/sim/*/`,
+**The engine is resident from boot.** It says "speech on", speaks any script
+in `A:/EVV/SAY.TXT` (its settings, `#vol`, `#mode`, `#settle`, `#frame`,
+`#dict`, `#log`, `#out`, `#wait`, `#slots`, `#rxprobe`, are listed at the
+top of `engine/service.c`), then hooks the drawing vtables and reads the
+screen until switched off. It runs in a kernel task at priority 30; inside
+it, OpenEVV's cooperative scheduler still runs synthesis. **`make sims` runs
+the service and the hook under QEMU** against scenarios in `engine/sim/*/`,
 written by `sim/scenarios.py` from what the unit's logs recorded, each with
 the batches it must say; run it before every card test. With `#log on` in
 `SAY.TXT`, each run leaves `LOG.TXT` (where the engine was loaded from,
