@@ -18,6 +18,9 @@
      #slots      the slot probe instead of any of this
      #rxprobe    the receive probe instead: which output slots come back in
                  from the hardware, to A:/EVV/RXPROBE.TXT
+     #out N      speech into line 3 word 12, words 14 and 15, or (0, the
+                 default) words 0 and 1; among the script's lines, from the
+                 next line on, and after the last, once the script is said
    and any other line is said.
 
    Speech is a batch of phrases said in turn. A new batch, from the screen or
@@ -37,8 +40,8 @@ static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, rxprobe, d
 int card_log;
 
 #define SCRIPT 64
-static struct { const char *text; int wait_ms; } script[SCRIPT];
-static int nscript, script_next;
+static struct { const char *text; int wait_ms, out; } script[SCRIPT];
+static int nscript, script_next, final_out = -1;
 static uint32_t last_submit;
 
 static char batch[4096];
@@ -52,7 +55,7 @@ static char phrase[48];
 
 static void configure(char *text)
 {
-    int wait_ms = -1;
+    int wait_ms = -1, out = -1;
     char *line = text, *end;
 
     for (; line && *line; line = end) {
@@ -80,13 +83,20 @@ static void configure(char *text)
             slots = 1;
         else if (strncmp(line, "#rxprobe", 8) == 0)
             rxprobe = 1;
+        else if (strncmp(line, "#out ", 5) == 0 && nscript == 0)
+            target_output(atoi(line + 5));
+        else if (strncmp(line, "#out ", 5) == 0)
+            out = atoi(line + 5);
         else if (*line && *line != '#' && nscript < SCRIPT) {
             script[nscript].text = line;
             script[nscript].wait_ms = wait_ms;
+            script[nscript].out = out;
             nscript++;
             wait_ms = -1;
+            out = -1;
         }
     }
+    final_out = out;
     printf("config: mode %d, settle %d ms, frame %d, %d script lines\n",
            mode, settle_ms, frame, nscript);
 }
@@ -161,6 +171,8 @@ static void service_poll(void)
             || (w >= 0 && device_ticks() - last_submit >= MS_TO_TICKS(w))) {
             if (w >= 0)
                 cut();
+            if (script[script_next].out >= 0)
+                target_output(script[script_next].out);
             batch_one(script[script_next].text);
             script_next++;
         }
@@ -256,6 +268,8 @@ static void phrase_done(void)
 static void start_screen(void)
 {
     screen_started = 1;
+    if (final_out >= 0)
+        target_output(final_out);
     if (card_log)
         target_checkpoint();
     if (mode == SCREEN_OFF)

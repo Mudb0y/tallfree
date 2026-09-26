@@ -91,6 +91,31 @@ static volatile uint32_t ring_making, ring_dry;  /* a phrase is being made; tick
    (percent of 128) in SAY.TXT; 50, gain 64, is the level chosen by ear. */
 static volatile uint32_t g_gain = 64;
 
+/* Which words of line 3 the speech goes into. Words 0 and 1 are a left-right
+   pair on the main outputs, and the hardware sends them back to the recorder
+   with words 2 to 7; word 12, mono on both outputs, and words 14 and 15, a
+   pair, reach the main outputs and are never sent back (the receive probe). */
+static uint8_t g_out[2] = { 0, 1 };
+static volatile uint32_t g_nout = 2;
+
+void target_output(int word)
+{
+    if (word == 12) {
+        g_out[0] = 12;
+        g_nout = 1;
+    } else if (word == 14) {
+        g_out[0] = 14;
+        g_out[1] = 15;
+        g_nout = 2;
+    } else {
+        g_out[0] = 0;
+        g_out[1] = 1;
+        g_nout = 2;
+    }
+    printf("speech into line 3 word%s %u%s\n", g_nout > 1 ? "s" : "", g_out[0],
+           g_nout > 1 ? (g_out[1] == 1 ? " and 1" : " and 15") : "");
+}
+
 void target_volume(uint32_t percent)
 {
     if (percent > 100)
@@ -214,11 +239,10 @@ static void our_isr(void)
             ring_dry++;
         return;
     }
-    /* Line 3 is the only line that reaches the main outputs, and words 0
-       and 1 of its frames are one left-right pair there (measured with the
-       slot probe). Speech is added to what the firmware put in them and
-       clamped to the 20-bit field, so a loud mix saturates instead of
-       wrapping round. */
+    /* Line 3 is the only line that reaches the main outputs (measured with
+       the slot probe). Speech is added to what the firmware put in the words
+       chosen, and clamped to the 20-bit field, so a loud mix saturates
+       instead of wrapping round. */
     q = (volatile int32_t *)*(volatile uint32_t *)(0x400E9000u + 3u * 32u);
     frac = ring_frac;
     for (f = 0; f < SAMPLES && rd < wr; f++) {
@@ -227,13 +251,13 @@ static void our_isr(void)
         int32_t v = a + (((c - a) * (int32_t)frac) >> 16);
 
         v = (v * (int32_t)g_gain) >> 5;
-        for (s = 0; s < 2u; s++) {
-            int32_t m = q[f * SLOTS + s] + v;
+        for (s = 0; s < g_nout; s++) {
+            int32_t m = q[f * SLOTS + g_out[s]] + v;
             if (m > 524287)
                 m = 524287;
             else if (m < -524288)
                 m = -524288;
-            q[f * SLOTS + s] = m;
+            q[f * SLOTS + g_out[s]] = m;
         }
         frac += STEP;
         rd += frac >> 16;
