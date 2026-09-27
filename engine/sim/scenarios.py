@@ -10,6 +10,7 @@ WHITE, POPUP, BLACK, TITLE = '!', '~', '_', '^'
 PATTERN, PAD, BUS, FIXVEL = '=80149DC7:', '=80149DD5:', '=80149DE5:', '=80149DF5:'
 TOAST = '=8006BECD:'
 LABEL = '=801463F7:'                    # a parameter page's labels
+FXVALUE = '=80146545:'                  # an effect's values
 CELL, FXNAME = '=80145EDF:', '=80146135:'   # the effects grid's cells and title
 ROWLABEL, TABS = '=80148AFD:', '=80121751:' # the SYSTEM page's rows and tabs
 
@@ -61,22 +62,24 @@ def menu():
                       'EXPORT SAMPLE/PROJ./MULTIPAD | SAMPLE', 'PROJECT', 'B 1'])
 
 # Filter+Drive: three columns of label, value and unit, the effect's name at
-# the bottom; CUTOFF turned fast and let go, then RESONANCE.
+# the bottom; CUTOFF turned fast with CTRL 1 and let go, then RESONANCE with
+# CTRL 2. An effect is played, so its values are heard where they stop.
 def params():
     d = main_screen(0, 0, 'A-13')
     d += ['1000 s0 CLEAR',
-          f'1000 s0 9 3 _{LABEL}CUTOFF', '1000 s0 23 33 _Hz ', '1000 s0 11 18 _637',
-          f'1000 s0 44 3 _{LABEL}RESONANCE', '1000 s0 73 33 _ ', '1000 s0 54 18 _   1',
-          f'1000 s0 95 3 _{LABEL}DRIVE', '1000 s0 115 33 _ ', '1000 s0 96 18 _   0',
+          f'1000 s0 9 3 _{LABEL}CUTOFF', '1000 s0 23 33 _Hz ', f'1000 s0 11 18 _{FXVALUE}637',
+          f'1000 s0 44 3 _{LABEL}RESONANCE', '1000 s0 73 33 _ ',
+          f'1000 s0 54 18 _{FXVALUE}   1',
+          f'1000 s0 95 3 _{LABEL}DRIVE', '1000 s0 115 33 _ ', f'1000 s0 96 18 _{FXVALUE}   0',
           '1000 s0 53 47 _Filter+Drive']
     t = 3000
-    for v, x in [('827', 11), ('1914', 7), ('4202', 7), ('8308', 7), ('14035', 4),
-                 ('5183', 7), ('1194', 7), ('707', 11)]:
-        d += [f'{t} s0 FILL 0 18 40 30', f'{t} s0 {x} 18 _{v}']
+    for k, (v, x) in enumerate([('827', 11), ('1914', 7), ('4202', 7), ('8308', 7),
+                                ('14035', 4), ('5183', 7), ('1194', 7), ('707', 11)]):
+        d += [f'{t} CTRL 1 {40 + 10 * k}', f'{t} s0 FILL 0 18 40 30', f'{t} s0 {x} 18 _{FXVALUE}{v}']
         t += 50
     t = 6000
-    for v in ['  22', '  36', '  58', '  81', ' 100', '  65', '  50']:
-        d += [f'{t} s0 FILL 41 18 80 30', f'{t} s0 52 18 _{v}']
+    for k, v in enumerate(['  22', '  36', '  58', '  81', ' 100', '  65', '  50']):
+        d += [f'{t} CTRL 2 {20 + 10 * k}', f'{t} s0 FILL 41 18 80 30', f'{t} s0 52 18 _{FXVALUE}{v}']
         t += 50
     d += ['9000 VALUE']
     write('params', d, ['A 13', 'CUTOFF 637 Hz | RESONANCE 1 | DRIVE 0 | Filter+Drive',
@@ -388,6 +391,33 @@ def tabs():
                       'Noise Gate OFF', 'Line Out 0dB', 'Phones Out 0dB', 'USB Out 0dB',
                       'Anti Feedback OFF', 'VERSION | Version: 5.52'])
 
+# A settings page laid out as the pad settings page in runs/31, three
+# columns of label, value and unit like an effect's but drawn by other code,
+# with a meter in the status bar changing on its own all the while. That run
+# did not record drawing sites, so 1 and 2 stand in for the label's and the
+# value's; the reader needs only that they differ. SPEED
+# turned with CTRL 1 and PITCH with VALUE, a step every frame: each step is
+# said as it comes, cutting off the one before. The meter is never said,
+# though it changes in the same frames as the turned values.
+def turned():
+    d = main_screen(0, 0, 'A-13')
+    L, V = '=00000001:', '=00000002:'
+    d += ['1000 s0 CLEAR', '1000 s0 89 2 !LEVEL:120',
+          f'1000 s0 11 3 _{L}SPEED', f'1000 s0 12 18 _{V}1.00', '1000 s0 15 33 _ ',
+          f'1000 s0 55 3 _{L}PITCH', f'1000 s0 56 18 _{V}  0', '1000 s0 56 33 _SEMI',
+          f'1000 s0 93 3 _{L}VOLUME', f'1000 s0 97 18 _{V}127', '1000 s0 97 33 _ ']
+    for k, t in enumerate(range(1100, 8000, 100)):
+        d.append(f'{t} s0 89 2 !LEVEL:{100 + k % 27}')
+    for k, v in enumerate(['1.10', '1.20', '1.30', '1.40']):
+        t = 3000 + 53 * k
+        d += [f'{t} CTRL 1 {70 + 3 * k}', f'{t} s0 FILL 0 18 40 30', f'{t} s0 12 18 _{V}{v}']
+    for k, v in enumerate(['  1', '  2', '  3']):
+        t = 5000 + 53 * k
+        d += [f'{t} KNOB 0 1', f'{t} s0 FILL 41 18 80 30', f'{t} s0 56 18 _{V}{v}']
+    d += ['9000 VALUE']
+    write('turned', d, ['A 13', 'SPEED 1.00 | PITCH 0 SEMI | VOLUME 127', 'SPEED 1.10',
+                        '1.20', '1.30', '1.40', 'PITCH 1 SEMI', '2', '3'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -404,3 +434,4 @@ pages()
 settings()
 bpm()
 tabs()
+turned()

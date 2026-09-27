@@ -148,12 +148,14 @@ static const uint32_t vt_base[] = {
    one level up, from what the unit's logs recorded. Anything else is judged
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
-       ROLE_CHOICE };
+       ROLE_CHOICE, ROLE_EFFECT };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
     { 0x801120A1u, ROLE_TITLE },            /* CHROMATIC MODE */
     { 0x80146135u, ROLE_TITLE },            /* an effect's name, over its grid or page */
+    { 0x80146545u, ROLE_EFFECT },           /* an effect's values, FUN_80146260, the
+                                               effect page's alone */
     { 0x80195269u, ROLE_TITLE },            /* 16 VELOCITY, PAD LINK GROUPS, MUTE GROUP */
     { 0x8013FE3Du, ROLE_IGNORE },           /* a second copy of those, a pixel over */
     { 0x8006BECDu, ROLE_TOAST },            /* STOP, RECORDING, METRO MODE ON */
@@ -517,17 +519,23 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
     if (type >= 5 && type <= 7 && keep_for_menu(type, message[1], message[2]))
         return 1;
     /* Keys, key releases and knob turns (types 5, 6 and 7, the key or knob
-       in the second halfword, a knob's step in the third) all go to the log,
-       to learn the codes. */
-    if (type == page_last_type[page] && type != 1 && (type < 5 || type > 7))
+       in the second halfword, a knob's step in the third) and the CTRL
+       knobs (type 9, CTRL 1 to 3 in the second, the knob's position, 0 to
+       127, in the third, as FUN_80073898 passes them on) all go to the
+       model: to the log, to learn the codes, and to know what you have
+       just pressed or turned. */
+    if (type == page_last_type[page] && type != 1 && (type < 5 || type > 7) && type != 9)
         return 0;
-    page_last_type[page] = type;
+    /* A CTRL knob's stream of positions would log the page's steady
+       traffic again after each one. */
+    if (type != 9)
+        page_last_type[page] = type;
     memset(&d, 0, sizeof d);
     d.kind = EV_PAGE;
     d.tick = device_ticks();
     d.mark = (int32_t)page;
     d.x = type;
-    if (type >= 5 && type <= 7) {
+    if ((type >= 5 && type <= 7) || type == 9) {
         d.y = message[1];
         d.x1 = message[2];
     }
@@ -575,7 +583,7 @@ struct item {
     uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq, drawn_seq;
     int32_t  mark, ink;
     int16_t  x, y;
-    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed;
+    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed, own;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -624,6 +632,19 @@ static int nframe_sites;
 #define WHITE 0xFFFFFF
 #define STEADY 900u                          /* ticks, 1.2 s */
 #define POPUP_LIFE 2250u                     /* ticks, 3 s */
+
+/* When a knob, VALUE or CTRL, last moved, and a key was last pressed, as
+   the pages were sent them. A page redraws what a knob changed within 40
+   ticks of it, one frame, in every log so far. */
+#define TURN_WINDOW 60u                      /* ticks, 80 ms */
+static uint32_t last_turn, last_press, last_ctrl_logged;
+static uint8_t turn_seen, press_seen;
+static int16_t ctrl_logged = -1;
+
+static int just_after(uint32_t then, int seen, uint32_t now)
+{
+    return seen && now - then <= TURN_WINDOW;
+}
 
 /* The draw log: every change of text or background in full; at the end a
    count of each item's redraws, so a screen that redraws continually costs
@@ -902,13 +923,32 @@ static int take(const struct draw *d)
         }
         return 0;
     }
+    if (d->kind == EV_PAGE && d->x == 9) {
+        /* A CTRL knob sends every position it passes, so only where each
+           movement starts goes to the log. */
+        if (d->y != ctrl_logged || d->tick - last_ctrl_logged >= STEADY)
+            log_line("%lu ctrl %d at %d, page %ld\n", (unsigned long)d->tick, d->y, d->x1,
+                     (long)d->mark);
+        ctrl_logged = d->y;
+        last_ctrl_logged = d->tick;
+        last_turn = d->tick;
+        turn_seen = 1;
+        return 0;
+    }
     if (d->kind == EV_PAGE && d->x >= 5 && d->x <= 7) {
-        if (d->x == 7)
+        if (d->x == 5) {
+            last_press = d->tick;
+            press_seen = 1;
+        }
+        if (d->x == 7) {
+            last_turn = d->tick;
+            turn_seen = 1;
             log_line("%lu knob %d step %d, page %ld\n", (unsigned long)d->tick, d->y, d->x1,
                      (long)d->mark);
-        else
+        } else {
             log_line("%lu key %s 0x%02x, page %ld\n", (unsigned long)d->tick,
                      d->x == 5 ? "down" : "up", (unsigned)(uint16_t)d->y, (long)d->mark);
+        }
         return 0;
     }
     if (d->kind == EV_PAGE) {
@@ -1017,14 +1057,25 @@ static int take(const struct draw *d)
     it->ink = d->ink;
     now_lit = is_lit(it);
     if (text_changed) {
+        int turned = just_after(last_turn, turn_seen, d->tick);
+
+        /* Text that changes with nothing just pressed or turned changes on
+           its own, as a meter, a clock or the sequencer's bar does, and is
+           never taken for a value turned until the screen changes, however
+           busy the knobs are meanwhile. */
+        if (it->last_change != 0 && !turned && !just_after(last_press, press_seen, d->tick))
+            it->own = 1;
         /* A first change is said at once. One that follows another within
            STEADY neither interrupts nor is said until the item has held still
-           that long: a value being turned is heard where it stops, and a
-           meter or a clock that never stops is not heard at all. A pad, and
-           the main screen's status, change only when something is done,
-           however quickly, so they are dealt with at once. */
-        if (it->last_change != 0 && d->tick - it->last_change < STEADY && !padlike(d->text)
-            && it->role != ROLE_MAIN && it->role != ROLE_PAD) {
+           that long: a meter or a clock that never stops is not heard at all,
+           and an effect being played is heard where it stops. A value just
+           turned is said at every step, as the focus is. A pad, and the main
+           screen's status, change only when something is done, however
+           quickly, so they are dealt with at once. */
+        if (turned && !it->own && it->role != ROLE_EFFECT) {
+            it->rapid = 0;
+        } else if (it->last_change != 0 && d->tick - it->last_change < STEADY
+                   && !padlike(d->text) && it->role != ROLE_MAIN && it->role != ROLE_PAD) {
             if (it->rapid < 255)
                 it->rapid++;
         } else {
@@ -1892,7 +1943,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
         page_pending = 0;
         new_screen(order);
         for (i = 0; i < ITEMS; i++)
-            items[i].changed = 0;
+            items[i].changed = items[i].own = 0;
     } else {
         same_screen(order);
         for (i = 0; i < ITEMS; i++)

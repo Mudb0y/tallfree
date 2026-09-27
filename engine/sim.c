@@ -24,6 +24,7 @@
      MS PAGE N                 page factory N called: a page being built
      MS KEY DOWN|UP HEX        a key sent to the main screen's page, 84
      MS KNOB N STEP            knob N turned by STEP, to page 84
+     MS CTRL N POS             CTRL knob N moved to POS, 0 to 127, to page 84
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
@@ -128,7 +129,8 @@ static char *slurp(const char *name)
     return t;
 }
 
-enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_BOX, E_TAB };
+enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
+       E_TAB };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -168,8 +170,8 @@ static void load_events(void)
             ev[nev].kind = E_KEY;
             ev[nev].x = strncmp(p + 4, "DOWN", 4) == 0 ? 5 : 6;
             ev[nev].y = (int)strtol(p + (ev[nev].x == 5 ? 9 : 7), NULL, 16);
-        } else if (strncmp(p, "KNOB", 4) == 0) {
-            ev[nev].kind = E_KNOB;
+        } else if (strncmp(p, "KNOB", 4) == 0 || strncmp(p, "CTRL", 4) == 0) {
+            ev[nev].kind = *p == 'K' ? E_KNOB : E_CTRL;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
             ev[nev].y = (int)strtol(p, &p, 10);
         } else if (strncmp(p, "ROW", 3) == 0) {
@@ -398,8 +400,9 @@ static void fire(int i)
         ((int (*)(void *))sim_page_table[84])(m);
         break;
     }
-    case E_KNOB: {
-        int16_t m[3] = { 7, (int16_t)ev[i].x, (int16_t)ev[i].y };
+    case E_KNOB:
+    case E_CTRL: {
+        int16_t m[3] = { ev[i].kind == E_KNOB ? 7 : 9, (int16_t)ev[i].x, (int16_t)ev[i].y };
         ((int (*)(void *))sim_page_table[84])(m);
         break;
     }
