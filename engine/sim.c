@@ -566,6 +566,20 @@ void write_file(const char *path, const void *buf, size_t len)
     sh_close(fd);
 }
 
+int file_exists(const char *path)
+{
+    char name[64];
+    const char *base = strrchr(path, '/');
+    int fd;
+
+    snprintf(name, sizeof name, "sim_%s", base ? base + 1 : path);
+    fd = sh_open(name, 0);
+    if (fd < 0)
+        return 0;
+    sh_close(fd);
+    return 1;
+}
+
 const char *read_text(const char *path)
 {
     if (strstr(path, "TALLFREE.CFG") != NULL)

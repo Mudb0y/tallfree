@@ -2206,10 +2206,16 @@ void screen_report(void)
            (unsigned long)evicted, (unsigned long)log_dropped);
 }
 
-/* The log so far, then every item on record with how often it was drawn. */
+/* The log so far, then every item on record with how often it was drawn,
+   as a part of the draw log. Past 48 KB the next part begins, leaving 48 KB
+   of room for what is logged while speech keeps the card from being
+   written. */
+#define LOG_PART (48u * 1024u)
+
 int screen_log_write(void)
 {
     static size_t written;
+    static int part, emptied;
     size_t n = log_len;
     int i, k;
 
@@ -2232,6 +2238,13 @@ int screen_log_write(void)
         if (k > 0)
             n += (size_t)k;
     }
-    write_file("A:/TALLFREE/DRAWS.TXT", draw_log, n);
+    log_part_write("DRAWS", part, &emptied, draw_log, n);
+    if (log_len >= LOG_PART) {
+        part++;
+        log_len = 0;
+        written = 0;
+        log_line("# part %d, from %lu ticks, %lu lines dropped so far\n", part,
+                 (unsigned long)device_ticks(), (unsigned long)log_dropped);
+    }
     return 1;
 }

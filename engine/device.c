@@ -39,6 +39,7 @@ typedef int (*close_fn)(int h);
 #define STEP    ((uint32_t)((11025ull << 16) / 48000u))
 
 const char *sys_log(size_t *len);
+void sys_log_reset(void);
 void diag_install(void);
 void diag_remove(void);
 
@@ -56,6 +57,16 @@ void write_file(const char *path, const void *buf, size_t len)
         len -= (size_t)chunk;
     }
     F_CLOSE(h);
+}
+
+int file_exists(const char *path)
+{
+    int h = F_OPEN(path, 0);
+
+    if (h < 0)
+        return 0;
+    F_CLOSE(h);
+    return 1;
 }
 
 const char *read_text(const char *path)
@@ -541,10 +552,13 @@ int engine_task_id(void)
     return g_task;
 }
 
-/* The log so far to the card. Safe from the engine's task at any point: the
-   file calls take the file system's own lock. */
+/* The log so far to the card, in parts of 32 KB. Safe from the engine's
+   task at any point: the file calls take the file system's own lock. */
+#define LOG_PART (32u * 1024u)
+
 void target_checkpoint(void)
 {
+    static int part, emptied;
     size_t len;
     const char *log;
     uint32_t crc = kernel_code_crc();
@@ -556,7 +570,11 @@ void target_checkpoint(void)
     printf("kernel code crc %08lx at launch, %08lx now, %s\n", (unsigned long)g_kernel_crc,
            (unsigned long)crc, crc == g_kernel_crc ? "unchanged" : "CHANGED");
     log = sys_log(&len);
-    write_file("A:/TALLFREE/LOG.TXT", log, len);
+    log_part_write("LOG", part, &emptied, log, len);
+    if (len >= LOG_PART) {
+        sys_log_reset();
+        part++;
+    }
 }
 
 void target_done(int rc)

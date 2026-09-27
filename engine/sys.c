@@ -122,6 +122,11 @@ const char *sys_log(size_t *len)
     return log_buf;
 }
 
+void sys_log_reset(void)
+{
+    log_len = 0;
+}
+
 /* Nothing on the instrument may hang the task that called in, so an exit
    goes back to engine_main with its code. */
 __attribute__((noreturn)) void engine_exit(int code);

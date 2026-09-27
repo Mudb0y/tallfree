@@ -40,6 +40,30 @@ static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, rxprobe, d
     volume = 50;
 int card_log;
 
+/* A log goes to the card in parts, A:/TALLFREE/STEM000.TXT on, so that it
+   runs as long as the instrument does: the part being written is rewritten
+   whole as it grows, and left once full. The first write of a session
+   empties the parts after the first that a longer session left. Only the
+   file calls the firmware itself makes: create-and-truncate, write, close,
+   and open to read. */
+void log_part_write(const char *stem, int part, int *emptied, const void *buf, size_t len)
+{
+    char path[40];
+    int k;
+
+    if (!*emptied) {
+        *emptied = 1;
+        for (k = part + 1; k < 1000; k++) {
+            snprintf(path, sizeof path, "A:/TALLFREE/%s%03d.TXT", stem, k);
+            if (!file_exists(path))
+                break;
+            write_file(path, "", 0);
+        }
+    }
+    snprintf(path, sizeof path, "A:/TALLFREE/%s%03d.TXT", stem, part);
+    write_file(path, buf, len);
+}
+
 #define SCRIPT 64
 static struct { const char *text; int wait_ms, out; } script[SCRIPT];
 static int nscript, script_next, final_out = -1;
