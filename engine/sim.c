@@ -25,6 +25,9 @@
      MS KEY DOWN|UP HEX        a key sent to the main screen's page, 84
      MS KNOB N STEP            knob N turned by STEP, to page 84
      MS CTRL N POS             CTRL knob N moved to POS, 0 to 127, to page 84
+     MS PAD N                  pad N, 1 to 16, pressed, to the page last built
+     MS MODE M                 the page last built is in mode M
+     MS BANK B                 the current bank is B, 0 to 9
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
@@ -50,6 +53,15 @@ volatile uint32_t sim_vtables[7][0x130 / 4], sim_site;
 volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
 volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
 
+/* The firmware's record of what the screens that ask for pads have chosen,
+   the store at 0x82E01144, the current bank, and the export and pad
+   operations pages, each with its mode at 0x1A90. */
+volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
+volatile int32_t sim_bank;
+static uint32_t page_object[0x1AA0 / 4];
+static int page_now = 84;
+#define PAGE_MODE (*(int32_t *)((char *)page_object + 0x1A90))
+
 void sim_draw_row(void *page, void *ctx, const int16_t *rect, int a, int b, int sel, int c)
 {
     (void)page; (void)ctx; (void)rect; (void)a; (void)b; (void)sel; (void)c;
@@ -63,11 +75,36 @@ static char tab_names[16][24];
 
 static unsigned page_saw_keys;
 
+/* Every page, as far as the reader can tell: a page built puts itself
+   where the firmware keeps it, and a pad pressed where a screen asks for
+   pads changes the choice as FUN_80151688 and FUN_8012E0B8 do. */
 static int sim_page_factory(void *request)
 {
     const int16_t *m = request;
-    if (m != NULL && *m >= 5 && *m <= 7)
+    uint8_t *store = (uint8_t *)sim_store;
+    int pad, index;
+
+    if (m == NULL)
+        return 0;
+    if (*m >= 5 && *m <= 7)
         page_saw_keys++;
+    if (*m == 1) {
+        sim_export_page = page_now == 85 ? (uint32_t)(uintptr_t)page_object : 0;
+        sim_padops_page = page_now == 67 ? (uint32_t)(uintptr_t)page_object : 0;
+        PAGE_MODE = 0;
+    }
+    if (*m != 16 || m[1] < 0 || m[1] > 15)
+        return 0;
+    pad = m[1];
+    index = sim_bank * 16 + pad;
+    if (page_now == 85 && PAGE_MODE == 0)
+        store[0x134 + index] = store[0x134 + index] == 0;
+    else if (page_now == 85 && PAGE_MODE == 1)
+        store[0x1D4 + pad] = store[0x1D4 + pad] == 0;
+    else if (page_now == 85 && PAGE_MODE == 2)
+        *(int32_t *)(store + 0x1E4) = index;
+    else if (page_now == 67 && PAGE_MODE == 1)
+        *(int32_t *)(store + 0x200 + 4 * index) = *(int32_t *)(store + 0x200 + 4 * index) > 0 ? 0 : 1;
     return 0;
 }
 static unsigned sim_drawn;
@@ -130,7 +167,7 @@ static char *slurp(const char *name)
 }
 
 enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
-       E_TAB };
+       E_TAB, E_PAD, E_MODE, E_BANK };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -187,6 +224,10 @@ static void load_events(void)
             ev[nev].text = p;
         } else if (strncmp(p, "PAGE", 4) == 0) {
             ev[nev].kind = E_PAGE;
+            ev[nev].x = (int)strtol(p + 4, &p, 10);
+        } else if (strncmp(p, "PAD ", 4) == 0 || strncmp(p, "MODE", 4) == 0
+                   || strncmp(p, "BANK", 4) == 0) {
+            ev[nev].kind = p[1] == 'A' ? (p[2] == 'D' ? E_PAD : E_BANK) : E_MODE;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
         } else if (strncmp(p, "ICON", 4) == 0) {
             ev[nev].kind = E_ICON;
@@ -406,10 +447,25 @@ static void fire(int i)
         ((int (*)(void *))sim_page_table[84])(m);
         break;
     }
+    case E_PAD: {
+        /* The key, then the pad, as the unit sends them. */
+        int16_t key[3] = { 5, (int16_t)(ev[i].x - 1), 0 };
+        int16_t pad[3] = { 16, (int16_t)(ev[i].x - 1), 100 };
+        ((int (*)(void *))sim_page_table[page_now])(key);
+        ((int (*)(void *))sim_page_table[page_now])(pad);
+        break;
+    }
+    case E_MODE:
+        PAGE_MODE = ev[i].x;
+        break;
+    case E_BANK:
+        sim_bank = ev[i].x;
+        break;
     case E_PAGE: {
         /* Building the page, then the page's steady traffic, which must
            not count. */
         int16_t build = 1, tick = 3;
+        page_now = ev[i].x % 94;
         ((int (*)(void *))sim_page_table[ev[i].x % 94])(&build);
         ((int (*)(void *))sim_page_table[ev[i].x % 94])(&tick);
         ((int (*)(void *))sim_page_table[ev[i].x % 94])(&tick);

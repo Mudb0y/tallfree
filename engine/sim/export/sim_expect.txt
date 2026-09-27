@@ -1,0 +1,8 @@
+A 13
+EXPORT SAMPLE/PROJ./MULTIPAD | PLEASE SELECT SMPL | ENTER:EX
+A 5 selected
+A 5 deselected
+B 1 selected
+B 16 selected
+project 3 selected
+pattern A 4

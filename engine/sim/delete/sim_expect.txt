@@ -1,0 +1,6 @@
+A 13
+SELECT PAD | DEL
+A 1 selected
+A 2 selected
+A 1 deselected
+A 2 deselected

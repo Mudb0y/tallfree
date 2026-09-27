@@ -73,6 +73,19 @@ static const uint32_t vt_base[] = {
 #define TAB_WORD        (*(volatile uint32_t *)0x80221D10u)
 #define TAB_DRAW        0x80121479u
 #define TAB_DRAW_ASM    "0x80121479"
+/* What the screens that ask for pads have chosen, which only the pads'
+   lights show. FUN_800D94D8 reads the store at 0x82E01144: the samples
+   picked for export, a byte a pad over all ten banks from 0x134 (its
+   parameter 0xB); the projects picked for export, a byte each from 0x1D4
+   (0xC); the pattern picked for export, a word at 0x1E4 (0xD); the pads
+   picked for deletion, a word a pad from 0x200 (0x14). The current bank,
+   0 to 9, is at 0x82E2CD1C, as FUN_800DDA38(0x82E009D0, 0) reads it. The
+   export page, 85, keeps itself at 0x80CFD4E4 and the pad operations page,
+   67, at 0x80CFD490; each keeps its mode at 0x1A90. */
+#define PICK_STORE      0x82E01144u
+#define BANK_NOW        (*(volatile int32_t *)0x82E2CD1Cu)
+#define EXPORT_PAGE     (*(volatile uint32_t *)0x80CFD4E4u)
+#define PADOPS_PAGE     (*(volatile uint32_t *)0x80CFD490u)
 static const uint32_t icon_slots[] = {
     0x8021CF38u, 0x8021DA78u, 0x8021DC38u, 0x8021DDFCu, 0x8021DFBCu, 0x8021E8B4u,
     0x8021EA40u, 0x8021EBCCu, 0x8021ED58u, 0x8021EEE4u, 0x8021F1F8u, 0x8021F9ACu,
@@ -98,6 +111,12 @@ void sim_frame(void);
 void sim_batch(const char *phrases, int count);
 extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
 extern volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
+extern volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
+extern volatile int32_t sim_bank;
+#define PICK_STORE      ((uint32_t)(uintptr_t)sim_store)
+#define BANK_NOW        sim_bank
+#define EXPORT_PAGE     sim_export_page
+#define PADOPS_PAGE     sim_padops_page
 void sim_draw_icon(void);
 void sim_draw_row(void);
 void sim_draw_tabs(void);
@@ -148,7 +167,7 @@ static const uint32_t vt_base[] = {
    one level up, from what the unit's logs recorded. Anything else is judged
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
-       ROLE_CHOICE, ROLE_EFFECT };
+       ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -167,6 +186,11 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x8017388Bu, ROLE_IGNORE },           /* LEVEL meters */
     { 0x801779C9u, ROLE_IGNORE },
     { 0x80105033u, ROLE_TITLE },            /* the BPM screen's heading, C1:TEMPO SEL */
+    { 0x8015604Bu, ROLE_PICKS },            /* SELECT PAD, TOT SELECTED PADS:1 */
+    { 0x80151927u, ROLE_TITLE },            /* the export page's heading over PLEASE
+                                               SELECT SMPL, FUN_801518B0 */
+    { 0x8016BAB7u, ROLE_IGNORE },           /* the pattern settings' hint, SHIFT:OTHER */
+    { 0x8016B061u, ROLE_UNLIT },            /* their quantise grid, GRID 16, on white */
     /* An outline that marks the chosen one of several strings. */
     { 0x80105153u, ROLE_CHOICE },           /* the BPM screen's, round PROJECT or the bank */
 };
@@ -508,6 +532,57 @@ static int keep_for_menu(int type, int code, int step)
     return 0;
 }
 
+/* A pad pressed where a screen asks for pads: which choice it makes, by
+   the page and its mode, as FUN_80151688 (export) and FUN_8012E0B8 (pad
+   operations) make it. The pad operations' other modes, copy and exchange,
+   draw their pads as text. */
+#define PAGE_PADOPS 67
+#define PAGE_EXPORT 85
+#define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
+enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS };
+
+static int pick_kind(uint32_t page, int pad, int *index)
+{
+    uint32_t p;
+    int32_t bank = BANK_NOW;
+
+    if (pad < 0 || pad > 15 || bank < 0 || bank > 9)
+        return PICK_NONE;
+    if (page == PAGE_EXPORT && (p = EXPORT_PAGE) != 0) {
+        switch (PAGE_MODE(p)) {
+        case 0:
+            *index = (int)bank * 16 + pad;
+            return PICK_SAMPLE;
+        case 1:
+            *index = pad;
+            return PICK_PROJECT;
+        case 2:
+            *index = 0;
+            return PICK_PATTERN;
+        }
+    } else if (page == PAGE_PADOPS && (p = PADOPS_PAGE) != 0 && PAGE_MODE(p) == 1) {
+        *index = (int)bank * 16 + pad;
+        return PICK_PADS;
+    }
+    return PICK_NONE;
+}
+
+/* Whether a pad or project is chosen, or which pattern is. */
+static int32_t pick_state(int kind, int index)
+{
+    switch (kind) {
+    case PICK_SAMPLE:
+        return *(volatile uint8_t *)(PICK_STORE + 0x134u + (uint32_t)index);
+    case PICK_PROJECT:
+        return *(volatile uint8_t *)(PICK_STORE + 0x1D4u + (uint32_t)index);
+    case PICK_PATTERN:
+        return *(volatile int32_t *)(PICK_STORE + 0x1E4u);
+    case PICK_PADS:
+        return *(volatile int32_t *)(PICK_STORE + 0x200u + 4u * (uint32_t)index);
+    }
+    return 0;
+}
+
 __attribute__((used)) static int page_record(uint32_t page, const int16_t *message)
 {
     struct draw d;
@@ -518,6 +593,26 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
     type = *message;
     if (type >= 5 && type <= 7 && keep_for_menu(type, message[1], message[2]))
         return 1;
+    /* A pad pressed (type 16, the pad, 0 to 15, in the second halfword)
+       where a screen asks for pads goes with whether it was chosen before
+       the page sees it. */
+    if (type == 16) {
+        int index = 0, kind = pick_kind(page, message[1], &index);
+
+        if (kind != PICK_NONE) {
+            memset(&d, 0, sizeof d);
+            d.kind = EV_PAGE;
+            d.tick = device_ticks();
+            d.mark = (int32_t)page;
+            d.x = type;
+            d.y = message[1];
+            d.x1 = (int16_t)index;
+            d.y1 = (int16_t)kind;
+            d.ink = pick_state(kind, index);
+            push(&d);
+            return 0;
+        }
+    }
     /* Keys, key releases and knob turns (types 5, 6 and 7, the key or knob
        in the second halfword, a knob's step in the third) and the CTRL
        knobs (type 9, CTRL 1 to 3 in the second, the knob's position, 0 to
@@ -595,6 +690,12 @@ static const struct item *last_label;
 static int pending, wiped, page_pending, muted;
 static struct { int16_t action, step; } menu_q[16];
 static int menu_n;
+/* Pads pressed where a screen asks for pads, waiting to be said once the
+   page has made its choice, and when the last was pressed. */
+static struct { int16_t kind, index; int32_t before; } picks[8];
+static int npicks;
+static uint32_t last_pick;
+static uint8_t pick_seen;
 
 void screen_mute(int mute)
 {
@@ -840,8 +941,8 @@ static int is_status(const struct item *it)
    selected icon, a selected settings row, or a choice in its outline. */
 static int is_lit(const struct item *it)
 {
-    return (it->mark == WHITE && it->y >= 10 && !it->title) || it->icon_sel || it->row_sel
-        || it->framed;
+    return (it->mark == WHITE && it->y >= 10 && !it->title && it->role != ROLE_UNLIT)
+        || it->icon_sel || it->row_sel || it->framed;
 }
 
 static int is_popup(const struct item *it)
@@ -922,6 +1023,19 @@ static int take(const struct draw *d)
             menu_n++;
         }
         return 0;
+    }
+    if (d->kind == EV_PAGE && d->x == 16) {
+        log_line("%lu pick %d, pad %d, index %d, was %ld, page %ld\n", (unsigned long)d->tick,
+                 d->y1, d->y, d->x1, (long)d->ink, (long)d->mark);
+        if (npicks < (int)(sizeof picks / sizeof picks[0])) {
+            picks[npicks].kind = d->y1;
+            picks[npicks].index = d->x1;
+            picks[npicks].before = d->ink;
+            npicks++;
+        }
+        last_pick = d->tick;
+        pick_seen = 1;
+        return 1;
     }
     if (d->kind == EV_PAGE && d->x == 9) {
         /* A CTRL knob sends every position it passes, so only where each
@@ -1342,10 +1456,11 @@ static int plain(const struct item *it)
    current screen began, so that what a screen left underneath, as the main
    screen's big BPM under the SD card menu, labels nothing: on its own line to
    its left and on another background, as the SYSTEM page sets "Edit Knob
-   Mode" beside "Direct", or else just above it in its column, as the
-   parameter pages set CUTOFF over 827. Text drawn by the same code is a
-   neighbour, as a grid's cells are, and so is text beside it on the same
-   background, as a menu's items are; neither is a label. */
+   Mode" beside "Direct", or else above it in its column, as the parameter
+   pages set CUTOFF fifteen pixels over 827 and the pattern settings LENGTH
+   thirty over 2 Bars. Text drawn by the same code is a neighbour, as a
+   grid's cells are, and so is text beside it on the same background, as a
+   menu's items are; neither is a label. */
 static const struct item *row_label(const struct item *v)
 {
     const struct item *best = NULL;
@@ -1363,18 +1478,55 @@ static const struct item *row_label(const struct item *v)
     return best;
 }
 
-static const struct item *label_of(const struct item *v)
+/* Text that already names a value beside it on its own line, as the
+   pattern settings' QTZ: names GRID 16, names nothing below it. The status
+   bar has no names, whatever sits on its line. */
+static int labels_its_row(const struct item *o)
 {
-    const struct item *best = row_label(v);
     int i;
 
-    if (best != NULL)
-        return best;
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *w = &items[i];
+        if (live(w) && w != o && w->surf == o->surf && w->x > o->x && w->y - o->y <= 2
+            && o->y - w->y <= 2 && !is_status(w) && row_label(w) == o)
+            return 1;
+    }
+    return 0;
+}
+
+/* Text with nothing that could name it just above it in its column. */
+static int column_top(const struct item *o)
+{
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *p = &items[i];
+        if (live(p) && p != o && p->surf == o->surf && plain(p) && p->y < o->y - 2
+            && o->y - p->y <= 20 && horizontally_near(o, p))
+            return 0;
+    }
+    return 1;
+}
+
+/* Two strings centred on one another, at four pixels a character. */
+static int centred(const struct item *a, const struct item *b)
+{
+    int d = 2 * (a->x - b->x) + 4 * ((int)text_len(a) - (int)text_len(b));
+
+    return d >= -12 && d <= 12;
+}
+
+static const struct item *column_label(const struct item *v, int reach, int heading)
+{
+    const struct item *best = NULL;
+    int i;
+
     for (i = 0; i < ITEMS; i++) {
         const struct item *o = &items[i];
         if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->site == v->site
-            || o->y >= v->y - 2 || v->y - o->y > 20 || !horizontally_near(v, o)
-            || (int32_t)(o->last_drawn - screen_epoch) < 0)
+            || o->y >= v->y - 2 || v->y - o->y > reach || !horizontally_near(v, o)
+            || (int32_t)(o->last_drawn - screen_epoch) < 0 || labels_its_row(o)
+            || (heading && (!column_top(o) || !centred(o, v))))
             continue;
         if (best == NULL || o->y > best->y)
             best = o;
@@ -1382,9 +1534,26 @@ static const struct item *label_of(const struct item *v)
     return best;
 }
 
+/* Above in its column, the nearest text within twenty pixels, else text
+   heading its column within thirty-two and centred over it: a value two
+   rows down names nothing below it, as the effect page's does not name the
+   effect, and nor does a prompt name a hint under it, as PLEASE SELECT SMPL
+   does not name ENTER:EX. */
+static const struct item *label_of(const struct item *v)
+{
+    const struct item *best = row_label(v);
+
+    if (best == NULL)
+        best = column_label(v, 20, 0);
+    if (best == NULL)
+        best = column_label(v, 32, 1);
+    return best;
+}
+
 /* A value's unit is short text just below it in its column, "Hz" under
-   827; only a value with a label has one, and a value named on its own
-   row, the next setting down, is not a unit. */
+   827; only a value with a label has one, and neither a value named on its
+   own row, the next setting down, nor a pad or pattern, as the pattern
+   settings show A-1 under GRID 16, is a unit. */
 static const struct item *unit_of(const struct item *v)
 {
     const struct item *best = NULL;
@@ -1398,7 +1567,8 @@ static const struct item *unit_of(const struct item *v)
         if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->y <= v->y
             || o->y - v->y > 20 || !horizontally_near(v, o))
             continue;
-        if (clean(t, sizeof t, o->text) == 0 || strlen(t) > 4 || row_label(o) != NULL)
+        if (clean(t, sizeof t, o->text) == 0 || strlen(t) > 4 || padlike(o->text)
+            || row_label(o) != NULL)
             continue;
         if (best == NULL || o->y < best->y)
             best = o;
@@ -1406,15 +1576,29 @@ static const struct item *unit_of(const struct item *v)
     return best;
 }
 
+/* A value's unit as said: none when it only repeats the label, as the
+   pattern settings' BPM does under its tempo. */
+static const char *unit_said(const struct item *v, const struct item *l)
+{
+    const struct item *u = unit_of(v);
+    char a[ITEM_TEXT], b[ITEM_TEXT];
+
+    if (u == NULL)
+        return NULL;
+    if (l != NULL && clean(a, sizeof a, u->text) > 0 && clean(b, sizeof b, l->text) > 0
+        && strcmp(a, b) == 0)
+        return NULL;
+    return u->text;
+}
+
 /* A value with its label the first time it is heard, alone after that. */
 static int say_value(const struct item *v)
 {
-    const struct item *l = label_of(v), *u;
+    const struct item *l = label_of(v);
 
     if (l != NULL && l != last_label) {
         last_label = l;
-        u = unit_of(v);
-        return say3(l->text, v->text, u ? u->text : NULL);
+        return say3(l->text, v->text, unit_said(v, l));
     }
     return say3(v->text, NULL, NULL);
 }
@@ -1448,10 +1632,11 @@ static int tab_known(void)
     return tab_now[0] != 0 && (int32_t)(tab_tick - screen_epoch) >= 0;
 }
 
-/* What a screen shows; a page count is left to the tab it counts. */
+/* What a screen shows; a page count is left to the tab it counts. The
+   pad operations page asks for pads in its status bar. */
 static int want_fresh(const struct item *it)
 {
-    return !is_status(it) && !is_title(it) && it->role != ROLE_TABS
+    return (!is_status(it) || it->role == ROLE_PICKS) && !is_title(it) && it->role != ROLE_TABS
         && (it->fresh || it->changed == 1) && !(tab_known() && page_number(it));
 }
 
@@ -1477,9 +1662,10 @@ static void say_contents(struct item **order, int n)
         if (skip || (l != NULL && unit_of(l) == it))
             continue;
         if (l != NULL) {
-            const struct item *u = unit_of(it);
             last_label = l;
-            say3(l->text, it->text, u ? u->text : NULL);
+            say3(l->text, it->text, unit_said(it, l));
+        } else if (padlike(it->text)) {
+            say_pad(it);
         } else {
             say(it);
         }
@@ -1647,6 +1833,36 @@ static int mirrors_focus(const struct item *it)
     return 0;
 }
 
+/* The pads pressed where a screen asks for pads, each with what the page
+   made of it: a pad or a project chosen or let go, or the pattern now
+   chosen. A press that changed nothing, one the page refused, says
+   nothing. */
+static void say_picks(void)
+{
+    char t[32];
+    int i;
+
+    for (i = 0; i < npicks; i++) {
+        int kind = picks[i].kind, index = picks[i].index;
+        int32_t now = pick_state(kind, index), before = picks[i].before;
+
+        if (kind == PICK_PATTERN) {
+            if (now == before || now < 0 || now >= 160)
+                continue;
+            snprintf(t, sizeof t, "pattern %c %d", 'A' + (int)(now / 16), (int)(now % 16) + 1);
+        } else if ((now > 0) == (before > 0)) {
+            continue;
+        } else if (kind == PICK_PROJECT) {
+            snprintf(t, sizeof t, "project %d %s", index + 1, now > 0 ? "selected" : "deselected");
+        } else {
+            snprintf(t, sizeof t, "%c %d %s", 'A' + index / 16, index % 16 + 1,
+                     now > 0 ? "selected" : "deselected");
+        }
+        say3(t, NULL, NULL);
+    }
+    npicks = 0;
+}
+
 /* What to say about a change on the same screen: a message, whenever it is
    drawn; a pop-up that has just appeared, whole; the newly focused item;
    values that changed. On the main screen a pad hit says nothing, and nor
@@ -1715,6 +1931,12 @@ static void same_screen(struct item **order)
         if (it->changed != 1 || is_lit(it) || is_title(it))
             continue;
         if (mirrors_focus(it)) {
+            it->changed = 0;
+            continue;
+        }
+        /* The count of pads chosen, redrawn up to a frame after the press
+           the pad itself has been said for. */
+        if (it->role == ROLE_PICKS && pick_seen && it->last_change - last_pick <= 375u) {
             it->changed = 0;
             continue;
         }
@@ -1884,6 +2106,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
     if (menu_is_open() || muted) {
         for (i = 0; i < ITEMS; i++)
             items[i].changed = items[i].fresh = 0;
+        npicks = 0;
         pending = 0;
         page_pending = 0;
         tab_changed = 0;
@@ -1918,6 +2141,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
     b_used = 0;
     b_count = 0;
     b_now = now;
+    say_picks();
     if (screen_mode == SCREEN_ALL) {
         for (i = 0; i < nburst; i++)
             say(&items[burst[i]]);

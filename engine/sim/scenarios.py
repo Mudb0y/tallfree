@@ -418,6 +418,75 @@ def turned():
     write('turned', d, ['A 13', 'SPEED 1.00 | PITCH 0 SEMI | VOLUME 127', 'SPEED 1.10',
                         '1.20', '1.30', '1.40', 'PITCH 1 SEMI', '2', '3'])
 
+# The pattern recording settings, page 62, as runs/57 drew them: three
+# columns, each a name at the top and a line at the bottom, BPM's tempo in
+# the middle over its unit, BPM again; below, on a surface of its own, a
+# hint and the quantise grid on white, the mode and the pattern. Entering
+# reads the settings; CTRL 1 turns the tempo, CTRL 2 the length and CTRL 3
+# the strength, each named on its first step only.
+def patrec():
+    NAME, LOW, TEMPO = '=801709AB:', '=801709EF:', '=80170A15:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 62', '1000 s1 83 46 !=8016B061:GRID 16',
+          '1000 s1 5 45 !=8016BAB7:SHIFT:OTHER', '1000 s1 83 54 _=8016BB11:A-1',
+          '1000 s1 5 54 _=8016BB45:MODE : Real-Time', '1000 s1 65 46 _=8016BB55:QTZ:',
+          '1000 s0 CLEAR',
+          f'1000 s0 15 4 _{NAME}BPM', f'1000 s0 15 34 _{LOW}BPM', f'1000 s0 9 19 _{TEMPO}90.0',
+          f'1000 s0 53 4 _{NAME}LENGTH', f'1000 s0 53 34 _{LOW}2 Bars',
+          f'1000 s0 86 4 _{NAME} STRENGTH ', f'1000 s0 102 34 _{LOW}0%']
+    for k, (x, v) in enumerate([(9, '93.0'), (9, '97.0'), (6, '105.0'), (6, '111.0')]):
+        t = 3000 + 50 * k
+        d += [f'{t} CTRL 1 {43 + 4 * k}', f'{t} s0 {x} 19 _{TEMPO}{v}']
+    for k, v in enumerate(['38 Bars', '41 Bars']):
+        t = 5000 + 50 * k
+        d += [f'{t} CTRL 2 {75 + 4 * k}', f'{t} s0 51 34 _{LOW}{v}']
+    for k, v in enumerate(['43%', '49%']):
+        t = 7000 + 50 * k
+        d += [f'{t} CTRL 3 {53 + 4 * k}', f'{t} s0 100 34 _{LOW}{v}']
+    d += ['9000 VALUE']
+    write('patrec', d, ['A 13',
+                        'BPM 90.0 | LENGTH 2 Bars | STRENGTH 0% | QTZ: GRID 16 | '
+                        'MODE : Real-Time | A 1',
+                        'BPM 93.0', '97.0', '105.0', '111.0', 'LENGTH 38 Bars', '41 Bars',
+                        'STRENGTH 43%', '49%'])
+
+# Exporting samples, page 85, as FUN_801518B0 draws it once SAMPLE is
+# chosen, found in the firmware rather than a log: its heading, PLEASE
+# SELECT SMPL and ENTER:EX. The pads show what is chosen only by their
+# lights, and every press redraws the page unchanged. Pads chosen and let
+# go in two banks; then choosing a project, then a pattern, the same one
+# twice; then a mode that chooses nothing.
+def export():
+    def status(t):
+        return [f'{t} s0 FILL 0 0 127 63', f'{t} s0 3 2 _=80151927:EXPORT SAMPLE/PROJ./MULTIPAD',
+                f'{t} s0 19 20 _=80151995:PLEASE SELECT SMPL', f'{t} s0 73 48 =800EE779:ENTER:EX']
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 85'] + status(1000)
+    for t, pad in [(3000, 5), (4000, 5), (5500, 1), (6500, 16)]:
+        if t == 5500:
+            d.append('5400 BANK 1')
+        d += [f'{t} PAD {pad}'] + status(t + 40)
+    d += ['8000 MODE 1', '8500 PAD 3', '9500 MODE 2', '9600 BANK 0', '10000 PAD 4',
+          '11000 PAD 4', '12000 MODE 3', '12500 PAD 2', '14000 VALUE']
+    write('export', d, ['A 13', 'EXPORT SAMPLE/PROJ./MULTIPAD | PLEASE SELECT SMPL | ENTER:EX',
+                        'A 5 selected', 'A 5 deselected', 'B 1 selected', 'B 16 selected',
+                        'project 3 selected', 'pattern A 4'])
+
+# Deleting pads, page 67 in its mode 1, as runs/41 drew it: SELECT PAD in
+# the status bar and the big DEL; each pad pressed redraws the count, TOT
+# SELECTED PADS, a frame later, and SELECT PAD again at none. The pad is
+# said, not the count.
+def delete():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 67', '1000 MODE 1', '1000 s0 FILL 0 0 127 63',
+          '1000 s0 45 4 !=8015604B:SELECT PAD', '1000 s0 28 18 _=800EE779:D E L']
+    for t, pad, count in [(3000, 1, 1), (4000, 2, 2), (5000, 1, 1), (6000, 2, 0)]:
+        text = f'28 4 !=8015604B:TOT SELECTED PADS:{count}' if count else '45 4 !=8015604B:SELECT PAD'
+        d += [f'{t} PAD {pad}', f'{t + 48} s0 {text}']
+    d += ['8000 VALUE']
+    write('delete', d, ['A 13', 'SELECT PAD | DEL', 'A 1 selected', 'A 2 selected',
+                        'A 1 deselected', 'A 2 deselected'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -435,3 +504,6 @@ settings()
 bpm()
 tabs()
 turned()
+patrec()
+export()
+delete()
