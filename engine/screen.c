@@ -183,7 +183,7 @@ static const uint32_t vt_base[] = {
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
        ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
-       ROLE_CELL, ROLE_QUIET };
+       ROLE_CELL, ROLE_QUIET, ROLE_STATE };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -224,6 +224,8 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80156139u, ROLE_TITLE },
     { 0x80151927u, ROLE_TITLE },            /* the export page's heading over PLEASE
                                                SELECT SMPL, FUN_801518B0 */
+    { 0x8015F85Fu, ROLE_STATE },            /* the pattern screen's SELECT, STOP-PTN C1,
+                                               PLAY-PTN C1 */
     { 0x8016B061u, ROLE_UNLIT },            /* the pattern settings' quantise grid,
                                                GRID 16, on white */
     { 0x80145629u, ROLE_UNLIT },            /* the pad settings' tempo mode, MANU */
@@ -838,13 +840,25 @@ static int nframe_sites;
    the pages were sent them. A page redraws what a knob changed within 40
    ticks of it, one frame, in every log so far. */
 #define TURN_WINDOW 60u                      /* ticks, 80 ms */
+/* A pad's or a bank key's redraw takes longer: the pattern screen drew
+   PLAY-PTN C1 62 ticks after the pad. */
+#define PLAY_WINDOW 110u                     /* ticks, 147 ms */
 static uint32_t last_turn, last_press, last_pad, last_fx, last_bank_key, last_ctrl_logged;
 static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen, bank_key_seen;
+/* The pattern's state, STOP-PTN C1 or PLAY-PTN C1, is said as soon as it
+   settles: one pad draws STOP and then PLAY a frame later. */
+static uint32_t state_hold;
+static uint8_t state_seen;
 static int16_t ctrl_logged = -1;
 
 static int just_after(uint32_t then, int seen, uint32_t now)
 {
     return seen && now - then <= TURN_WINDOW;
+}
+
+static int played_just_before(uint32_t then, int seen, uint32_t now)
+{
+    return seen && now - then <= PLAY_WINDOW;
 }
 
 /* The page showing, by the last page built. */
@@ -1440,9 +1454,14 @@ static int take(const struct draw *d)
         int turned = just_after(last_turn, turn_seen, d->tick);
 
         it->prompted = (uint8_t)(turned || just_after(last_press, press_seen, d->tick));
-        it->by_pad = (uint8_t)(pads_play() && (just_after(last_pad, pad_seen, d->tick)
-                                               || just_after(last_bank_key, bank_key_seen,
-                                                             d->tick)));
+        it->by_pad = (uint8_t)(pads_play() && it->role != ROLE_STATE
+                               && (played_just_before(last_pad, pad_seen, d->tick)
+                                   || played_just_before(last_bank_key, bank_key_seen,
+                                                         d->tick)));
+        if (it->role == ROLE_STATE) {
+            state_hold = d->tick + 75u;
+            state_seen = 1;
+        }
         /* Text that changes with nothing just pressed or turned changes on
            its own, as a meter, a clock or the sequencer's bar does, and is
            never taken for a value turned until the screen changes, however
@@ -1456,7 +1475,7 @@ static int take(const struct draw *d)
            turned is said at every step, as the focus is. A pad, and the main
            screen's status, change only when something is done, however
            quickly, so they are dealt with at once. */
-        if (turned && !it->own && it->role != ROLE_EFFECT) {
+        if ((turned && !it->own && it->role != ROLE_EFFECT) || it->role == ROLE_STATE) {
             it->rapid = 0;
         } else if (it->last_change != 0 && d->tick - it->last_change < STEADY
                    && !padlike(d->text) && it->role != ROLE_MAIN && it->role != ROLE_PAD) {
@@ -2324,10 +2343,15 @@ static void new_screen(struct item **order)
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
         say(order[i]);
+    /* A screen named by its button says its name and nothing more, as the
+       top screen does: START/END's pad and PITCH/SPEED's tempo line were
+       more than he wanted arriving. */
     if (n == 0 && page_arrived)
         for (i = 0; i < (int)(sizeof page_names / sizeof page_names[0]); i++)
-            if (page_names[i].page == page_now)
+            if (page_names[i].page == page_now) {
                 say3(page_names[i].name, NULL, NULL);
+                return;
+            }
     if (tab_known()) {
         if (strcmp(tab_now, last_tab) != 0) {
             memcpy(last_tab, tab_now, ITEM_TEXT);
@@ -2560,6 +2584,12 @@ static void same_screen(struct item **order)
             it->changed = 0;
             continue;
         }
+        /* The pattern's state, whatever changed it. */
+        if (it->role == ROLE_STATE) {
+            say(it);
+            it->changed = 0;
+            continue;
+        }
         if (it->by_pad) {
             it->changed = 0;
             continue;
@@ -2769,6 +2799,8 @@ int screen_poll(char *phrases, size_t cap, int *count)
     }
     if (pending && (now - last_change >= settle_ticks || now - first_pending >= 750u))
         due = 1;
+    if (due && state_seen && (int32_t)(now - state_hold) < 0)
+        due = 0;
     for (i = 0; i < ITEMS && !due; i++)
         if (items[i].used && items[i].changed == 1 && items[i].rapid > 0
             && now - items[i].last_change >= STEADY)
@@ -2837,7 +2869,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
            does the effects grid an effect's button shows while it is held,
            whether it is turning the effect on or off: the effect's page,
            when it comes, names it. */
-        if (!page_arrived && pads_play() && pad_seen && first_pending - last_pad <= TURN_WINDOW) {
+        if (!page_arrived && pads_play() && pad_seen && first_pending - last_pad <= PLAY_WINDOW) {
             b_used = 0;
             b_count = 0;
         }

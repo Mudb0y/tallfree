@@ -1,5 +1,5 @@
 top screen
-CHOP | D 1
+CHOP
 TIME DIVISION
 Current Marks will be lost. | Continue? | CANCEL
 Current Marks will be lost. | Continue? | CANCEL

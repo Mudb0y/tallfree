@@ -1,5 +1,5 @@
 top screen
-START/END | D 1
+START/END
 VALUE: ZOOM(2x)
 VALUE: ZOOM(3x)
 mark: [end]

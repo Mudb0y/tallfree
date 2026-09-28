@@ -1,3 +1,9 @@
 top screen
 pattern
 C
+PLAY-pattern C1
+STOP-pattern C1
+PLAY-pattern C1
+STOP-pattern C1
+PLAY-pattern C1
+STOP-pattern C1

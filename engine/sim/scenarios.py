@@ -516,7 +516,7 @@ def padset():
           '3030 s2 101 55 _=8014572B:120.00', '3030 s2 7 55 _=80145351:   D-2',
           '3030 s2 44 55 _=800EE779:Vel', f'3030 s0 0 18 _{MID}110.0%', f'3030 s0 96 18 _{MID} 90',
           '5000 VALUE']
-    write('padset', d, ['top screen', 'PITCH/SPEED | BPM SET | manual | D 1 | 90.00'])
+    write('padset', d, ['top screen', 'PITCH/SPEED'])
 
 # Sample edit, page 90, as runs/58 drew it: the knobs' legends along the
 # top, the pad, the MARK button's legend, MENU and the zoom along the
@@ -545,7 +545,7 @@ def sampedit():
     # Pads choose the sample to edit by playing it, and are not said.
     d += ['8000 PAD 2', '8030 s1 58 53 _=80107C83:D-2', '8600 PAD 5',
           '8630 s1 58 53 _=80107C83:D-5', '10000 VALUE']
-    write('sampedit', d, ['top screen', 'START/END | D 1', 'VALUE: ZOOM(2x)', 'VALUE: ZOOM(3x)',
+    write('sampedit', d, ['top screen', 'START/END', 'VALUE: ZOOM(2x)', 'VALUE: ZOOM(3x)',
                           'mark: [end]'])
 
 # Auto mark, page 88, as runs/58 drew it: the knobs' legends, the pad, MENU
@@ -589,7 +589,7 @@ def automark():
     d += ['9000 KEY DOWN 22', '9000 s3 CLEAR'] + mode_page(9000)
     d += ['14000 KEY DOWN 31'] + dialog(14000)
     d += ['16000 VALUE']
-    write('automark', d, ['top screen', 'CHOP | D 1', 'TIME DIVISION',
+    write('automark', d, ['top screen', 'CHOP', 'TIME DIVISION',
                           'Current Marks will be lost. | Continue? | CANCEL',
                           'Current Marks will be lost. | Continue? | CANCEL'])
 
@@ -778,12 +778,13 @@ def buttons():
                          'ping pong loop ON', 'LOOP OFF', 'REVERSE ON', 'BPM SYNC ON',
                          'BANK A GATE ON', 'GATE ON'])
 
-# The pattern screen, page 60, as runs/64 drew it: the status line's SELECT
-# and tempo, the big P T N, which names it. A bank key says its letter and
-# not the tempo it brings; a pad selects C1 and stops, starts and stops it,
-# the status line and the big field following and the bar and beat running
-# while it plays, none of it said, the pads playing as on the top screen.
-# C1 is the pattern C1 and not the CTRL 1 knob.
+# The pattern screen, page 60, as runs/64 and runs/65 drew it: the status
+# line's SELECT and tempo, the big P T N, which names it. A bank key says
+# its letter and not the tempo it brings. A pad starts C1, drawing STOP and
+# then PLAY 83 ms later, which is said as it settles, PLAY; pressed again
+# and again, quickly, each state is said as it comes; the big field, the
+# bar and beat running and the time signature are not. C1 is the pattern
+# C1 and not the CTRL 1 knob.
 def patterns():
     ST, BIG = '=8015F85F:', '=800EE779:'
     d = main_screen(0, 0, 'A-13')
@@ -792,14 +793,19 @@ def patterns():
           f'1000 s0 28 14 _{BIG}P T N',
           '3000 KEY DOWN 27', '3000 BANK 2', '3015 s0 8 2 !=80156727:BPM  90.0',
           '4000 PAD 1', f'4020 s0 66 2 !{ST}STOP-PTN C1', '4020 s0 FILL 0 9 127 40',
-          f'4020 s0 60 14 _{BIG}C 1',
-          '5000 PAD 1', f'5060 s0 66 2 !{ST}PLAY-PTN C1', '5060 s0 FILL 0 9 127 40',
-          f'5060 s0 45 14 _{BIG}1.1.', f'5060 s0 112 59 _{BIG}4.4']
-    for k, t in enumerate(range(5700, 9000, 650)):
-        d.append(f'{t} s0 45 14 _{BIG}{k // 4 + 1}.{k % 4 + 2 if k % 4 < 3 else 1}.')
-    d += ['9500 PAD 1', f'9540 s0 66 2 !{ST}STOP-PTN C1', '9540 s0 FILL 0 9 127 63',
-          f'9540 s0 60 14 _{BIG}C 1', '11000 VALUE']
-    write('patterns', d, ['top screen', 'pattern', 'C'])
+          f'4020 s0 60 14 _{BIG}C 1', f'4083 s0 66 2 !{ST}PLAY-PTN C1',
+          f'4085 s0 112 59 _{BIG}4.4', '4300 s0 FILL 0 9 127 40', f'4300 s0 45 14 _{BIG}1.1.']
+    for k, t in enumerate(range(4950, 7000, 650)):
+        d.append(f'{t} s0 45 14 _{BIG}1.{k + 2}.')
+    d += ['7000 PAD 1', f'7020 s0 66 2 !{ST}STOP-PTN C1', '7020 s0 FILL 0 9 127 63',
+          f'7020 s0 60 14 _{BIG}C 1']
+    for k, t in enumerate(range(8000, 9600, 400)):
+        state = 'PLAY' if k % 2 == 0 else 'STOP'
+        d += ['%d PAD 1' % t, f'{t + 20} s0 66 2 !{ST}{state}-PTN C1']
+    d += ['11000 VALUE']
+    write('patterns', d, ['top screen', 'pattern', 'C', 'PLAY-pattern C1', 'STOP-pattern C1',
+                          'PLAY-pattern C1', 'STOP-pattern C1', 'PLAY-pattern C1',
+                          'STOP-pattern C1'])
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
