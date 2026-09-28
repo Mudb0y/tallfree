@@ -838,8 +838,8 @@ static int nframe_sites;
    the pages were sent them. A page redraws what a knob changed within 40
    ticks of it, one frame, in every log so far. */
 #define TURN_WINDOW 60u                      /* ticks, 80 ms */
-static uint32_t last_turn, last_press, last_pad, last_fx, last_ctrl_logged;
-static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen;
+static uint32_t last_turn, last_press, last_pad, last_fx, last_bank_key, last_ctrl_logged;
+static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen, bank_key_seen;
 static int16_t ctrl_logged = -1;
 
 static int just_after(uint32_t then, int seen, uint32_t now)
@@ -850,14 +850,17 @@ static int just_after(uint32_t then, int seen, uint32_t now)
 /* The page showing, by the last page built. */
 static int page_now = 84;
 
-/* Screens where the pads play their samples, as they do on the main
-   screen, and choose nothing: START/END, CHOP and PITCH/SPEED select the
-   sample to edit by playing it. A pad pressed there is heard, not said,
-   and nor is what it changes. The screens that ask for a pad, recording's,
-   delete, copy, export, import, still name it. */
+/* Screens where the pads play, as they do on the main screen, and choose
+   nothing: START/END, CHOP and PITCH/SPEED select the sample to edit by
+   playing it, and the pattern screen, 60, starts and stops a pattern. A pad
+   pressed there is heard, not said, and nor is what it changes, nor what a
+   bank key changes there, the bank's letter being said. The screens that
+   ask for a pad, recording's, delete, copy, export, import, still name
+   it. */
 static int pads_play(void)
 {
-    return page_now == 84 || page_now == 83 || page_now == 88 || page_now == 90;
+    return page_now == 84 || page_now == 83 || page_now == 88 || page_now == 90
+        || page_now == 60;
 }
 
 /* The draw log: every change of text or background in full; at the end a
@@ -1163,6 +1166,28 @@ static int spaced_capitals(const char *t)
     return 1;
 }
 
+/* Bar, dot, beat, dot: "1.1.", "12.4.". */
+static int bar_beat(const char *t)
+{
+    int dots = 0, digits = 0;
+
+    while (*t == ' ')
+        t++;
+    for (; *t && *t != ' '; t++) {
+        if (*t == '.') {
+            if (digits == 0)
+                return 0;
+            dots++;
+            digits = 0;
+        } else if (*t >= '0' && *t <= '9') {
+            digits++;
+        } else {
+            return 0;
+        }
+    }
+    return dots == 2 && digits == 0;
+}
+
 /* What text is by how it reads, where its drawing code has no role. A key's
    legend: a key's name, a colon and a capitalised action or a bracket,
    ENTER:EXE, ENC:ZOOM(2x), C2:LOOP, M:[S] for the MARK button, and the MENU
@@ -1179,6 +1204,10 @@ static uint8_t role_by_text(const struct draw *d)
     size_t i, n;
 
     if (d->y <= 5 && (reads(t, "DC") || reads(t, "USB") || reads(t, "BAT") || reads(t, "???")))
+        return ROLE_IGNORE;
+    /* A pattern's bar and beat as it plays, 1.1., 2.4.: a running
+       position, never said. */
+    if (bar_beat(t))
         return ROLE_IGNORE;
     if (reads(t, "MENU"))
         return ROLE_HINT;
@@ -1255,6 +1284,11 @@ static int take(const struct draw *d)
             if (d->y >= 0 && d->y < 16 && !fx_held) {
                 last_pad = d->tick;
                 pad_seen = 1;
+            }
+            /* The bank keys, A/F to E/J. */
+            if (d->y >= 0x25 && d->y <= 0x29) {
+                last_bank_key = d->tick;
+                bank_key_seen = 1;
             }
             if (d->y1 == 1 && d->y != KEY_EXT_SOURCE
                 && npresses < (int)(sizeof presses / sizeof presses[0])) {
@@ -1406,7 +1440,9 @@ static int take(const struct draw *d)
         int turned = just_after(last_turn, turn_seen, d->tick);
 
         it->prompted = (uint8_t)(turned || just_after(last_press, press_seen, d->tick));
-        it->by_pad = (uint8_t)(pads_play() && just_after(last_pad, pad_seen, d->tick));
+        it->by_pad = (uint8_t)(pads_play() && (just_after(last_pad, pad_seen, d->tick)
+                                               || just_after(last_bank_key, bank_key_seen,
+                                                             d->tick)));
         /* Text that changes with nothing just pressed or turned changes on
            its own, as a meter, a clock or the sequencer's bar does, and is
            never taken for a value turned until the screen changes, however
@@ -1613,7 +1649,7 @@ static const struct { const char *from, *to; } spelt_words[] = {
     { "SBF", "sideband filter" }, { "msec", "milliseconds" }, { "Hz", "hertz" },
     { "kHz", "kilohertz" }, { "dB", "decibels" }, { "SEMI", "semitones" },
 };
-/* Before a number: C1 for the CTRL 1 knob, CH1, DECK1. */
+/* Before a number: C1 for the CTRL 1 knob in a key's legend, CH1, DECK1. */
 static const struct { const char *from, *to; } spelt_numbered[] = {
     { "C", "control" }, { "CTR", "control" }, { "CTRL", "control" }, { "CH", "channel" },
     { "DECK", "deck" },
@@ -1715,9 +1751,12 @@ static size_t spell_out(char *out, size_t cap, const char *in)
         } else if (a > 0) {
             for (d = a; t0 + d < i && is_digit(in[t0 + d]); d++)
                 ;
+            /* C1 is the CTRL 1 knob only in a key's legend, C1:START or
+               [C2]; elsewhere it is the pattern or the pad C1. */
             for (k = 0; d == i - t0 && k < sizeof spelt_numbered / sizeof spelt_numbered[0]; k++)
                 if (strlen(spelt_numbered[k].from) == a
-                    && strncmp(in + t0, spelt_numbered[k].from, a) == 0) {
+                    && strncmp(in + t0, spelt_numbered[k].from, a) == 0
+                    && (a > 1 || after == ':' || (before == '[' && after == ']'))) {
                     f = spelt_numbered[k].to;
                     put(out, cap, &n, f, strlen(f));
                     put(out, cap, &n, " ", 1);

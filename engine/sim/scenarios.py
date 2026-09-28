@@ -778,6 +778,29 @@ def buttons():
                          'ping pong loop ON', 'LOOP OFF', 'REVERSE ON', 'BPM SYNC ON',
                          'BANK A GATE ON', 'GATE ON'])
 
+# The pattern screen, page 60, as runs/64 drew it: the status line's SELECT
+# and tempo, the big P T N, which names it. A bank key says its letter and
+# not the tempo it brings; a pad selects C1 and stops, starts and stops it,
+# the status line and the big field following and the bar and beat running
+# while it plays, none of it said, the pads playing as on the top screen.
+# C1 is the pattern C1 and not the CTRL 1 knob.
+def patterns():
+    ST, BIG = '=8015F85F:', '=800EE779:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 s0 FILL 0 0 127 63',
+          f'1000 s0 76 2 !{ST}SELECT', '1000 s0 8 2 !=80156727:BPM 103.0',
+          f'1000 s0 28 14 _{BIG}P T N',
+          '3000 KEY DOWN 27', '3000 BANK 2', '3015 s0 8 2 !=80156727:BPM  90.0',
+          '4000 PAD 1', f'4020 s0 66 2 !{ST}STOP-PTN C1', '4020 s0 FILL 0 9 127 40',
+          f'4020 s0 60 14 _{BIG}C 1',
+          '5000 PAD 1', f'5060 s0 66 2 !{ST}PLAY-PTN C1', '5060 s0 FILL 0 9 127 40',
+          f'5060 s0 45 14 _{BIG}1.1.', f'5060 s0 112 59 _{BIG}4.4']
+    for k, t in enumerate(range(5700, 9000, 650)):
+        d.append(f'{t} s0 45 14 _{BIG}{k // 4 + 1}.{k % 4 + 2 if k % 4 < 3 else 1}.')
+    d += ['9500 PAD 1', f'9540 s0 66 2 !{ST}STOP-PTN C1', '9540 s0 FILL 0 9 127 63',
+          f'9540 s0 60 14 _{BIG}C 1', '11000 VALUE']
+    write('patterns', d, ['top screen', 'pattern', 'C'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -810,3 +833,4 @@ fxbutton()
 poweron()
 buttons()
 fxspam()
+patterns()
