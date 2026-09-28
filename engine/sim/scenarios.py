@@ -624,22 +624,69 @@ def fxreturn():
     write('fxreturn', d, ['top screen', 'time control delay', 'FEEDBACK 52', '58', 'B',
                           'TIME 120 milliseconds'])
 
-# The effects grid on a page showing none of its effects selected, as
-# runs/59 drew it: MFX LIST 1-16 in the title's place, the page count, and
-# sixteen names cut short. Arriving says the heading and the page; the
-# names wait for VALUE to select one.
+# The effects grid, shown while MFX is held, which says nothing arriving;
+# then turned to the next page, showing none of its effects selected, as
+# runs/59 drew it: MFX LIST 17-32 in the title's place, the page count, and
+# sixteen names cut short. That says the heading and the page; the names wait for
+# VALUE to select one.
 def fxgrid():
     CELL = '=80145EDF:'
     cells = ['Scatt..', 'Down..', 'Ha-Dou', 'Ko-Da..', 'Zan-Z..', 'To-Gu..', 'SBF',
              'Stopp..', 'Tape ..', 'Time..', 'Super..', 'WrmS..', '303 V..', '404 V..',
              'Casse..', 'Lo-fi']
     d = main_screen(0, 0, 'D-1')
-    d += ['1000 KEY DOWN 30', '1000 s0 FILL 0 8 127 63']
+    d += ['500 KEY DOWN 30', '500 s0 FILL 0 8 127 63']
+    d += [f'500 s0 {7 + 30 * (k % 4)} {16 + 11 * (k // 4)} {"!" if k == 0 else "_"}{CELL}{c}'
+          for k, c in enumerate(cells)]
+    d += ['500 s0 49 5 _=80146135:Scatter', '500 s0 111 5 _=800EE779:1/3',
+          '1000 KNOB 0 1', '1000 s0 FILL 0 8 127 63']
     d += [f'1000 s0 {7 + 30 * (k % 4)} {16 + 11 * (k // 4)} _{CELL}{c}'
           for k, c in enumerate(cells)]
-    d += ['1000 s0 30 5 _=80146175: MFX LIST 1-16 ', '1000 s0 111 5 _=800EE779:1/3',
+    d += ['1000 s0 26 5 _=80146175: MFX LIST 17-32 ', '1000 s0 111 5 _=800EE779:2/3',
           '3000 VALUE']
-    write('fxgrid', d, ['top screen', 'MFX LIST 1-16 | 1 of 3'])
+    write('fxgrid', d, ['top screen', 'MFX LIST 17-32 | 2 of 3'])
+
+# MFX as runs/63 pressed it: held, the grid with the current effect
+# selected, which says nothing whether the press turns the effect on or
+# off; let go, the effect's page if it is now on, which names it, or the top
+# screen if off, which says nothing; pressed quickly on and off and on
+# again, the name each time it comes on. Then held while pads choose
+# effects, each said; let go, the chosen effect's page, its name just said,
+# and AGE's unit, Years, not read with it.
+def fxspam():
+    CELL = '=80145EDF:'
+    names = ['Scatt..', 'Down..', 'Ha-Dou', 'Ko-Da..', 'Zan-Z..', 'To-Gu..', 'SBF', 'Stopp..',
+             'Tape ..', 'Time..', 'Super..', 'WrmS..', '303 V..', '404 V..', 'Casse..', 'Lo-fi']
+    full = {'Scatt..': 'Scatter', '303 V..': '303 VinylSim', '404 V..': '404 VinylSim',
+            'Casse..': 'Cassette Sim'}
+    def grid(t, sel):
+        out = [f'{t} s0 FILL 0 8 127 63']
+        out += [f'{t} s0 {7 + 30 * (k % 4)} {16 + 11 * (k // 4)} {"!" if k == sel else "_"}{CELL}{c}'
+                for k, c in enumerate(names)]
+        return out + [f'{t} s0 49 5 _=80146135:{full[names[sel]]}', f'{t} s0 111 5 _=800EE779:1/3']
+    def page(t, name, cols):
+        out = [f'{t} s0 FILL 0 0 127 63']
+        for k, (label, value, unit) in enumerate(cols):
+            x = 12 + 42 * k
+            out += [f'{t} s0 {x} 3 _=801463F7:{label}', f'{t} s0 {x} 18 _=80146545:{value}',
+                    f'{t} s0 {x} 33 _=800EE779:{unit}']
+        return out + [f'{t} s0 50 47 _=800EE779:{name}']
+    scatter = [('TYPE', '  5', ' '), ('DEPTH', '  50', '  '), ('SCATTER', 'ON', '  ')]
+    d = main_screen(0, 0, 'A-13')
+    for t, on in [(1000, True), (2000, False), (3000, True)]:
+        d += [f'{t} KEY DOWN 30'] + grid(t + 30, 0) + [f'{t + 110} KEY UP 30']
+        d += page(t + 150, 'Scatter', scatter) if on else \
+            [f'{t + 150} s0 FILL 0 0 127 63'] + main_screen(t + 150, 0, 'A-13')
+    d += ['5000 KEY DOWN 30'] + grid(5030, 0)
+    for t, pad in [(6000, 14), (6500, 13), (7000, 15)]:
+        d += [f'{t} PAD {pad}'] + grid(t + 20, pad - 1)
+    d += ['7500 KEY UP 30']
+    d += page(7550, 'Cassette Sim', [('TONE', ' 100', ' '), ('HISS', '  27', ' '),
+                                     ('AGE', '  9', 'Years ')])
+    d += ['9000 VALUE']
+    write('fxspam', d, ['top screen', 'Scatter', 'Scatter', '404 Vinyl Sim', '303 Vinyl Sim',
+                        'Cassette Sim'])
+
 
 # Exporting samples as runs/58 drew it: the heading on a layer of its own,
 # the SAMPLE, PROJECT, MULTIPAD, CANCEL list on another; pressing VALUE on
@@ -762,3 +809,4 @@ copy()
 fxbutton()
 poweron()
 buttons()
+fxspam()

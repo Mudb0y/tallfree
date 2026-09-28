@@ -1,2 +1,2 @@
 top screen
-MFX LIST 1-16 | 1 of 3
+MFX LIST 17-32 | 2 of 3

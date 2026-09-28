@@ -790,7 +790,7 @@ static uint8_t pick_seen;
 static int page_arrived;
 static int32_t bank_seen = -1;
 static int bank_moved;
-/* Whether the last batch had the effect display showing. */
+/* Whether the last batch had the effect display or its grid showing. */
 static int effect_shown;
 
 void screen_mute(int mute)
@@ -838,8 +838,8 @@ static int nframe_sites;
    the pages were sent them. A page redraws what a knob changed within 40
    ticks of it, one frame, in every log so far. */
 #define TURN_WINDOW 60u                      /* ticks, 80 ms */
-static uint32_t last_turn, last_press, last_pad, last_ctrl_logged;
-static uint8_t turn_seen, press_seen, pad_seen;
+static uint32_t last_turn, last_press, last_pad, last_fx, last_ctrl_logged;
+static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen;
 static int16_t ctrl_logged = -1;
 
 static int just_after(uint32_t then, int seen, uint32_t now)
@@ -1250,8 +1250,9 @@ static int take(const struct draw *d)
         if (d->x == 5) {
             last_press = d->tick;
             press_seen = 1;
-            /* Keys 0 to 15 are the pads, 1 to 16. */
-            if (d->y >= 0 && d->y < 16) {
+            /* Keys 0 to 15 are the pads, 1 to 16; with an effect's button
+               held they choose an effect, which is said, and play nothing. */
+            if (d->y >= 0 && d->y < 16 && !fx_held) {
                 last_pad = d->tick;
                 pad_seen = 1;
             }
@@ -1265,6 +1266,16 @@ static int take(const struct draw *d)
                          (unsigned long)d->tick, (unsigned)(uint16_t)d->y, (long)d->mark, d->x1,
                          (long)d->ink);
                 return 1;
+            }
+        }
+        /* The effects' buttons, FILTER+DRIVE to MFX, keys 0x2B to 0x30. */
+        if (d->y >= 0x2B && d->y <= 0x30 && (d->x == 5 || d->x == 6)) {
+            if (d->x == 5) {
+                fx_held |= 1u << (d->y - 0x2B);
+                last_fx = d->tick;
+                fx_seen = 1;
+            } else {
+                fx_held &= ~(1u << (d->y - 0x2B));
             }
         }
         if (d->y == KEY_EXT_SOURCE && d->y1 == 1 && (d->x == 5 || d->x == 6)) {
@@ -2018,9 +2029,11 @@ static const struct item *label_of(const struct item *v)
 }
 
 /* A value's unit is short text just below it in its column, "Hz" under
-   827; only a value with a label has one, and neither a value named on its
-   own row, the next setting down, nor a pad or pattern, as the pattern
-   settings show A-1 under GRID 16, is a unit. */
+   827, "Years" under Cassette Sim's AGE; only a value with a label has one,
+   and neither a value named on its own row, the next setting down, nor a
+   pad or pattern, as the pattern settings show A-1 under GRID 16, nor the
+   pad and pattern settings' own bottom line, VINYL under PITCH, is a
+   unit. */
 static const struct item *unit_of(const struct item *v)
 {
     const struct item *best = NULL;
@@ -2034,8 +2047,8 @@ static const struct item *unit_of(const struct item *v)
         if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->y <= v->y
             || o->y - v->y > 20 || !horizontally_near(v, o))
             continue;
-        if (clean(t, sizeof t, o->text) == 0 || strlen(t) > 4 || padlike(o->text)
-            || row_label(o) != NULL)
+        if (clean(t, sizeof t, o->text) == 0 || strlen(t) > 5 || padlike(o->text)
+            || o->role == ROLE_KNOB || row_label(o) != NULL)
             continue;
         if (best == NULL || o->y < best->y)
             best = o;
@@ -2781,11 +2794,20 @@ int screen_poll(char *phrases, size_t cap, int *count)
         new_screen(order);
         /* A screen that appears because a pad was played says nothing: the
            first the reader sees after starting is the main screen redrawn
-           for a pad hit, and a pad on PITCH/SPEED redraws its strip. */
+           for a pad hit, and a pad on PITCH/SPEED redraws its strip. Nor
+           does the effects grid an effect's button shows while it is held,
+           whether it is turning the effect on or off: the effect's page,
+           when it comes, names it. */
         if (!page_arrived && pads_play() && pad_seen && first_pending - last_pad <= TURN_WINDOW) {
             b_used = 0;
             b_count = 0;
         }
+        for (i = 0; i < ITEMS && fx_seen && first_pending - last_fx <= TURN_WINDOW; i++)
+            if (live(&items[i]) && items[i].role == ROLE_CELL) {
+                b_used = 0;
+                b_count = 0;
+                break;
+            }
         for (i = 0; i < ITEMS; i++)
             items[i].changed = items[i].own = 0;
     } else {
@@ -2796,22 +2818,25 @@ int screen_poll(char *phrases, size_t cap, int *count)
     }
     effect_shown = 0;
     for (i = 0; i < ITEMS && !effect_shown; i++)
-        effect_shown = live(&items[i]) && items[i].role == ROLE_EFFECT;
+        effect_shown = live(&items[i])
+            && (items[i].role == ROLE_EFFECT || items[i].role == ROLE_CELL);
     for (i = 0; i < ITEMS; i++)
         items[i].fresh = 0;
     wiped = 0;
     tab_changed = 0;
     b_prev = now;
     /* A screen that says just what the one before said, less than a second
-       ago: an effect's button shows the grid, titled with the effect, for a
-       tenth of a second before the effect's page, which names it. */
+       ago with no key pressed between: an effect's button shows the grid,
+       titled with the effect, for a tenth of a second before the effect's
+       page, which names it. Pressed again, it is said again. */
     {
         static char last[256];
         static size_t last_len;
         static uint32_t last_tick;
         if (b_count > 0 && b_used <= sizeof last) {
             if (kind && b_used == last_len && memcmp(last, phrases, b_used) == 0
-                && now - last_tick < 750u) {
+                && now - last_tick < 750u
+                && !(press_seen && (int32_t)(last_press - last_tick) > 0)) {
                 b_count = 0;
             } else {
                 memcpy(last, phrases, b_used);
