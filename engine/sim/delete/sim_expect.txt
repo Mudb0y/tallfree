@@ -1,4 +1,4 @@
-A 13
+top screen
 delete | SELECT PAD
 A 1 selected
 A 2 selected

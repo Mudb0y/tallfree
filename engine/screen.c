@@ -710,7 +710,7 @@ struct item {
     int32_t  mark, ink;
     int16_t  x, y;
     uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed, own,
-             prompted, by_pad;
+             prompted, by_pad, prev_pad;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -733,10 +733,8 @@ static uint8_t pick_seen;
 static int page_arrived;
 static int32_t bank_seen = -1;
 static int bank_moved;
-/* Whether the last batch had the effect display showing, and the bank and
-   pad the main screen showed under it. */
+/* Whether the last batch had the effect display showing. */
 static int effect_shown;
-static char effect_pad[ITEM_TEXT];
 
 void screen_mute(int mute)
 {
@@ -1349,6 +1347,7 @@ static int take(const struct draw *d)
         }
         it->last_change = d->tick;
         it->prev0 = it->text[0];
+        it->prev_pad = (uint8_t)(it->text[0] == 1 || padlike(it->text));
         memcpy(it->text, d->text, ITEM_TEXT);
         it->changed = 1;
         it->seq = ++change_seq;
@@ -2201,21 +2200,26 @@ static void new_screen(struct item **order)
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
         say_focus(order[i]);
-    /* Only a bank and pad just drawn: the main screen's stay on its layer
-       under the screens opened over it. The effect display is drawn over
-       the main screen, which redraws them in the same frames: arriving there
-       reads the effect. Back from it, as it comes and goes with every touch
-       of an effect's knob, the same bank and pad say nothing. */
+    /* The main screen, the manual's top screen, is named so on arrival,
+       known by its bank and pad just drawn: they stay on its layer under the
+       screens opened over it. The effect display is drawn over it, and it
+       redraws them in the same frames: arriving there reads the effect, and
+       coming back from it, as it comes and goes with every touch of an
+       effect's knob, says nothing. Another screen's pad field in its status
+       bar names the pad. */
     for (i = 0; i < ITEMS && !effect; i++)
         effect = live(&items[i]) && items[i].role == ROLE_EFFECT;
     if (focus == 0 && !effect)
         for (i = 0; i < ITEMS; i++)
             if (live(&items[i]) && is_pad_field(&items[i]) && drawn_now(&items[i])) {
-                if (effect_shown && strcmp(items[i].text, effect_pad) == 0) {
-                    focus++;
+                if (items[i].role != ROLE_PAD) {
+                    focus += say_pad(&items[i]) == 1;
                     continue;
                 }
-                focus += say_pad(&items[i]) == 1;
+                if (!effect_shown)
+                    say3("top screen", NULL, NULL);
+                focus++;
+                break;
             }
     popups = in_order(order, ITEMS, want_new_popup);
     for (i = 0; i < popups; i++)
@@ -2393,7 +2397,12 @@ static void same_screen(struct item **order)
             continue;
         }
         if (is_pad_field(it)) {
-            if (it->prev0 != it->text[0])
+            /* The main screen's bank is said as every screen's is, by its
+               letter; its pad field is said when it shows something else,
+               EXT for EXT SOURCE, and back. */
+            if (it->role == ROLE_PAD && (!padlike(it->text) || !it->prev_pad))
+                say_pad(it);
+            else if (it->prev0 != it->text[0] && it->role != ROLE_PAD)
                 say_pad(it);
         } else if (padlike(it->text) && is_status(it)) {
             say_pad(it);
@@ -2457,7 +2466,9 @@ static void reannounce(void)
         if (live(&items[i]) && is_lit(&items[i])
             && (int32_t)(items[i].last_drawn + 750u - newest) >= 0)
             say_focus(&items[i]);
-    if (!any && pad != NULL)
+    if (!any && pad != NULL && pad->role == ROLE_PAD)
+        say3("top screen", NULL, NULL);
+    else if (!any && pad != NULL)
         say_pad(pad);
 }
 
@@ -2607,10 +2618,10 @@ int screen_poll(char *phrases, size_t cap, int *count)
     b_used = 0;
     b_count = 0;
     b_now = now;
-    /* The main screen and the tempo screen show the bank themselves. */
-    if (bank_moved && page_now != 84 && page_now != 81) {
-        char t[8];
-        snprintf(t, sizeof t, "bank %c", 'A' + (int)bank_seen);
+    /* A bank change is its letter alone, on every screen but the tempo
+       screen, whose choice of PROJECT or BANK A reads it already. */
+    if (bank_moved && page_now != 81) {
+        char t[2] = { (char)('A' + bank_seen), 0 };
         say3(t, NULL, NULL);
     }
     bank_moved = 0;
@@ -2655,22 +2666,9 @@ int screen_poll(char *phrases, size_t cap, int *count)
             if (items[i].changed == 2 || !items[i].used)
                 items[i].changed = 0;
     }
-    {
-        const struct item *pad = NULL;
-        effect_shown = 0;
-        for (i = 0; i < ITEMS; i++) {
-            const struct item *it = &items[i];
-            if (!live(it))
-                continue;
-            if (it->role == ROLE_EFFECT)
-                effect_shown = 1;
-            if (it->role == ROLE_PAD
-                && (pad == NULL || (int32_t)(it->last_drawn - pad->last_drawn) > 0))
-                pad = it;
-        }
-        if (pad != NULL)
-            memcpy(effect_pad, pad->text, ITEM_TEXT);
-    }
+    effect_shown = 0;
+    for (i = 0; i < ITEMS && !effect_shown; i++)
+        effect_shown = live(&items[i]) && items[i].role == ROLE_EFFECT;
     for (i = 0; i < ITEMS; i++)
         items[i].fresh = 0;
     wiped = 0;

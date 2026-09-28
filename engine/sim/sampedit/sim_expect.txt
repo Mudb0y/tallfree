@@ -1,4 +1,4 @@
-D 1
+top screen
 START/END | D 1
 encoder:ZOOM(2x)
 encoder:ZOOM(3x)

@@ -40,7 +40,7 @@ def write(name, draws, expect, say='#mode changed\n'):
 def menu():
     d = ['# The main screen; a pad hit; a bank change.']
     d += main_screen(0, 0, 'A-13')
-    d += ['1000 s0 34 2 !A-1', '2000 s0 34 2 !B-1']
+    d += [f'1000 s0 34 2 !{PAD}A-1', '2000 BANK 1', f'2000 s0 34 2 !{PAD}B-1']
     d += ['# The SD card menu, redrawn every 50 ms.']
     top = ['IMPORT from SD-CARD', 'EXPORT to SD-CARD', 'FORMAT SD-CARD', 'CANCEL']
     sub = ['SAMPLE', 'PROJECT', 'MULTIPAD', 'CANCEL']
@@ -56,10 +56,10 @@ def menu():
     d += ['# EXIT to the main screen.', '8000 s0 CLEAR', '8000 s2 CLEAR']
     d += main_screen(8000, 3, 'B-1')
     d += ['9000 VALUE']
-    write('menu', d, ['A 13', 'B 1',
+    write('menu', d, ['top screen', 'B',
                       'IMPORT/EXPORT MENU | IMPORT from SD-CARD',
                       'EXPORT to SD-CARD', 'FORMAT SD-CARD', 'EXPORT to SD-CARD',
-                      'EXPORT SAMPLE/project./MULTIPAD | SAMPLE', 'PROJECT', 'B 1'])
+                      'EXPORT SAMPLE/project./MULTIPAD | SAMPLE', 'PROJECT', 'top screen'])
 
 # Filter+Drive: three columns of label, value and unit, the effect's name at
 # the bottom; CUTOFF turned fast with CTRL 1 and let go, then RESONANCE with
@@ -82,7 +82,7 @@ def params():
         d += [f'{t} CTRL 2 {20 + 10 * k}', f'{t} s0 FILL 41 18 80 30', f'{t} s0 52 18 _{FXVALUE}{v}']
         t += 50
     d += ['9000 VALUE']
-    write('params', d, ['A 13', 'Filter+Drive', 'CUTOFF 827 hertz', '707', 'RESONANCE 22', '50'])
+    write('params', d, ['top screen', 'Filter+Drive', 'CUTOFF 827 hertz', '707', 'RESONANCE 22', '50'])
 
 # The fixed velocity pop-up over the main screen: it appears, the status bar
 # echoes it, it is toggled and the status bar echoes that too.
@@ -93,7 +93,7 @@ def popup():
           '3000 s1 57 32 ~ON', '3400 s0 84 2 !Fix',
           '5000 s1 54 32 ~OFF', '5400 s0 84 2 !Vel',
           '7000 VALUE']
-    write('popup', d, ['A 13', 'FIXED VELOCITY | OFF', 'ON', 'OFF'])
+    write('popup', d, ['top screen', 'FIXED VELOCITY | OFF', 'ON', 'OFF'])
 
 # The effects grid: sixteen cells cut short, the selected one on white, the
 # centred title naming it in full; the knob swept through six cells in 100 ms
@@ -127,7 +127,7 @@ def grid():
     page(5000, cells, full, 11, 2)
     page(7000, page2, full2, 4, 3)
     d.append('9000 VALUE')
-    write('grid', d, ['A 13', 'Slicer', 'Equalizer', 'Crusher', 'hyper resonator',
+    write('grid', d, ['top screen', 'Slicer', 'Equalizer', 'Crusher', 'hyper resonator',
                       'chromatic pitch shifter', 'Tremolo/Pan', 'Slicer', 'Crusher', 'D.DJFX'])
 
 # Sampling: the recording screen with its pop-up asking for a pad, a level
@@ -141,7 +141,7 @@ def record():
         d.append(f'{t} s0 89 2 !LEVEL:{100 + k % 27}')
     d += ['3000 s0 110 2 !A 1', '4000 s0 110 2 !A 2', '4500 s0 110 2 !B 2',
           '7000 VALUE']
-    write('record', d, ['A 13', 'REC | Select PAD for RECORDING', 'A 1', 'A 2', 'B 2'])
+    write('record', d, ['top screen', 'REC | Select PAD for RECORDING', 'A 1', 'A 2', 'B 2'])
 
 # The main screen as the last run drew it: pad hits wipe and redraw the
 # status line, changing the bus and the big field; then a bank change; then
@@ -153,7 +153,7 @@ def mainpads():
     d += pad_hit(1000, 0, 'A-14', 'DRY', '- - - ')
     d += pad_hit(2000, 0, 'A-13', 'BUS-1', '9 4 ')
     d += pad_hit(3000, 0, 'A-10', 'DRY', '- - - ')
-    d += pad_hit(4000, 0, 'B-10', 'DRY', '- - - ')
+    d += ['4000 BANK 1'] + pad_hit(4000, 0, 'B-10', 'DRY', '- - - ')
     d += [f'5000 s1 9 4 ~{TOAST}STOP']
     d += pad_hit(5000, 0, 'B-10', 'DRY', '- - - ')
     d += pad_hit(6000, 0, 'B-11', 'BUS-1', '9 4 ')
@@ -163,7 +163,7 @@ def mainpads():
     d += ['13000 s0 CLEAR', '13000 s2 5 2 ^_IMPORT/EXPORT MENU',
           '13000 s0 17 22 !IMPORT from SD-CARD', '13000 s0 17 30 EXPORT to SD-CARD',
           '14000 VALUE']
-    write('mainpads', d, ['A 13', 'B 10', 'STOP',
+    write('mainpads', d, ['top screen', 'B', 'STOP',
                           'IMPORT/EXPORT MENU | IMPORT from SD-CARD'])
 
 # Entering the EXPORT submenu as the unit draws it: the focused item first,
@@ -175,7 +175,7 @@ def submenu():
           '1100 s0 17 30 PROJECT', '1150 s0 17 38 MULTIPAD', '1200 s0 17 46 CANCEL',
           '2000 s0 17 22 SAMPLE', '2000 s0 17 30 !PROJECT',
           '3000 VALUE']
-    write('submenu', d, ['A 13', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE', 'PROJECT'])
+    write('submenu', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE', 'PROJECT'])
 
 # The recording screen drawing its meter's scale after it appears, and the
 # pad named without a dash; the doubled title of the pad link groups page.
@@ -189,7 +189,7 @@ def recscale():
           '5000 s0 CLEAR', '5000 s3 14 3 ~=8013FE3D:PAD LINK GROUPS',
           '5000 s3 13 2 ~=80195269:PAD LINK GROUPS', '5000 s0 20 30 !GROUP 1',
           '7000 VALUE']
-    write('recscale', d, ['A 13', 'REC | Select PAD for RECORDING', 'A 14',
+    write('recscale', d, ['top screen', 'REC | Select PAD for RECORDING', 'A 14',
                           'PAD LINK GROUPS | GROUP 1'])
 
 # The UTILITY menu, its title on a layer never wiped, its icons on another
@@ -238,7 +238,7 @@ def system():
     # A value turned on the selected row.
     d += ['9000 s0 FILL 100 12 127 19', '9000 s0 ROW 13 1', '9000 s0 109 13 OFF']
     d += ['11000 VALUE']
-    write('system', d, ['A 13',
+    write('system', d, ['top screen',
                         'UTILITY MENU | SYSTEM', 'PAD SET', 'effects SET',
                         'GENERAL | Edit Knob Mode Direct',
                         'effects Knob Mode Direct', 'Load Project Last',
@@ -252,7 +252,7 @@ def pages():
           '1000 s2 17 30 EXPORT to SD-CARD']
     d += ['3000 PAGE 0'] + main_screen(3000, 0, 'A-13')
     d += ['5000 VALUE']
-    write('pages', d, ['A 13', 'IMPORT/EXPORT MENU | IMPORT from SD-CARD', 'A 13'])
+    write('pages', d, ['top screen', 'IMPORT/EXPORT MENU | IMPORT from SD-CARD', 'top screen'])
 
 # FORMAT in the SD card menu, as the unit draws it: the menu redrawn, then a
 # dialog on a surface of its own, its text on the pop-up background and its
@@ -274,7 +274,7 @@ def dialog():
           '5000 s3 16 47 !CANCEL', '5000 s3 86 47 OK']
     d += ['6000 s3 CLEAR'] + lst(6000, 3)
     d += ['8000 VALUE']
-    write('dialog', d, ['A 13', 'IMPORT/EXPORT MENU | FORMAT SD-CARD',
+    write('dialog', d, ['top screen', 'IMPORT/EXPORT MENU | FORMAT SD-CARD',
                         'Format SD Card | Are you sure? | CANCEL', 'OK', 'CANCEL',
                         'CANCEL'])
 
@@ -297,7 +297,7 @@ def sdreturn():
     d += lst(4000, sub, 3)
     d += lst(5000, top, 0)
     d += ['7000 VALUE']
-    write('sdreturn', d, ['A 13', 'IMPORT/EXPORT MENU | IMPORT from SD-CARD',
+    write('sdreturn', d, ['top screen', 'IMPORT/EXPORT MENU | IMPORT from SD-CARD',
                           'EXPORT to SD-CARD', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE',
                           'CANCEL', 'IMPORT from SD-CARD'])
 
@@ -315,8 +315,8 @@ def settings():
           '8000 KEY DOWN 0c', '8100 KEY UP 0c',
           '9000 KEY DOWN 22', '9100 KEY UP 22',
           '11000 VALUE']
-    write('settings', d, ['A 13', 'Speech settings | Speed 50', 'Pitch 65', '65', '70',
-                          '75', 'Pitch', 'Settings saved | A 13'])
+    write('settings', d, ['top screen', 'Speech settings | Speed 50', 'Pitch 65', '65', '70',
+                          '75', 'Pitch', 'Settings saved | top screen'])
 
 # The BPM screen (SHIFT + pad 11), page 81, as FUN_80104F68 draws it, found
 # in the firmware rather than a log: the heading, PROJECT and the bank with
@@ -352,9 +352,9 @@ def bpm():
         d += screen(t, False, '118.50')
     d += ['17000 PAGE 84'] + main_screen(17000, 1, 'A-13')
     d += ['19000 VALUE']
-    write('bpm', d, ['A 13', 'control 1:TEMPO select | PROJECT | 120.00', '121.00',
+    write('bpm', d, ['top screen', 'control 1:TEMPO select | PROJECT | 120.00', '121.00',
                      'BANK A | 118.50', 'PROJECT | 121.00', '118.50', 'BANK A | 118.50',
-                     'control 1:TEMPO select | BANK A | 118.50', 'A 13'])
+                     'control 1:TEMPO select | BANK A | 118.50', 'top screen'])
 
 # The SYSTEM page's tabs as the unit drew them (runs/52): the strip shows
 # four tabs and scrolls, so the page count cannot name a tab by position;
@@ -387,7 +387,7 @@ def tabs():
     d += rows(7500, gain, 5) + rows(7900, gain, 5)
     d += ['9000 s0 10 20 _=8014B161:Version: 5.52'] + strip(9000, 4, 3, [15, 40])
     d += ['11000 VALUE']
-    write('tabs', d, ['A 13', 'GENERAL | Edit Knob Mode Direct', 'GAIN | Attenuator OFF',
+    write('tabs', d, ['top screen', 'GENERAL | Edit Knob Mode Direct', 'GAIN | Attenuator OFF',
                       'Noise Gate OFF', 'Line Out 0 decibels', 'Phones Out 0 decibels',
                       'USB Out 0 decibels',
                       'Anti Feedback OFF', 'VERSION | Version: 5.52'])
@@ -415,7 +415,7 @@ def turned():
         t = 5000 + 53 * k
         d += [f'{t} KNOB 0 1', f'{t} s0 FILL 41 18 80 30', f'{t} s0 56 18 _{V}{v}']
     d += ['9000 VALUE']
-    write('turned', d, ['A 13', 'SPEED 1.10', '1.20', '1.30', '1.40', 'PITCH 1 semitones', '2',
+    write('turned', d, ['top screen', 'SPEED 1.10', '1.20', '1.30', '1.40', 'PITCH 1 semitones', '2',
                         '3'])
 
 # The pattern recording settings, page 62, as runs/57 drew them: three
@@ -444,7 +444,7 @@ def patrec():
         t = 7000 + 50 * k
         d += [f'{t} CTRL 3 {53 + 4 * k}', f'{t} s0 100 34 _{LOW}{v}']
     d += ['9000 VALUE']
-    write('patrec', d, ['A 13', 'quantize: GRID 16 | MODE : Real-Time | A 1',
+    write('patrec', d, ['top screen', 'quantize: GRID 16 | MODE : Real-Time | A 1',
                         'BPM 93.0', '97.0', '105.0', '111.0', 'LENGTH 38 Bars', '41 Bars',
                         'STRENGTH 43%', '49%'])
 
@@ -466,9 +466,9 @@ def export():
         d += [f'{t} PAD {pad}'] + status(t + 40)
     d += ['8000 MODE 1', '8500 PAD 3', '9500 MODE 2', '9600 BANK 0', '10000 PAD 4',
           '11000 PAD 4', '12000 MODE 3', '12500 PAD 2', '14000 VALUE']
-    write('export', d, ['A 13', 'EXPORT SAMPLE/project./MULTIPAD | PLEASE SELECT sample',
-                        'A 5 selected', 'A 5 deselected', 'bank B', 'B 1 selected',
-                        'B 16 selected', 'project 3 selected', 'bank A', 'pattern A 4'])
+    write('export', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | PLEASE SELECT sample',
+                        'A 5 selected', 'A 5 deselected', 'B', 'B 1 selected',
+                        'B 16 selected', 'project 3 selected', 'A', 'pattern A 4'])
 
 # Deleting pads, page 67 in its mode 1, as runs/41 drew it: SELECT PAD in
 # the status bar and the big DEL; each pad pressed redraws the count, TOT
@@ -482,7 +482,7 @@ def delete():
         text = f'28 4 !=8015604B:TOT SELECTED PADS:{count}' if count else '45 4 !=8015604B:SELECT PAD'
         d += [f'{t} PAD {pad}', f'{t + 48} s0 {text}']
     d += ['8000 VALUE']
-    write('delete', d, ['A 13', 'delete | SELECT PAD', 'A 1 selected', 'A 2 selected',
+    write('delete', d, ['top screen', 'delete | SELECT PAD', 'A 1 selected', 'A 2 selected',
                         'A 1 deselected', 'A 2 deselected'])
 
 # The pitch and speed screen, page 83, as runs/58 drew it on arriving: three
@@ -509,7 +509,7 @@ def padset():
           '3030 s2 101 55 _=8014572B:120.00', '3030 s2 7 55 _=80145351:   D-2',
           '3030 s2 44 55 _=800EE779:Vel', f'3030 s0 0 18 _{MID}110.0%', f'3030 s0 96 18 _{MID} 90',
           '5000 VALUE']
-    write('padset', d, ['D 1', 'PITCH/SPEED | BPM SET | manual | D 1 | 90.00'])
+    write('padset', d, ['top screen', 'PITCH/SPEED | BPM SET | manual | D 1 | 90.00'])
 
 # Sample edit, page 90, as runs/58 drew it: the knobs' legends along the
 # top, the pad, the MARK button's legend, MENU and the zoom along the
@@ -538,7 +538,7 @@ def sampedit():
     # Pads choose the sample to edit by playing it, and are not said.
     d += ['8000 PAD 2', '8030 s1 58 53 _=80107C83:D-2', '8600 PAD 5',
           '8630 s1 58 53 _=80107C83:D-5', '10000 VALUE']
-    write('sampedit', d, ['D 1', 'START/END | D 1', 'encoder:ZOOM(2x)', 'encoder:ZOOM(3x)',
+    write('sampedit', d, ['top screen', 'START/END | D 1', 'encoder:ZOOM(2x)', 'encoder:ZOOM(3x)',
                           'mark:[end]'])
 
 # Auto mark, page 88, as runs/58 drew it: the knobs' legends, the pad, MENU
@@ -582,7 +582,7 @@ def automark():
     d += ['9000 KEY DOWN 22', '9000 s3 CLEAR'] + mode_page(9000)
     d += ['14000 KEY DOWN 31'] + dialog(14000)
     d += ['16000 VALUE']
-    write('automark', d, ['D 1', 'CHOP | D 1', 'TIME DIVISION',
+    write('automark', d, ['top screen', 'CHOP | D 1', 'TIME DIVISION',
                           'Current Marks will be lost. | Continue? | CANCEL',
                           'Current Marks will be lost. | Continue? | CANCEL'])
 
@@ -608,13 +608,13 @@ def fxreturn():
         t = 3000 + 53 * k
         d += [f'{t} CTRL 2 {60 + 3 * k}', f'{t} s0 FILL 41 18 80 30', f'{t} s0 54 18 _{VAL}{v}']
     d += ['6000 s0 FILL 0 0 127 63'] + main_screen(6000, 0, 'A-13', big='9 7 ')
-    d += ['8000 KEY DOWN 26', '8000 s0 34 2 !=80149DD5:B-13']
+    d += ['8000 KEY DOWN 26', '8000 BANK 1', '8000 s0 34 2 !=80149DD5:B-13']
     # CTRL 1 touched again, as runs/59 drew it: the display drawn back over
     # the main screen without wiping it, and then the value moving.
     d += ['10000 CTRL 1 70'] + fx(10000, ' 58')[6:]
     d += ['10053 CTRL 1 72', '10053 s0 FILL 0 18 40 30', f'10053 s0 11 18 _{VAL}120',
           '12000 VALUE']
-    write('fxreturn', d, ['A 13', 'time control delay', 'FEEDBACK 52', '58', 'B 13',
+    write('fxreturn', d, ['top screen', 'time control delay', 'FEEDBACK 52', '58', 'B',
                           'TIME 120 milliseconds'])
 
 # The effects grid on a page showing none of its effects selected, as
@@ -632,7 +632,7 @@ def fxgrid():
           for k, c in enumerate(cells)]
     d += ['1000 s0 30 5 _=80146175: MFX LIST 1-16 ', '1000 s0 111 5 _=800EE779:1/3',
           '3000 VALUE']
-    write('fxgrid', d, ['D 1', 'MFX LIST 1-16 | 1 of 3'])
+    write('fxgrid', d, ['top screen', 'MFX LIST 1-16 | 1 of 3'])
 
 # Exporting samples as runs/58 drew it: the heading on a layer of its own,
 # the SAMPLE, PROJECT, MULTIPAD, CANCEL list on another; pressing VALUE on
@@ -647,7 +647,7 @@ def export2():
           '3000 KEY DOWN 31', '3000 s1 26 20 _=80151995:PLEASE SELECT\\nSMPL',
           '3000 s1 61 48 !=800EE779:ENTER:EXE',
           '5000 PAD 10', '7000 VALUE']
-    write('export2', d, ['A 13', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE',
+    write('export2', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE',
                          'PLEASE SELECT sample', 'A 10 selected'])
 
 # The main screen's pad field showing EXT for EXT SOURCE, said in full; the
@@ -657,7 +657,7 @@ def extpower():
     d = main_screen(0, 0, 'A-13')
     d += ['2000 KEY DOWN 12', '2000 s0 36 2 !=80149DD5:EXT',
           '4000 s0 104 2 !=800EE779: BAT ', '6000 s0 104 2 !=800EE779: LOW!', '8000 VALUE']
-    write('extpower', d, ['A 13', 'external', 'LOW!'])
+    write('extpower', d, ['top screen', 'external', 'LOW!'])
 
 # COPY on the pad operations page, 67 in its mode 0, as runs/60 drew it:
 # COPY PAD in the status bar, the project it copies into on white, the
@@ -672,7 +672,7 @@ def copy():
           '3000 PAD 13', '3040 s0 35 32 _=801561D5:A13 >> --',
           '4000 KEY DOWN 26', '4000 BANK 1',
           '5000 PAD 1', '5040 s0 35 32 _=801561D5:A13 >> B1', '7000 VALUE']
-    write('copy', d, ['A 13', 'COPY PAD | P-01', 'A13 >> --', 'bank B', 'A13 >> B1'])
+    write('copy', d, ['top screen', 'COPY PAD | P-01', 'A13 >> --', 'B', 'A13 >> B1'])
 
 # An effect's button pressed, as runs/60 drew it: the grid, its cell for the
 # effect on white and the effect's name as its title, for a tenth of a
@@ -689,17 +689,17 @@ def fxbutton():
           '1110 s0 53 3 _=801463F7:DEPTH', '1110 s0 52 18 _=80146545:  50',
           '1110 s0 91 3 _=801463F7:SCATTER', '1110 s0 98 18 _=80146545:ON',
           '1110 s0 76 47 _=800EE779:Scatter', '3000 VALUE']
-    write('fxbutton', d, ['A 13', 'Scatter'])
+    write('fxbutton', d, ['top screen', 'Scatter'])
 
 # Powering on: the reader starts knowing nothing, and the first it sees is
 # the main screen redrawn for a pad hit, which says nothing; then a bank
 # key, which says the bank and pad; then a pad again, nothing.
 def poweron():
     d = ['0 KEY DOWN 0c'] + main_screen(0, 0, 'A-13')
-    d += ['2000 KEY DOWN 26', '2000 s0 34 2 !=80149DD5:B-13',
+    d += ['2000 KEY DOWN 26', '2000 BANK 1', '2000 s0 34 2 !=80149DD5:B-13',
           '3000 KEY DOWN 0d'] + pad_hit(3000, 0, 'B-14', 'DRY', '- - - ')
     d += ['5000 VALUE']
-    write('poweron', d, ['B 13'])
+    write('poweron', d, ['B'])
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()

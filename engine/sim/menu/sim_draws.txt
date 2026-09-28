@@ -5,8 +5,9 @@
 0 s0 84 2 !=80149DF5:Fix
 0 s0 104 2 ! DC 
 0 s0 53 14 _9 4 
-1000 s0 34 2 !A-1
-2000 s0 34 2 !B-1
+1000 s0 34 2 !=80149DD5:A-1
+2000 BANK 1
+2000 s0 34 2 !=80149DD5:B-1
 # The SD card menu, redrawn every 50 ms.
 3000 s1 CLEAR
 3000 s1 5 2 ^_IMPORT/EXPORT MENU

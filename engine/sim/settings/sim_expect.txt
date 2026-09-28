@@ -1,8 +1,8 @@
-A 13
+top screen
 Speech settings | Speed 50
 Pitch 65
 65
 70
 75
 Pitch
-Settings saved | A 13
+Settings saved | top screen

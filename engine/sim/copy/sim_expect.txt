@@ -1,5 +1,5 @@
-A 13
+top screen
 COPY PAD | P-01
 A13 >> --
-bank B
+B
 A13 >> B1

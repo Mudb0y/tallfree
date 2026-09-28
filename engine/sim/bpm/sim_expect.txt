@@ -1,4 +1,4 @@
-A 13
+top screen
 control 1:TEMPO select | PROJECT | 120.00
 121.00
 BANK A | 118.50
@@ -6,4 +6,4 @@ PROJECT | 121.00
 118.50
 BANK A | 118.50
 control 1:TEMPO select | BANK A | 118.50
-A 13
+top screen

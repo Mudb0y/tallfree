@@ -21,11 +21,11 @@ byte the image changes and why.
 card or the eMMC, and it reads the screen as a screen reader should: on
 entering a screen its title and the focused item, then only what changes;
 settings rows with their values, tabs, dialogs on their own, the main
-screen's bank and pad but never a bare pad hit, pads in the modes that pick
-them. SHIFT + EXIT opens a spoken speech settings menu, saved on the eMMC.
-Speech mixes into the main and headphone outputs, and with compiled rules the
-median time from a change on the screen to its sound is under 50 ms, with no
-stalls at speed 135.
+screen as "top screen", the manual's name, a bank change by its letter, never
+a pad played, pads in the modes that pick them. SHIFT + EXIT opens a spoken
+speech settings menu, saved on the eMMC. Speech mixes into the main and
+headphone outputs, and with compiled rules the median time from a change on
+the screen to its sound is under 50 ms, with no stalls at speed 135.
 
 How the screen is read: hooks, all data writes, on the seven surface
 vtables' DrawString, clear, fill and rectangle outline; the 76 icon menus'

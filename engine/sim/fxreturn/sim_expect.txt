@@ -1,6 +1,6 @@
-A 13
+top screen
 time control delay
 FEEDBACK 52
 58
-B 13
+B
 TIME 120 milliseconds

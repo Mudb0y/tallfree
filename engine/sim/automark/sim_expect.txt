@@ -1,4 +1,4 @@
-D 1
+top screen
 CHOP | D 1
 TIME DIVISION
 Current Marks will be lost. | Continue? | CANCEL
