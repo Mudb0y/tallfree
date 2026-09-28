@@ -600,9 +600,36 @@ def fxreturn():
         t = 3000 + 53 * k
         d += [f'{t} CTRL 2 {60 + 3 * k}', f'{t} s0 FILL 41 18 80 30', f'{t} s0 54 18 _{VAL}{v}']
     d += ['6000 s0 FILL 0 0 127 63'] + main_screen(6000, 0, 'A-13', big='9 7 ')
-    d += ['8000 KEY DOWN 0e', '8000 s0 34 2 !=80149DD5:B-13', '10000 VALUE']
+    d += ['8000 KEY DOWN 0e', '8000 s0 34 2 !=80149DD5:B-13']
+    # CTRL 1 touched again, as runs/59 drew it: the display drawn back over
+    # the main screen without wiping it, and then the value moving.
+    d += ['10000 CTRL 1 70'] + fx(10000, ' 58')[6:]
+    d += ['10053 CTRL 1 72', '10053 s0 FILL 0 18 40 30', f'10053 s0 11 18 _{VAL}120',
+          '12000 VALUE']
     write('fxreturn', d, ['A 13', 'TIME 100 milliseconds | FEEDBACK 49 | LEVEL 100 | '
-                                  'time control delay', 'FEEDBACK 52', '58', 'B 13'])
+                                  'time control delay', 'FEEDBACK 52', '58', 'B 13',
+                          'TIME 120 milliseconds'])
+
+# The effects grid on a page showing none of its effects selected, as
+# runs/59 drew it: MFX LIST 1-16 in the title's place, the page count, and
+# sixteen names cut short, completed from the manual's list of effects,
+# with no heading or count taken for any name's label.
+def fxgrid():
+    CELL = '=80145EDF:'
+    cells = ['Scatt..', 'Down..', 'Ha-Dou', 'Ko-Da..', 'Zan-Z..', 'To-Gu..', 'SBF',
+             'Stopp..', 'Tape ..', 'Time..', 'Super..', 'WrmS..', '303 V..', '404 V..',
+             'Casse..', 'Lo-fi']
+    d = main_screen(0, 0, 'D-1')
+    d += ['1000 KEY DOWN 30', '1000 s0 FILL 0 8 127 63']
+    d += [f'1000 s0 {7 + 30 * (k % 4)} {16 + 11 * (k // 4)} _{CELL}{c}'
+          for k, c in enumerate(cells)]
+    d += ['1000 s0 30 5 _=80146175: MFX LIST 1-16 ', '1000 s0 111 5 _=800EE779:1/3',
+          '3000 VALUE']
+    write('fxgrid', d, ['D 1', 'MFX LIST 1-16 | 1 of 3 | Scatter | Downer | Ha-Dou | Ko-Da-Ma | '
+                               'Zan-Zou | To-Gu-Ro | sideband filter | Stopper | Tape Echo | '
+                               'time control delay | Super Filter | warm saturator | '
+                               '303 vinyl simulator | 404 vinyl simulator | cassette simulator | '
+                               'Lo-fi'])
 
 # Exporting samples as runs/58 drew it: the heading on a layer of its own,
 # the SAMPLE, PROJECT, MULTIPAD, CANCEL list on another; pressing VALUE on
@@ -655,3 +682,4 @@ automark()
 fxreturn()
 extpower()
 export2()
+fxgrid()

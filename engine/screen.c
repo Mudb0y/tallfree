@@ -173,6 +173,8 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
     { 0x801120A1u, ROLE_TITLE },            /* CHROMATIC MODE */
     { 0x80146135u, ROLE_TITLE },            /* an effect's name, over its grid or page */
+    { 0x80146175u, ROLE_TITLE },            /* the grid's MFX LIST 1-16 in its place, when
+                                               the page shows none selected */
     { 0x80146545u, ROLE_EFFECT },           /* an effect's values, FUN_80146260, the
                                                effect page's alone */
     { 0x801463F7u, ROLE_FXLABEL },          /* and their names, CUTOFF, FEEDBACK */
@@ -1366,23 +1368,47 @@ static size_t clean(char *out, size_t cap, const char *in)
     return alnum ? n : 0;
 }
 
-/* A grid cell cut short ("Crush..") whose full name ("Crusher") is also on
-   the screen, as the title, answers the full name. */
-static const struct item *full_name(const struct item *it)
+/* The effects by their full names, from the reference manual's MFX list,
+   input effects included. */
+static const char *const effect_names[] = {
+    "Filter+Drive", "Resonator", "Sync Delay", "Isolator", "DJFX Looper", "Scatter",
+    "Downer", "Ha-Dou", "Ko-Da-Ma", "Zan-Zou", "To-Gu-Ro", "SBF", "Stopper", "Tape Echo",
+    "TimeCtrlDly", "Super Filter", "WrmSaturator", "303 VinylSim", "404 VinylSim",
+    "Cassette Sim", "Lo-fi", "Reverb", "Chorus", "JUNO Chorus", "Flanger", "Phaser", "Wah",
+    "Slicer", "Tremolo/Pan", "Chromatic PS", "Hyper-Reso", "Ring Mod", "Crusher",
+    "Overdrive", "Distortion", "Equalizer", "Compressor", "SX Reverb", "SX Delay",
+    "Cloud Delay", "Back Spin", "DJFX Delay", "Auto Pitch", "Vocoder", "Harmony",
+    "Gt Amp Sim", "Bypass",
+};
+
+/* A name cut short ("Crush..") as its full name ("Crusher"): the one also on
+   the screen, as the title over the effects grid, else the one effect whose
+   name it begins, since a grid page showing none selected has no title.
+   "DJFX .." begins two and stays as it is. */
+static const char *full_text(const struct item *it)
 {
-    size_t n = strlen(it->text);
+    size_t n = strlen(it->text), k;
+    const char *found = NULL;
     int i;
 
     if (n < 3 || it->text[n - 1] != '.' || it->text[n - 2] != '.')
-        return it;
+        return it->text;
     n -= 2;
     for (i = 0; i < ITEMS; i++) {
         const struct item *o = &items[i];
         if (live(o) && o != it && o->surf == it->surf && strlen(o->text) > n
             && strncmp(o->text, it->text, n) == 0 && o->text[n] != '.')
-            return o;
+            return o->text;
     }
-    return it;
+    while (n > 0 && it->text[n - 1] == ' ')
+        n--;
+    for (k = 0; n > 0 && k < sizeof effect_names / sizeof effect_names[0]; k++)
+        if (strncmp(effect_names[k], it->text, n) == 0) {
+            if (found != NULL)
+                return it->text;
+            found = effect_names[k];
+        }
+    return found != NULL ? found : it->text;
 }
 
 /* The batch being built: phrases one after another, each ended by a zero. */
@@ -1606,7 +1632,7 @@ static int say3(const char *a, const char *b, const char *c)
 
 static int say(const struct item *it)
 {
-    return say3(full_name(it)->text, NULL, NULL);
+    return say3(full_text(it), NULL, NULL);
 }
 
 static const struct item *row_label(const struct item *v);
@@ -1703,10 +1729,13 @@ static int horizontally_near(const struct item *a, const struct item *b)
 /* Text that can label a value: not a title, the status bar, a tab, a
    highlighted menu item or a chosen one. A settings row's name labels its value whether or
    not the row is selected. */
+static int page_number(const struct item *it);
+
 static int plain(const struct item *it)
 {
     return !is_title(it) && !is_status(it) && it->role != ROLE_TABS && it->role != ROLE_HINT
-        && !it->icon_sel && !it->framed && !(it->mark == WHITE && it->y >= 10);
+        && !it->icon_sel && !it->framed && !(it->mark == WHITE && it->y >= 10)
+        && !page_number(it);
 }
 
 /* A value's label is plain text drawn by other code, and drawn since the
@@ -1879,9 +1908,9 @@ static int say_value(const struct item *v)
 
     if (l != NULL && l != last_label) {
         last_label = l;
-        return say3(l->text, v->text, unit_said(v, l));
+        return say3(l->text, full_text(v), unit_said(v, l));
     }
-    return say3(v->text, NULL, NULL);
+    return say3(full_text(v), NULL, NULL);
 }
 
 /* A title drawn since the last batch. A title's layer may never be wiped,
@@ -1905,7 +1934,6 @@ static int want_new_popup(const struct item *it)
     return is_popup(it) && (it->fresh || it->changed == 1);
 }
 static int want_changed(const struct item *it) { return it->changed != 0; }
-static int page_number(const struct item *it);
 
 /* A tab strip drawn for this screen, which names the current tab itself. */
 static int tab_known(void)
@@ -1945,7 +1973,7 @@ static void say_contents(struct item **order, int n)
             continue;
         if (l != NULL) {
             last_label = l;
-            say3(l->text, it->text, unit_said(it, l));
+            say3(l->text, full_text(it), unit_said(it, l));
         } else if (padlike(it->text)) {
             say_pad(it);
         } else {
@@ -2131,7 +2159,7 @@ static int mirrors_focus(const struct item *it)
         return 0;
     for (i = 0; i < ITEMS; i++) {
         const struct item *f = &items[i];
-        if (f != it && live(f) && is_lit(f) && clean(b, sizeof b, full_name(f)->text) > 0
+        if (f != it && live(f) && is_lit(f) && clean(b, sizeof b, full_text(f)) > 0
             && strcmp(a, b) == 0)
             return 1;
     }
@@ -2178,7 +2206,7 @@ static void say_picks(void)
 static void same_screen(struct item **order)
 {
     static struct item *pop[ITEMS];
-    int n, i, k, m, pad_hit = 0;
+    int n, i, k, m, pad_hit = 0, answers = 0;
     uint32_t popup_surf = 0, main_surf = 0;
 
     /* A choice newly made says what the screen now shows for it, changed or
@@ -2226,6 +2254,10 @@ static void same_screen(struct item **order)
         }
     }
     for (i = 0; i < n; i++)
+        if (order[i]->changed == 1 && order[i]->fresh && order[i]->prompted
+            && order[i]->role != ROLE_HINT && !is_lit(order[i]) && !is_title(order[i]))
+            answers++;
+    for (i = 0; i < n; i++)
         if (order[i]->changed == 1 && is_pad_field(order[i])) {
             pad_hit = 1;
             if (order[i]->role == ROLE_PAD)
@@ -2270,8 +2302,10 @@ static void same_screen(struct item **order)
         } else if (it->fresh) {
             /* Text that appears in answer to a key or a knob is said, as
                PLEASE SELECT SMPL is once SAMPLE is chosen; text a screen
-               draws a moment after arriving, a meter's scale, is not. */
-            if (it->prompted)
+               draws a moment after arriving, a meter's scale, is not, and
+               nor is a whole display drawn back, as the effect display is
+               when an effect's knob is touched again. */
+            if (it->prompted && answers <= 2)
                 say_value(it);
         } else if (it->role == ROLE_MAIN || is_status(it)) {
             if (!(it->role == ROLE_MAIN && pad_hit) && b_now - last_popup_change >= 750u)
