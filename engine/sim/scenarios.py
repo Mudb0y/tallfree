@@ -481,9 +481,16 @@ def delete():
     for t, pad, count in [(3000, 1, 1), (4000, 2, 2), (5000, 1, 1), (6000, 2, 0)]:
         text = f'28 4 !=8015604B:TOT SELECTED PADS:{count}' if count else '45 4 !=8015604B:SELECT PAD'
         d += [f'{t} PAD {pad}', f'{t + 48} s0 {text}']
-    d += ['8000 VALUE']
+    # One pad chosen and DEL pressed: the pads are deleted and the top
+    # screen comes back with the message, which is said first, as runs/41
+    # drew it.
+    d += ['7000 PAD 1', '7048 s0 28 4 !=8015604B:TOT SELECTED PADS:1',
+          '8000 KEY DOWN 1a', '8000 PAGE 84', '8000 s0 FILL 0 0 127 63']
+    d += main_screen(8000, 0, 'A-1')
+    d += ['8008 s3 18 20 ~=8001F4BD:Operation\\nCompleted!', '10000 VALUE']
     write('delete', d, ['top screen', 'delete | SELECT PAD', 'A 1 selected', 'A 2 selected',
-                        'A 1 deselected', 'A 2 deselected'])
+                        'A 1 deselected', 'A 2 deselected', 'A 1 selected',
+                        'Operation Completed! | top screen'])
 
 # The pitch and speed screen, page 83, as runs/58 drew it on arriving: three
 # columns like the pattern settings', SPEED 100.0% over the pad's BPM:90.00,
@@ -650,15 +657,16 @@ def export2():
     write('export2', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE',
                          'PLEASE SELECT sample', 'A 10 selected'])
 
-# The main screen's pad field showing EXT while EXT SOURCE is on, as runs/61
-# drew it, and the pad again when it goes off, said as the playback buttons
-# are; the power source changing at the end of the status bar, which says
-# nothing, until the batteries run low.
+# EXT SOURCE pressed and let go twice, as runs/62 drew it: the pad field
+# shows EXT only while it is held, but each press flips the input, which is
+# what is said, on and then off. Then the power source changing at the end
+# of the status bar, which says nothing, until the batteries run low.
 def extpower():
     d = main_screen(0, 0, 'A-13')
-    d += ['2000 KEY DOWN 12', '2000 s0 36 2 !=80149DD5:EXT', '2200 KEY UP 12',
-          '2200 s0 34 2 !=80149DD5:A-13',
-          '4000 s0 104 2 !=800EE779: BAT ', '6000 s0 104 2 !=800EE779: LOW!', '8000 VALUE']
+    for t in (2000, 3000):
+        d += [f'{t} KEY DOWN 12', f'{t + 30} s0 36 2 !=80149DD5:EXT', f'{t + 110} KEY UP 12',
+              f'{t + 150} s0 34 2 !=80149DD5:A-13']
+    d += ['4000 s0 104 2 !=800EE779: BAT ', '6000 s0 104 2 !=800EE779: LOW!', '8000 VALUE']
     write('extpower', d, ['top screen', 'external SOURCE ON', 'external SOURCE OFF', 'LOW!'])
 
 # COPY on the pad operations page, 67 in its mode 0, as runs/60 drew it:

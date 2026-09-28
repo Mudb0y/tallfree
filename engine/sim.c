@@ -95,6 +95,10 @@ static int sim_page_factory(void *request)
         page_saw_keys++;
     if ((*m == 5 || *m == 6) && m[1] == 0x2A)
         sim_shift = *m == 5;
+    /* EXT SOURCE as FUN_80134A98 sets the input, the word at 0x5C of the
+       store: each press flips it. */
+    if (*m == 5 && m[1] == 0x12 && !sim_shift)
+        sim_store[0x5C / 4] = !sim_store[0x5C / 4];
     /* The playback buttons as FUN_800C9788 and FUN_801339C8 set the
        current pad: BPM SYNC, GATE, REVERSE flip; LOOP turns on, with SHIFT
        the ping pong loop, and off. */

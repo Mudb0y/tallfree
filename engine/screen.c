@@ -159,6 +159,10 @@ static const uint32_t vt_base[] = {
     (uint32_t)(uintptr_t)sim_vtables[6],
 };
 #endif
+/* The external input, on or off, in the pick store at 0x5C (its parameter
+   0x25), as FUN_80134A98 sets it: each press flips it, or with EXT SOURCE
+   held and GATE pressed it follows the button, on while held. */
+#define EXT_ON          (*(volatile uint32_t *)(PICK_STORE + 0x5Cu))
 #define VTABLES   (sizeof vt_base / sizeof vt_base[0])
 #define ICON_SLOTS (sizeof icon_slots / sizeof icon_slots[0])
 #define PAGES 94
@@ -629,6 +633,7 @@ static int32_t pick_state(int kind, int index)
    FUN_800C9788 handles them, and a pad's settings for them, one bit each. */
 #define KEY_BPM_SYNC 0x1D
 #define KEY_REVERSE  0x20
+#define KEY_EXT_SOURCE 0x12
 enum { SET_GATE = 1, SET_LOOP = 2, SET_SYNC = 4, SET_REVERSE = 8, SET_PINGPONG = 16 };
 
 static int32_t pad_settings(int index)
@@ -693,6 +698,11 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
         d.y = message[1];
         d.x1 = message[2];
     }
+    /* EXT SOURCE, pressed or let go, with the input's state before. */
+    if ((type == 5 || type == 6) && d.y == KEY_EXT_SOURCE && !shift_down) {
+        d.y1 = 1;
+        d.ink = EXT_ON != 0;
+    }
     /* A playback button goes with the current pad's settings before the
        page sees it. With SHIFT, BPM SYNC and GATE set the whole bank and
        say so themselves, BANK A GATE ON, and REVERSE sets the pad mute
@@ -750,7 +760,7 @@ struct item {
     int32_t  mark, ink;
     int16_t  x, y;
     uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed, own,
-             prompted, by_pad, prev_pad;
+             prompted, by_pad;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -770,6 +780,9 @@ static int npicks;
    pad. */
 static struct { int16_t key, index; int32_t before; } presses[8];
 static int npresses;
+/* EXT SOURCE pressed or let go since the last batch, and whether the input
+   was on before the first of them. */
+static int ext_pending, ext_before = -1;
 static uint32_t last_pick;
 static uint8_t pick_seen;
 /* Whether the page showing has just been built; the bank the firmware last
@@ -1242,7 +1255,8 @@ static int take(const struct draw *d)
                 last_pad = d->tick;
                 pad_seen = 1;
             }
-            if (d->y1 == 1 && npresses < (int)(sizeof presses / sizeof presses[0])) {
+            if (d->y1 == 1 && d->y != KEY_EXT_SOURCE
+                && npresses < (int)(sizeof presses / sizeof presses[0])) {
                 presses[npresses].key = d->y;
                 presses[npresses].index = d->x1;
                 presses[npresses].before = d->ink;
@@ -1253,6 +1267,11 @@ static int take(const struct draw *d)
                 return 1;
             }
         }
+        if (d->y == KEY_EXT_SOURCE && d->y1 == 1 && (d->x == 5 || d->x == 6)) {
+            ext_pending = 1;
+            if (ext_before < 0)
+                ext_before = d->ink;
+        }
         if (d->x == 7) {
             last_turn = d->tick;
             turn_seen = 1;
@@ -1262,7 +1281,7 @@ static int take(const struct draw *d)
             log_line("%lu key %s 0x%02x, page %ld\n", (unsigned long)d->tick,
                      d->x == 5 ? "down" : "up", (unsigned)(uint16_t)d->y, (long)d->mark);
         }
-        return 0;
+        return d->y == KEY_EXT_SOURCE && d->y1 == 1;
     }
     if (d->kind == EV_PAGE) {
         log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
@@ -1401,7 +1420,6 @@ static int take(const struct draw *d)
         }
         it->last_change = d->tick;
         it->prev0 = it->text[0];
-        it->prev_pad = (uint8_t)(it->text[0] == 1 || padlike(it->text));
         memcpy(it->text, d->text, ITEM_TEXT);
         it->changed = 1;
         it->seq = ++change_seq;
@@ -2239,7 +2257,7 @@ static const struct { int page; const char *name; } page_names[] = {
 static void new_screen(struct item **order)
 {
     const struct item *tab;
-    int n, i, focus, popups, effect = 0;
+    int n, i, focus, popups, effect = 0, top = 0;
 
     last_label = NULL;
     if ((dialog_surf = new_dialog()) != 0) {
@@ -2288,14 +2306,17 @@ static void new_screen(struct item **order)
                     focus += say_pad(&items[i]) == 1;
                     continue;
                 }
-                if (!effect_shown)
-                    say3("top screen", NULL, NULL);
+                top = !effect_shown;
                 focus++;
                 break;
             }
+    /* An operation's message comes before where it leaves you: "Operation
+       Completed!, top screen". */
     popups = in_order(order, ITEMS, want_new_popup);
     for (i = 0; i < popups; i++)
         say(order[i]);
+    if (top)
+        say3("top screen", NULL, NULL);
     if (focus == 0 && popups == 0) {
         n = in_order(order, ITEMS, want_fresh);
         say_contents(order, n);
@@ -2387,6 +2408,12 @@ static void say_presses(void)
         say3(t, NULL, NULL);
     }
     npresses = 0;
+    /* EXT SOURCE, by the input's state and not the pad field, which shows
+       EXT only while the button is held. */
+    if (ext_pending && ext_before >= 0 && (EXT_ON != 0) != ext_before)
+        say3(EXT_ON ? "EXT SOURCE ON" : "EXT SOURCE OFF", NULL, NULL);
+    ext_pending = 0;
+    ext_before = -1;
 }
 
 /* What to say about a change on the same screen: a message, whenever it is
@@ -2496,19 +2523,10 @@ static void same_screen(struct item **order)
             continue;
         }
         if (is_pad_field(it)) {
-            /* The main screen's bank is said as every screen's is, by its
-               letter. Its pad field shows EXT while the external input is
-               on, which is said as the playback buttons are, by its
-               button's name, EXT SOURCE ON, and EXT SOURCE OFF as the pad
-               comes back. */
-            if (it->role == ROLE_PAD && reads(it->text, "EXT"))
-                say3("EXT SOURCE ON", NULL, NULL);
-            else if (it->role == ROLE_PAD && padlike(it->text) && !it->prev_pad
-                     && it->prev0 == 'E')
-                say3("EXT SOURCE OFF", NULL, NULL);
-            else if (it->role == ROLE_PAD && (!padlike(it->text) || !it->prev_pad))
-                say_pad(it);
-            else if (it->prev0 != it->text[0] && it->role != ROLE_PAD)
+            /* The main screen's pad field says nothing: its bank is said as
+               every screen's is, by its letter, and the EXT it shows while
+               EXT SOURCE is held by the input's own state. */
+            if (it->prev0 != it->text[0] && it->role != ROLE_PAD)
                 say_pad(it);
         } else if (padlike(it->text) && is_status(it)) {
             say_pad(it);
@@ -2689,6 +2707,8 @@ int screen_poll(char *phrases, size_t cap, int *count)
             items[i].changed = items[i].fresh = 0;
         npicks = 0;
         npresses = 0;
+        ext_pending = 0;
+        ext_before = -1;
         bank_moved = 0;
         pending = 0;
         page_pending = 0;
