@@ -1,5 +1,5 @@
 A 13
-TIME 100 milliseconds | FEEDBACK 49 | LEVEL 100 | time control delay
+time control delay
 FEEDBACK 52
 58
 B 13

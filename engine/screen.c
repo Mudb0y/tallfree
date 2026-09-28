@@ -167,7 +167,8 @@ static const uint32_t vt_base[] = {
    one level up, from what the unit's logs recorded. Anything else is judged
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
-       ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT };
+       ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
+       ROLE_CELL };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -178,6 +179,12 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80146545u, ROLE_EFFECT },           /* an effect's values, FUN_80146260, the
                                                effect page's alone */
     { 0x801463F7u, ROLE_FXLABEL },          /* and their names, CUTOFF, FEEDBACK */
+    /* The CTRL knobs' columns on the pad and pattern settings, FUN_801709xx:
+       the names, the values in the middle and the lines at the bottom. */
+    { 0x801709ABu, ROLE_KNOB },
+    { 0x80170A15u, ROLE_KNOB },
+    { 0x801709EFu, ROLE_KNOB },
+    { 0x80145EDFu, ROLE_CELL },             /* the effects grid's cells */
     { 0x80195269u, ROLE_TITLE },            /* 16 VELOCITY, PAD LINK GROUPS, MUTE GROUP */
     { 0x8013FE3Du, ROLE_IGNORE },           /* a second copy of those, a pixel over */
     { 0x8006BECDu, ROLE_TOAST },            /* STOP, RECORDING, METRO MODE ON */
@@ -1942,11 +1949,19 @@ static int tab_known(void)
 }
 
 /* What a screen shows; a page count is left to the tab it counts. The
-   pad operations page asks for pads in its status bar. */
+   pad operations page asks for pads in its status bar. Not the knobs'
+   columns, an effect's or the pad and pattern settings', which are heard
+   as they are turned, nor a grid page's effects when none is selected:
+   its heading and page say where you are. */
+static int knob_column(const struct item *it)
+{
+    return it->role == ROLE_EFFECT || it->role == ROLE_FXLABEL || it->role == ROLE_KNOB;
+}
+
 static int want_fresh(const struct item *it)
 {
     return (!is_status(it) || it->role == ROLE_PICKS) && !is_title(it) && it->role != ROLE_TABS
-        && it->role != ROLE_HINT
+        && it->role != ROLE_HINT && !knob_column(it) && it->role != ROLE_CELL
         && (it->fresh || it->changed == 1) && !(tab_known() && page_number(it));
 }
 
@@ -1969,6 +1984,9 @@ static void say_contents(struct item **order, int n)
             else if (label_of(o) == it && unit_of(it) != o)
                 skip = 1;
         }
+        /* A knob's value is not read arriving, and nor is its unit. */
+        for (j = 0; j < ITEMS && !skip; j++)
+            skip = live(&items[j]) && knob_column(&items[j]) && unit_of(&items[j]) == it;
         if (skip || (l != NULL && unit_of(l) == it))
             continue;
         if (l != NULL) {

@@ -1,2 +1,2 @@
 D 1
-MFX LIST 1-16 | 1 of 3 | Scatter | Downer | Ha-Dou | Ko-Da-Ma | Zan-Zou | To-Gu-Ro | sideband filter | Stopper | Tape Echo | time control delay | Super Filter | warm saturator | 303 vinyl simulator | 404 vinyl simulator | cassette simulator | Lo-fi
+MFX LIST 1-16 | 1 of 3

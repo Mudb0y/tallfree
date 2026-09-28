@@ -1,5 +1,5 @@
 A 13
-BPM 90.0 | LENGTH 2 Bars | STRENGTH 0% | quantize: GRID 16 | MODE : Real-Time | A 1
+quantize: GRID 16 | MODE : Real-Time | A 1
 BPM 93.0
 97.0
 105.0

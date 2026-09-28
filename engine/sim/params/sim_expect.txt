@@ -1,5 +1,5 @@
 A 13
-CUTOFF 637 hertz | RESONANCE 1 | DRIVE 0 | Filter+Drive
+Filter+Drive
 CUTOFF 827 hertz
 707
 RESONANCE 22

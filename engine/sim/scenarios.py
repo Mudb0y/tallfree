@@ -82,8 +82,7 @@ def params():
         d += [f'{t} CTRL 2 {20 + 10 * k}', f'{t} s0 FILL 41 18 80 30', f'{t} s0 52 18 _{FXVALUE}{v}']
         t += 50
     d += ['9000 VALUE']
-    write('params', d, ['A 13', 'CUTOFF 637 hertz | RESONANCE 1 | DRIVE 0 | Filter+Drive',
-                        'CUTOFF 827 hertz', '707', 'RESONANCE 22', '50'])
+    write('params', d, ['A 13', 'Filter+Drive', 'CUTOFF 827 hertz', '707', 'RESONANCE 22', '50'])
 
 # The fixed velocity pop-up over the main screen: it appears, the status bar
 # echoes it, it is toggled and the status bar echoes that too.
@@ -395,15 +394,14 @@ def tabs():
 
 # A settings page laid out as the pad settings page in runs/31, three
 # columns of label, value and unit like an effect's but drawn by other code,
-# with a meter in the status bar changing on its own all the while. That run
-# did not record drawing sites, so 1 and 2 stand in for the label's and the
-# value's; the reader needs only that they differ. SPEED
+# with a meter in the status bar changing on its own all the while, drawn
+# from the sites runs/58 recorded. Arriving says nothing of the knobs. SPEED
 # turned with CTRL 1 and PITCH with VALUE, a step every frame: each step is
 # said as it comes, cutting off the one before. The meter is never said,
 # though it changes in the same frames as the turned values.
 def turned():
     d = main_screen(0, 0, 'A-13')
-    L, V = '=00000001:', '=00000002:'
+    L, V = '=801709AB:', '=80170A15:'
     d += ['1000 s0 CLEAR', '1000 s0 89 2 !LEVEL:120',
           f'1000 s0 11 3 _{L}SPEED', f'1000 s0 12 18 _{V}1.00', '1000 s0 15 33 _ ',
           f'1000 s0 55 3 _{L}PITCH', f'1000 s0 56 18 _{V}  0', '1000 s0 56 33 _SEMI',
@@ -417,15 +415,15 @@ def turned():
         t = 5000 + 53 * k
         d += [f'{t} KNOB 0 1', f'{t} s0 FILL 41 18 80 30', f'{t} s0 56 18 _{V}{v}']
     d += ['9000 VALUE']
-    write('turned', d, ['A 13', 'SPEED 1.00 | PITCH 0 semitones | VOLUME 127', 'SPEED 1.10',
-                        '1.20', '1.30', '1.40', 'PITCH 1 semitones', '2', '3'])
+    write('turned', d, ['A 13', 'SPEED 1.10', '1.20', '1.30', '1.40', 'PITCH 1 semitones', '2',
+                        '3'])
 
 # The pattern recording settings, page 62, as runs/57 drew them: three
 # columns, each a name at the top and a line at the bottom, BPM's tempo in
 # the middle over its unit, BPM again; below, on a surface of its own, a
 # hint and the quantise grid on white, the mode and the pattern. Entering
-# reads the settings; CTRL 1 turns the tempo, CTRL 2 the length and CTRL 3
-# the strength, each named on its first step only.
+# reads what the knobs do not set; CTRL 1 turns the tempo, CTRL 2 the
+# length and CTRL 3 the strength, each named on its first step only.
 def patrec():
     NAME, LOW, TEMPO = '=801709AB:', '=801709EF:', '=80170A15:'
     d = main_screen(0, 0, 'A-13')
@@ -446,9 +444,7 @@ def patrec():
         t = 7000 + 50 * k
         d += [f'{t} CTRL 3 {53 + 4 * k}', f'{t} s0 100 34 _{LOW}{v}']
     d += ['9000 VALUE']
-    write('patrec', d, ['A 13',
-                        'BPM 90.0 | LENGTH 2 Bars | STRENGTH 0% | quantize: GRID 16 | '
-                        'MODE : Real-Time | A 1',
+    write('patrec', d, ['A 13', 'quantize: GRID 16 | MODE : Real-Time | A 1',
                         'BPM 93.0', '97.0', '105.0', '111.0', 'LENGTH 38 Bars', '41 Bars',
                         'STRENGTH 43%', '49%'])
 
@@ -493,7 +489,8 @@ def delete():
 # columns like the pattern settings', SPEED 100.0% over the pad's BPM:90.00,
 # PITCH 0.00 over VINYL, VOLUME 127; below, SHIFT:FINE on white, BPM SET
 # with its value MANU on white and the tempo, the pad and its velocity
-# mode. Neither the hint nor MANU is the focus.
+# mode. Neither the hint nor MANU is the focus, and the knobs' columns wait
+# to be turned.
 def padset():
     NAME, LOW, MID = '=801709AB:', '=801709EF:', '=80170A15:'
     d = main_screen(0, 0, 'D-1')
@@ -506,8 +503,7 @@ def padset():
           '1000 s2 101 46 !=80145629:MANU', '1000 s2 101 55 _=8014572B:90.00',
           '1000 s2 7 55 _=80145351:   D-1', '1000 s2 44 55 _=800EE779:Vel',
           '3000 VALUE']
-    write('padset', d, ['D 1', 'SPEED 100.0% | PITCH 0.00 | VOLUME 127 | BPM:90.00 | VINYL | '
-                               'BPM SET | manual | D 1 | velocity | 90.00'])
+    write('padset', d, ['D 1', 'BPM SET | manual | D 1 | velocity | 90.00'])
 
 # Sample edit, page 90, as runs/58 drew it: the knobs' legends along the
 # top, the pad, the MARK button's legend, MENU and the zoom along the
@@ -582,7 +578,8 @@ def automark():
 # An effect over the main screen as runs/58 drew it: TimeCtrlDly's three
 # columns on the main screen's own surface, which redraws its status line
 # and its big tempo in the same frames, the tempo sitting between FEEDBACK
-# and its value; FEEDBACK turned with CTRL 2; the display timing out back
+# and its value. Arriving says the effect's name alone, the knobs' values
+# waiting to be turned; FEEDBACK turned with CTRL 2, named; the display timing out back
 # to the main screen, which says nothing, the bank and pad being the same;
 # then a bank change, which is said.
 def fxreturn():
@@ -606,14 +603,13 @@ def fxreturn():
     d += ['10000 CTRL 1 70'] + fx(10000, ' 58')[6:]
     d += ['10053 CTRL 1 72', '10053 s0 FILL 0 18 40 30', f'10053 s0 11 18 _{VAL}120',
           '12000 VALUE']
-    write('fxreturn', d, ['A 13', 'TIME 100 milliseconds | FEEDBACK 49 | LEVEL 100 | '
-                                  'time control delay', 'FEEDBACK 52', '58', 'B 13',
+    write('fxreturn', d, ['A 13', 'time control delay', 'FEEDBACK 52', '58', 'B 13',
                           'TIME 120 milliseconds'])
 
 # The effects grid on a page showing none of its effects selected, as
 # runs/59 drew it: MFX LIST 1-16 in the title's place, the page count, and
-# sixteen names cut short, completed from the manual's list of effects,
-# with no heading or count taken for any name's label.
+# sixteen names cut short. Arriving says the heading and the page; the
+# names wait for VALUE to select one.
 def fxgrid():
     CELL = '=80145EDF:'
     cells = ['Scatt..', 'Down..', 'Ha-Dou', 'Ko-Da..', 'Zan-Z..', 'To-Gu..', 'SBF',
@@ -625,11 +621,7 @@ def fxgrid():
           for k, c in enumerate(cells)]
     d += ['1000 s0 30 5 _=80146175: MFX LIST 1-16 ', '1000 s0 111 5 _=800EE779:1/3',
           '3000 VALUE']
-    write('fxgrid', d, ['D 1', 'MFX LIST 1-16 | 1 of 3 | Scatter | Downer | Ha-Dou | Ko-Da-Ma | '
-                               'Zan-Zou | To-Gu-Ro | sideband filter | Stopper | Tape Echo | '
-                               'time control delay | Super Filter | warm saturator | '
-                               '303 vinyl simulator | 404 vinyl simulator | cassette simulator | '
-                               'Lo-fi'])
+    write('fxgrid', d, ['D 1', 'MFX LIST 1-16 | 1 of 3'])
 
 # Exporting samples as runs/58 drew it: the heading on a layer of its own,
 # the SAMPLE, PROJECT, MULTIPAD, CANCEL list on another; pressing VALUE on

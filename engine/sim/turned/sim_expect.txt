@@ -1,5 +1,4 @@
 A 13
-SPEED 1.00 | PITCH 0 semitones | VOLUME 127
 SPEED 1.10
 1.20
 1.30
