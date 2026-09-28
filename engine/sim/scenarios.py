@@ -141,7 +141,7 @@ def record():
         d.append(f'{t} s0 89 2 !LEVEL:{100 + k % 27}')
     d += ['3000 s0 110 2 !A 1', '4000 s0 110 2 !A 2', '4500 s0 110 2 !B 2',
           '7000 VALUE']
-    write('record', d, ['A 13', 'Select PAD for RECORDING', 'A 1', 'A 2', 'B 2'])
+    write('record', d, ['A 13', 'REC | Select PAD for RECORDING', 'A 1', 'A 2', 'B 2'])
 
 # The main screen as the last run drew it: pad hits wipe and redraw the
 # status line, changing the bus and the big field; then a bank change; then
@@ -189,7 +189,7 @@ def recscale():
           '5000 s0 CLEAR', '5000 s3 14 3 ~=8013FE3D:PAD LINK GROUPS',
           '5000 s3 13 2 ~=80195269:PAD LINK GROUPS', '5000 s0 20 30 !GROUP 1',
           '7000 VALUE']
-    write('recscale', d, ['A 13', 'Select PAD for RECORDING', 'A 14',
+    write('recscale', d, ['A 13', 'REC | Select PAD for RECORDING', 'A 14',
                           'PAD LINK GROUPS | GROUP 1'])
 
 # The UTILITY menu, its title on a layer never wiped, its icons on another
@@ -392,7 +392,7 @@ def tabs():
                       'USB Out 0 decibels',
                       'Anti Feedback OFF', 'VERSION | Version: 5.52'])
 
-# A settings page laid out as the pad settings page in runs/31, three
+# A settings page laid out as the pitch and speed screen in runs/31, three
 # columns of label, value and unit like an effect's but drawn by other code,
 # with a meter in the status bar changing on its own all the while, drawn
 # from the sites runs/58 recorded. Arriving says nothing of the knobs. SPEED
@@ -467,8 +467,8 @@ def export():
     d += ['8000 MODE 1', '8500 PAD 3', '9500 MODE 2', '9600 BANK 0', '10000 PAD 4',
           '11000 PAD 4', '12000 MODE 3', '12500 PAD 2', '14000 VALUE']
     write('export', d, ['A 13', 'EXPORT SAMPLE/project./MULTIPAD | PLEASE SELECT sample',
-                        'A 5 selected', 'A 5 deselected', 'B 1 selected', 'B 16 selected',
-                        'project 3 selected', 'pattern A 4'])
+                        'A 5 selected', 'A 5 deselected', 'bank B', 'B 1 selected',
+                        'B 16 selected', 'project 3 selected', 'bank A', 'pattern A 4'])
 
 # Deleting pads, page 67 in its mode 1, as runs/41 drew it: SELECT PAD in
 # the status bar and the big DEL; each pad pressed redraws the count, TOT
@@ -482,15 +482,16 @@ def delete():
         text = f'28 4 !=8015604B:TOT SELECTED PADS:{count}' if count else '45 4 !=8015604B:SELECT PAD'
         d += [f'{t} PAD {pad}', f'{t + 48} s0 {text}']
     d += ['8000 VALUE']
-    write('delete', d, ['A 13', 'SELECT PAD | delete', 'A 1 selected', 'A 2 selected',
+    write('delete', d, ['A 13', 'delete | SELECT PAD', 'A 1 selected', 'A 2 selected',
                         'A 1 deselected', 'A 2 deselected'])
 
-# The pad settings page, page 83, as runs/58 drew it on arriving: three
+# The pitch and speed screen, page 83, as runs/58 drew it on arriving: three
 # columns like the pattern settings', SPEED 100.0% over the pad's BPM:90.00,
 # PITCH 0.00 over VINYL, VOLUME 127; below, SHIFT:FINE on white, BPM SET
-# with its value MANU on white and the tempo, the pad and its velocity
-# mode. Neither the hint nor MANU is the focus, and the knobs' columns wait
-# to be turned.
+# with its value MANU on white and the tempo, the pad and the fixed velocity
+# indicator. It has no title, so its button names it; neither the hint nor
+# MANU is the focus, the knobs' columns wait to be turned, and nor is the
+# indicator read.
 def padset():
     NAME, LOW, MID = '=801709AB:', '=801709EF:', '=80170A15:'
     d = main_screen(0, 0, 'D-1')
@@ -503,11 +504,12 @@ def padset():
           '1000 s2 101 46 !=80145629:MANU', '1000 s2 101 55 _=8014572B:90.00',
           '1000 s2 7 55 _=80145351:   D-1', '1000 s2 44 55 _=800EE779:Vel',
           '3000 VALUE']
-    write('padset', d, ['D 1', 'BPM SET | manual | D 1 | velocity | 90.00'])
+    write('padset', d, ['D 1', 'PITCH/SPEED | BPM SET | manual | D 1 | 90.00'])
 
 # Sample edit, page 90, as runs/58 drew it: the knobs' legends along the
 # top, the pad, the MARK button's legend, MENU and the zoom along the
-# bottom, S and E on the waveform. Arriving says the pad; the zoom the page
+# bottom, S and E on the waveform. Arriving says its button's name,
+# START/END, and the pad; the zoom the page
 # sets itself straight after arriving is not said, nor the markers as CTRL 1
 # and CTRL 3 move them; VALUE zooming is said, and so is the MARK button's
 # legend moving on to the end point.
@@ -528,7 +530,8 @@ def sampedit():
         t = 5000 + 400 * k
         d += [f'{t} KNOB 0 1', f'{t} s1 4 53 !=801078A9:ENC:ZOOM({z})']
     d += ['7000 KEY DOWN 19', '7000 s1 76 53 _=80107CF5:M:[E]', '9000 VALUE']
-    write('sampedit', d, ['D 1', 'D 1', 'encoder:ZOOM(2x)', 'encoder:ZOOM(3x)', 'mark:[end]'])
+    write('sampedit', d, ['D 1', 'START/END | D 1', 'encoder:ZOOM(2x)', 'encoder:ZOOM(3x)',
+                          'mark:[end]'])
 
 # Auto mark, page 88, as runs/58 drew it: the knobs' legends, the pad, MENU
 # and the zoom, the marks along the waveform, the selected one on white.
@@ -571,7 +574,7 @@ def automark():
     d += ['9000 KEY DOWN 22', '9000 s3 CLEAR'] + mode_page(9000)
     d += ['14000 KEY DOWN 31'] + dialog(14000)
     d += ['16000 VALUE']
-    write('automark', d, ['D 1', 'D 1', 'TIME DIVISION',
+    write('automark', d, ['D 1', 'CHOP | D 1', 'TIME DIVISION',
                           'Current Marks will be lost. | Continue? | CANCEL',
                           'Current Marks will be lost. | Continue? | CANCEL'])
 
@@ -648,6 +651,38 @@ def extpower():
           '4000 s0 104 2 !=800EE779: BAT ', '6000 s0 104 2 !=800EE779: LOW!', '8000 VALUE']
     write('extpower', d, ['A 13', 'external', 'LOW!'])
 
+# COPY on the pad operations page, 67 in its mode 0, as runs/60 drew it:
+# COPY PAD in the status bar, the project it copies into on white, the
+# source and destination below. Arriving says the heading and the project;
+# a pad names the source; a bank key, which the screen does not show, is
+# said; a pad in the new bank names the destination.
+def copy():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 23', '1000 PAGE 67', '1000 MODE 0', '1000 s0 FILL 0 0 127 63',
+          '1000 s0 49 4 !=8015592D:COPY PAD', '1000 s0 81 22 !=8015598F:P-01',
+          '1000 s0 35 32 _=801561D5:-- >> --',
+          '3000 PAD 13', '3040 s0 35 32 _=801561D5:A13 >> --',
+          '4000 KEY DOWN 26', '4000 BANK 1',
+          '5000 PAD 1', '5040 s0 35 32 _=801561D5:A13 >> B1', '7000 VALUE']
+    write('copy', d, ['A 13', 'COPY PAD | P-01', 'A13 >> --', 'bank B', 'A13 >> B1'])
+
+# An effect's button pressed, as runs/60 drew it: the grid, its cell for the
+# effect on white and the effect's name as its title, for a tenth of a
+# second; then the effect's page, which names it again and is not said.
+def fxbutton():
+    CELL = '=80145EDF:'
+    cells = ['Scatt..', 'Down..', 'Ha-Dou', 'Ko-Da..']
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 30', '1000 s0 FILL 0 8 127 63']
+    d += [f'1000 s0 {7 + 30 * k} 16 {"!" if k == 0 else "_"}{CELL}{c}' for k, c in enumerate(cells)]
+    d += ['1000 s0 49 5 _=80146135:Scatter', '1000 s0 111 5 _=800EE779:1/3',
+          '1110 s0 FILL 0 0 127 63',
+          '1110 s0 13 3 _=801463F7:TYPE', '1110 s0 14 18 _=80146545:  5',
+          '1110 s0 53 3 _=801463F7:DEPTH', '1110 s0 52 18 _=80146545:  50',
+          '1110 s0 91 3 _=801463F7:SCATTER', '1110 s0 98 18 _=80146545:ON',
+          '1110 s0 76 47 _=800EE779:Scatter', '3000 VALUE']
+    write('fxbutton', d, ['A 13', 'Scatter'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -675,3 +710,5 @@ fxreturn()
 extpower()
 export2()
 fxgrid()
+copy()
+fxbutton()

@@ -2,7 +2,9 @@ A 13
 EXPORT SAMPLE/project./MULTIPAD | PLEASE SELECT sample
 A 5 selected
 A 5 deselected
+bank B
 B 1 selected
 B 16 selected
 project 3 selected
+bank A
 pattern A 4

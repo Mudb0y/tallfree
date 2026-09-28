@@ -168,7 +168,7 @@ static const uint32_t vt_base[] = {
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
        ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
-       ROLE_CELL };
+       ROLE_CELL, ROLE_QUIET };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -197,6 +197,16 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x801779C9u, ROLE_IGNORE },
     { 0x80105033u, ROLE_TITLE },            /* the BPM screen's heading, C1:TEMPO SEL */
     { 0x8015604Bu, ROLE_PICKS },            /* SELECT PAD, TOT SELECTED PADS:1 */
+    /* The pad operations page's other headings, centred in its status bar
+       by FUN_80155768: COPY PAD, EXCHANGE PAD, COPY BANK PAD, DELETE BANK. */
+    { 0x8015592Du, ROLE_TITLE },
+    { 0x80155BCDu, ROLE_TITLE },
+    { 0x80155C61u, ROLE_TITLE },
+    { 0x80155D97u, ROLE_TITLE },
+    { 0x80155DE7u, ROLE_TITLE },
+    { 0x80155ED5u, ROLE_TITLE },
+    { 0x80155F97u, ROLE_TITLE },
+    { 0x80156139u, ROLE_TITLE },
     { 0x80151927u, ROLE_TITLE },            /* the export page's heading over PLEASE
                                                SELECT SMPL, FUN_801518B0 */
     { 0x8016B061u, ROLE_UNLIT },            /* the pattern settings' quantise grid,
@@ -718,6 +728,12 @@ static struct { int16_t kind, index; int32_t before; } picks[8];
 static int npicks;
 static uint32_t last_pick;
 static uint8_t pick_seen;
+/* The page showing, by the last page built; whether it has just been built;
+   the bank the firmware last had, and whether it has moved since the last
+   batch. */
+static int page_now = 84, page_arrived;
+static int32_t bank_seen = -1;
+static int bank_moved;
 /* Whether the last batch had the effect display showing, and the bank and
    pad the main screen showed under it. */
 static int effect_shown;
@@ -1061,6 +1077,25 @@ static int reads(const char *t, const char *word)
     return *t == 0;
 }
 
+/* Three capitals or more spaced a letter apart, "D E L", as the big font
+   draws a screen's mode. */
+static int spaced_capitals(const char *t)
+{
+    size_t n, i;
+
+    while (*t == ' ')
+        t++;
+    n = strlen(t);
+    while (n > 0 && t[n - 1] == ' ')
+        n--;
+    if (n < 5 || n % 2 == 0)
+        return 0;
+    for (i = 0; i < n; i++)
+        if (i % 2 == 0 ? t[i] < 'A' || t[i] > 'Z' : t[i] != ' ')
+            return 0;
+    return 1;
+}
+
 /* What text is by how it reads, where its drawing code has no role. A key's
    legend: a key's name, a colon and a capitalised action or a bracket,
    ENTER:EXE, ENC:ZOOM(2x), C2:LOOP, M:[S] for the MARK button, and the MENU
@@ -1080,6 +1115,13 @@ static uint8_t role_by_text(const struct draw *d)
         return ROLE_IGNORE;
     if (reads(t, "MENU"))
         return ROLE_HINT;
+    /* The fixed velocity indicator, Fix or Vel, boxed beside the pad on the
+       pitch and speed screen: said when it changes, not arriving. */
+    if (reads(t, "Vel") || reads(t, "Fix"))
+        return ROLE_QUIET;
+    /* A screen's mode in its big letters, D E L, R E C, P T N: its title. */
+    if (spaced_capitals(t))
+        return ROLE_TITLE;
     while (*t == ' ')
         t++;
     for (i = 0; i < sizeof keys / sizeof keys[0]; i++) {
@@ -1157,6 +1199,7 @@ static int take(const struct draw *d)
         log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
         if (d->x != 1)
             return 0;
+        page_now = (int)d->mark;
         page_pending = 1;
         page_seq = draw_seq;
         return 1;
@@ -1955,7 +1998,8 @@ static int tab_known(void)
    its heading and page say where you are. */
 static int knob_column(const struct item *it)
 {
-    return it->role == ROLE_EFFECT || it->role == ROLE_FXLABEL || it->role == ROLE_KNOB;
+    return it->role == ROLE_EFFECT || it->role == ROLE_FXLABEL || it->role == ROLE_KNOB
+        || it->role == ROLE_QUIET;
 }
 
 static int want_fresh(const struct item *it)
@@ -2091,6 +2135,12 @@ static int want_dialog_focus(const struct item *it)
 
 static char last_tab[ITEM_TEXT];
 
+/* Screens with no title of their own, named as the buttons that open them
+   are: PITCH/SPEED, SHIFT and START/END for CHOP, and START/END. */
+static const struct { int page; const char *name; } page_names[] = {
+    { 83, "PITCH/SPEED" }, { 88, "CHOP" }, { 90, "START/END" },
+};
+
 /* What to say about a new screen. A dialog that has just opened is all
    there is: its text, then its own focused button. Otherwise the title, the
    tab a tabbed page is on when it has changed, then the focus: the focused
@@ -2115,6 +2165,10 @@ static void new_screen(struct item **order)
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
         say(order[i]);
+    if (n == 0 && page_arrived)
+        for (i = 0; i < (int)(sizeof page_names / sizeof page_names[0]); i++)
+            if (page_names[i].page == page_now)
+                say3(page_names[i].name, NULL, NULL);
     if (tab_known()) {
         if (strcmp(tab_now, last_tab) != 0) {
             memcpy(last_tab, tab_now, ITEM_TEXT);
@@ -2445,6 +2499,21 @@ int screen_poll(char *phrases, size_t cap, int *count)
         __asm__ volatile("dmb" ::: "memory");
         draw_rd++;
     }
+    /* The bank changes with no drawing on screens that do not show it, as
+       the copy and delete screens do not. */
+    {
+        int32_t bank = BANK_NOW;
+        if (bank >= 0 && bank <= 9 && bank != bank_seen) {
+            if (bank_seen >= 0) {
+                if (!pending)
+                    first_pending = now;
+                pending = 1;
+                last_change = now;
+                bank_moved = 1;
+            }
+            bank_seen = bank;
+        }
+    }
     /* The settings menu answers at once, and nothing else speaks while it
        is open, or while screen reading is off. */
     if (menu_n > 0) {
@@ -2476,6 +2545,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < ITEMS; i++)
             items[i].changed = items[i].fresh = 0;
         npicks = 0;
+        bank_moved = 0;
         pending = 0;
         page_pending = 0;
         tab_changed = 0;
@@ -2511,6 +2581,13 @@ int screen_poll(char *phrases, size_t cap, int *count)
     b_used = 0;
     b_count = 0;
     b_now = now;
+    /* The main screen and the tempo screen show the bank themselves. */
+    if (bank_moved && page_now != 84 && page_now != 81) {
+        char t[8];
+        snprintf(t, sizeof t, "bank %c", 'A' + (int)bank_seen);
+        say3(t, NULL, NULL);
+    }
+    bank_moved = 0;
     say_picks();
     if (screen_mode == SCREEN_ALL) {
         for (i = 0; i < nburst; i++)
@@ -2534,6 +2611,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
                              (unsigned long)it->surf, it->x, it->y, it->text);
                 it->used = 0;
             }
+        page_arrived = page_pending;
         page_pending = 0;
         new_screen(order);
         for (i = 0; i < ITEMS; i++)
@@ -2565,6 +2643,24 @@ int screen_poll(char *phrases, size_t cap, int *count)
     wiped = 0;
     tab_changed = 0;
     b_prev = now;
+    /* A screen that says just what the one before said, less than a second
+       ago: an effect's button shows the grid, titled with the effect, for a
+       tenth of a second before the effect's page, which names it. */
+    {
+        static char last[256];
+        static size_t last_len;
+        static uint32_t last_tick;
+        if (b_count > 0 && b_used <= sizeof last) {
+            if (kind && b_used == last_len && memcmp(last, phrases, b_used) == 0
+                && now - last_tick < 750u) {
+                b_count = 0;
+            } else {
+                memcpy(last, phrases, b_used);
+                last_len = b_used;
+            }
+            last_tick = now;
+        }
+    }
     *count = b_count;
 #ifdef SIM
     sim_batch(phrases, b_count);

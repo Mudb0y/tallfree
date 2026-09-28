@@ -1,5 +1,5 @@
 A 13
-SELECT PAD | delete
+delete | SELECT PAD
 A 1 selected
 A 2 selected
 A 1 deselected

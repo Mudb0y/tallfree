@@ -1,0 +1,5 @@
+A 13
+COPY PAD | P-01
+A13 >> --
+bank B
+A13 >> B1

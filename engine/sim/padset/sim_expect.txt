@@ -1,2 +1,2 @@
 D 1
-BPM SET | manual | D 1 | velocity | 90.00
+PITCH/SPEED | BPM SET | manual | D 1 | 90.00
