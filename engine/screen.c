@@ -1496,22 +1496,21 @@ static int in_batch(const char *text)
 }
 
 /* Roland's abbreviations, said in full, as he approved them on 27 September
-   2026 from every screen logged and every key legend in the firmware: whole
-   words only, capitals as written, and a number stuck to one set apart,
-   "2MEAS" as "2 measures". Everything else is read as Roland writes it.
-   The engine's own dictionary stays off, since SD is not South Dakota. */
+   2026 from every screen logged and every key legend in the firmware, in
+   the reference manual's own words: whole words only, capitals as written,
+   and a number stuck to one set apart, "2MEAS" as "2 measures". What the
+   manual never spells out, Ring Mod, Sim, TS type, stays as Roland writes
+   it. The engine's own dictionary stays off, since SD is not South Dakota. */
 static const struct { const char *from, *to; } spelt_phrases[] = {
     { "PC Rx", "program change receive" },
-    { "MANU-F", "manual fine" },
+    { "MANU-F", "manual-F" },
     { "X-FADE", "crossfade" },
     { "TimeCtrlDly", "time control delay" },
     { "WrmSaturator", "warm saturator" },
     { "Chromatic PS", "chromatic pitch shifter" },
-    { "Ring Mod", "ring modulator" },
-    { "Gt Amp Sim", "guitar amp simulator" },
+    { "Gt Amp Sim", "guitar amp Sim" },
     { "Hyper-Reso", "hyper resonator" },
-    { "Cassette Sim", "cassette simulator" },
-    { "VinylSim", "vinyl simulator" },
+    { "VinylSim", "Vinyl Sim" },
 };
 static const struct { const char *from, *to; } spelt_words[] = {
     { "ENC", "encoder" }, { "EXE", "execute" }, { "SEL", "select" }, { "MOV", "move" },
@@ -1549,8 +1548,9 @@ static int is_letter(char c)
 
 /* A word in full, by what is around it: M before a colon is the MARK
    button; (M) and (C) are auto mark's marker and cursor; [S] and [E] the
-   start and end the MARK button sets; TS a time signature before 4/4 and
-   time stretch otherwise; MEAS one measure after a 1. */
+   start and end the MARK button sets; TS a time signature before 4/4, and
+   otherwise, as in DJ Mode TS type, which the manual never spells out, as
+   written; MEAS one measure after a 1. */
 static const char *spelt(const char *w, size_t n, char before, char after, char after2, int one)
 {
     size_t i;
@@ -1565,7 +1565,7 @@ static const char *spelt(const char *w, size_t n, char before, char after, char 
         return NULL;
     }
     if (n == 2 && strncmp(w, "TS", 2) == 0)
-        return after == ':' && is_digit(after2) ? "time signature" : "time stretch";
+        return after == ':' && is_digit(after2) ? "time signature" : NULL;
     if (n == 4 && strncmp(w, "MEAS", 4) == 0)
         return one ? "measure" : "measures";
     for (i = 0; i < sizeof spelt_words / sizeof spelt_words[0]; i++)
@@ -2280,7 +2280,7 @@ static void say_picks(void)
         } else if ((now > 0) == (before > 0)) {
             continue;
         } else if (kind == PICK_PROJECT) {
-            snprintf(t, sizeof t, "project %d %s", index + 1, now > 0 ? "selected" : "deselected");
+            snprintf(t, sizeof t, "project %02d %s", index + 1, now > 0 ? "selected" : "deselected");
         } else {
             snprintf(t, sizeof t, "%c %d %s", 'A' + index / 16, index % 16 + 1,
                      now > 0 ? "selected" : "deselected");

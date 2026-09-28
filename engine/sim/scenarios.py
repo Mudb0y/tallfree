@@ -468,7 +468,7 @@ def export():
           '11000 PAD 4', '12000 MODE 3', '12500 PAD 2', '14000 VALUE']
     write('export', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | PLEASE SELECT sample',
                         'A 5 selected', 'A 5 deselected', 'B', 'B 1 selected',
-                        'B 16 selected', 'project 3 selected', 'A', 'pattern A 4'])
+                        'B 16 selected', 'project 03 selected', 'A', 'pattern A 4'])
 
 # Deleting pads, page 67 in its mode 1, as runs/41 drew it: SELECT PAD in
 # the status bar and the big DEL; each pad pressed redraws the count, TOT

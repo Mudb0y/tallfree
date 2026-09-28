@@ -5,6 +5,6 @@ A 5 deselected
 B
 B 1 selected
 B 16 selected
-project 3 selected
+project 03 selected
 A
 pattern A 4
