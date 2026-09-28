@@ -7,6 +7,9 @@ firmware/
 dump/
 ghidra/out/
 
+# Roland's reference manual for the SP-404MK2, as text, which is Roland's
+reference/
+
 # Ghidra project, 43 MB: ghidra/import.sh rebuilds it from firmware/
 ghidra/project/
 
