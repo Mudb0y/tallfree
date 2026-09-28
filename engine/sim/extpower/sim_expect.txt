@@ -1,3 +1,4 @@
 top screen
-external
+external SOURCE ON
+external SOURCE OFF
 LOW!

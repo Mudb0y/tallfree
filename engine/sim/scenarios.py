@@ -650,14 +650,16 @@ def export2():
     write('export2', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE',
                          'PLEASE SELECT sample', 'A 10 selected'])
 
-# The main screen's pad field showing EXT for EXT SOURCE, said in full; the
-# power source changing at the end of the status bar, which says nothing,
-# until the batteries run low.
+# The main screen's pad field showing EXT while EXT SOURCE is on, as runs/61
+# drew it, and the pad again when it goes off, said as the playback buttons
+# are; the power source changing at the end of the status bar, which says
+# nothing, until the batteries run low.
 def extpower():
     d = main_screen(0, 0, 'A-13')
-    d += ['2000 KEY DOWN 12', '2000 s0 36 2 !=80149DD5:EXT',
+    d += ['2000 KEY DOWN 12', '2000 s0 36 2 !=80149DD5:EXT', '2200 KEY UP 12',
+          '2200 s0 34 2 !=80149DD5:A-13',
           '4000 s0 104 2 !=800EE779: BAT ', '6000 s0 104 2 !=800EE779: LOW!', '8000 VALUE']
-    write('extpower', d, ['top screen', 'external', 'LOW!'])
+    write('extpower', d, ['top screen', 'external SOURCE ON', 'external SOURCE OFF', 'LOW!'])
 
 # COPY on the pad operations page, 67 in its mode 0, as runs/60 drew it:
 # COPY PAD in the status bar, the project it copies into on white, the

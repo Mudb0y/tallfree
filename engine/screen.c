@@ -2497,9 +2497,16 @@ static void same_screen(struct item **order)
         }
         if (is_pad_field(it)) {
             /* The main screen's bank is said as every screen's is, by its
-               letter; its pad field is said when it shows something else,
-               EXT for EXT SOURCE, and back. */
-            if (it->role == ROLE_PAD && (!padlike(it->text) || !it->prev_pad))
+               letter. Its pad field shows EXT while the external input is
+               on, which is said as the playback buttons are, by its
+               button's name, EXT SOURCE ON, and EXT SOURCE OFF as the pad
+               comes back. */
+            if (it->role == ROLE_PAD && reads(it->text, "EXT"))
+                say3("EXT SOURCE ON", NULL, NULL);
+            else if (it->role == ROLE_PAD && padlike(it->text) && !it->prev_pad
+                     && it->prev0 == 'E')
+                say3("EXT SOURCE OFF", NULL, NULL);
+            else if (it->role == ROLE_PAD && (!padlike(it->text) || !it->prev_pad))
                 say_pad(it);
             else if (it->prev0 != it->text[0] && it->role != ROLE_PAD)
                 say_pad(it);
