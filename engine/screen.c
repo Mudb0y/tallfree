@@ -710,7 +710,7 @@ struct item {
     int32_t  mark, ink;
     int16_t  x, y;
     uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed, own,
-             prompted;
+             prompted, by_pad;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -728,10 +728,9 @@ static struct { int16_t kind, index; int32_t before; } picks[8];
 static int npicks;
 static uint32_t last_pick;
 static uint8_t pick_seen;
-/* The page showing, by the last page built; whether it has just been built;
-   the bank the firmware last had, and whether it has moved since the last
-   batch. */
-static int page_now = 84, page_arrived;
+/* Whether the page showing has just been built; the bank the firmware last
+   had, and whether it has moved since the last batch. */
+static int page_arrived;
 static int32_t bank_seen = -1;
 static int bank_moved;
 /* Whether the last batch had the effect display showing, and the bank and
@@ -784,13 +783,26 @@ static int nframe_sites;
    the pages were sent them. A page redraws what a knob changed within 40
    ticks of it, one frame, in every log so far. */
 #define TURN_WINDOW 60u                      /* ticks, 80 ms */
-static uint32_t last_turn, last_press, last_ctrl_logged;
-static uint8_t turn_seen, press_seen;
+static uint32_t last_turn, last_press, last_pad, last_ctrl_logged;
+static uint8_t turn_seen, press_seen, pad_seen;
 static int16_t ctrl_logged = -1;
 
 static int just_after(uint32_t then, int seen, uint32_t now)
 {
     return seen && now - then <= TURN_WINDOW;
+}
+
+/* The page showing, by the last page built. */
+static int page_now = 84;
+
+/* Screens where the pads play their samples, as they do on the main
+   screen, and choose nothing: START/END, CHOP and PITCH/SPEED select the
+   sample to edit by playing it. A pad pressed there is heard, not said,
+   and nor is what it changes. The screens that ask for a pad, recording's,
+   delete, copy, export, import, still name it. */
+static int pads_play(void)
+{
+    return page_now == 84 || page_now == 83 || page_now == 88 || page_now == 90;
 }
 
 /* The draw log: every change of text or background in full; at the end a
@@ -1183,6 +1195,11 @@ static int take(const struct draw *d)
         if (d->x == 5) {
             last_press = d->tick;
             press_seen = 1;
+            /* Keys 0 to 15 are the pads, 1 to 16. */
+            if (d->y >= 0 && d->y < 16) {
+                last_pad = d->tick;
+                pad_seen = 1;
+            }
         }
         if (d->x == 7) {
             last_turn = d->tick;
@@ -1307,6 +1324,7 @@ static int take(const struct draw *d)
         int turned = just_after(last_turn, turn_seen, d->tick);
 
         it->prompted = (uint8_t)(turned || just_after(last_press, press_seen, d->tick));
+        it->by_pad = (uint8_t)(pads_play() && just_after(last_pad, pad_seen, d->tick));
         /* Text that changes with nothing just pressed or turned changes on
            its own, as a meter, a clock or the sequencer's bar does, and is
            never taken for a value turned until the screen changes, however
@@ -2317,6 +2335,10 @@ static void same_screen(struct item **order)
         const struct item *l;
         if (!it->changed || !is_lit(it))
             continue;
+        if (it->by_pad) {
+            it->changed = 0;
+            continue;
+        }
         /* A value turned on the selected row says the value alone. */
         if (it->changed == 1 && (l = row_label(it)) != NULL && l->row_sel) {
             if (say3(it->text, NULL, NULL))
@@ -2353,6 +2375,10 @@ static void same_screen(struct item **order)
            would otherwise have the tempo said once they stopped. */
         if (main_surf != 0 && it->surf == main_surf && !is_pad_field(it) && !is_status(it)
             && !is_popup(it)) {
+            it->changed = 0;
+            continue;
+        }
+        if (it->by_pad) {
             it->changed = 0;
             continue;
         }
@@ -2614,6 +2640,13 @@ int screen_poll(char *phrases, size_t cap, int *count)
         page_arrived = page_pending;
         page_pending = 0;
         new_screen(order);
+        /* A screen that appears because a pad was played says nothing: the
+           first the reader sees after starting is the main screen redrawn
+           for a pad hit, and a pad on PITCH/SPEED redraws its strip. */
+        if (!page_arrived && pads_play() && pad_seen && first_pending - last_pad <= TURN_WINDOW) {
+            b_used = 0;
+            b_count = 0;
+        }
         for (i = 0; i < ITEMS; i++)
             items[i].changed = items[i].own = 0;
     } else {

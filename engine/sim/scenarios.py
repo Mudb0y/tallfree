@@ -502,8 +502,13 @@ def padset():
           f'1000 s0 11 3 _{NAME}SPEED', f'1000 s0 4 33 _{LOW}BPM:90.00', f'1000 s0 0 18 _{MID}100.0%',
           f'1000 s0 55 3 _{NAME}PITCH', f'1000 s0 55 33 _{LOW}VINYL', f'1000 s0 52 18 _{MID}0.00',
           '1000 s2 101 46 !=80145629:MANU', '1000 s2 101 55 _=8014572B:90.00',
-          '1000 s2 7 55 _=80145351:   D-1', '1000 s2 44 55 _=800EE779:Vel',
-          '3000 VALUE']
+          '1000 s2 7 55 _=80145351:   D-1', '1000 s2 44 55 _=800EE779:Vel']
+    # A pad plays the next sample, and its strip and knobs redraw for it,
+    # none of it said.
+    d += ['3000 PAD 2', '3030 s2 CLEAR', '3030 s2 101 46 !=80145629:MANU',
+          '3030 s2 101 55 _=8014572B:120.00', '3030 s2 7 55 _=80145351:   D-2',
+          '3030 s2 44 55 _=800EE779:Vel', f'3030 s0 0 18 _{MID}110.0%', f'3030 s0 96 18 _{MID} 90',
+          '5000 VALUE']
     write('padset', d, ['D 1', 'PITCH/SPEED | BPM SET | manual | D 1 | 90.00'])
 
 # Sample edit, page 90, as runs/58 drew it: the knobs' legends along the
@@ -529,7 +534,10 @@ def sampedit():
     for k, z in enumerate(['2x', '3x']):
         t = 5000 + 400 * k
         d += [f'{t} KNOB 0 1', f'{t} s1 4 53 !=801078A9:ENC:ZOOM({z})']
-    d += ['7000 KEY DOWN 19', '7000 s1 76 53 _=80107CF5:M:[E]', '9000 VALUE']
+    d += ['7000 KEY DOWN 19', '7000 s1 76 53 _=80107CF5:M:[E]']
+    # Pads choose the sample to edit by playing it, and are not said.
+    d += ['8000 PAD 2', '8030 s1 58 53 _=80107C83:D-2', '8600 PAD 5',
+          '8630 s1 58 53 _=80107C83:D-5', '10000 VALUE']
     write('sampedit', d, ['D 1', 'START/END | D 1', 'encoder:ZOOM(2x)', 'encoder:ZOOM(3x)',
                           'mark:[end]'])
 
@@ -600,7 +608,7 @@ def fxreturn():
         t = 3000 + 53 * k
         d += [f'{t} CTRL 2 {60 + 3 * k}', f'{t} s0 FILL 41 18 80 30', f'{t} s0 54 18 _{VAL}{v}']
     d += ['6000 s0 FILL 0 0 127 63'] + main_screen(6000, 0, 'A-13', big='9 7 ')
-    d += ['8000 KEY DOWN 0e', '8000 s0 34 2 !=80149DD5:B-13']
+    d += ['8000 KEY DOWN 26', '8000 s0 34 2 !=80149DD5:B-13']
     # CTRL 1 touched again, as runs/59 drew it: the display drawn back over
     # the main screen without wiping it, and then the value moving.
     d += ['10000 CTRL 1 70'] + fx(10000, ' 58')[6:]
@@ -683,6 +691,16 @@ def fxbutton():
           '1110 s0 76 47 _=800EE779:Scatter', '3000 VALUE']
     write('fxbutton', d, ['A 13', 'Scatter'])
 
+# Powering on: the reader starts knowing nothing, and the first it sees is
+# the main screen redrawn for a pad hit, which says nothing; then a bank
+# key, which says the bank and pad; then a pad again, nothing.
+def poweron():
+    d = ['0 KEY DOWN 0c'] + main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 26', '2000 s0 34 2 !=80149DD5:B-13',
+          '3000 KEY DOWN 0d'] + pad_hit(3000, 0, 'B-14', 'DRY', '- - - ')
+    d += ['5000 VALUE']
+    write('poweron', d, ['B 13'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -712,3 +730,4 @@ export2()
 fxgrid()
 copy()
 fxbutton()
+poweron()
