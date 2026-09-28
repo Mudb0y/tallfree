@@ -58,6 +58,11 @@ volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
    operations pages, each with its mode at 0x1A90. */
 volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
 volatile int32_t sim_bank;
+/* Each pad's playback settings, 0xAC bytes a pad from 0x82E2CD08, and the
+   current pad in its bank. */
+volatile uint32_t sim_padstore[160 * 0xAC / 4 + 16];
+volatile int32_t sim_padnow;
+static int sim_shift;
 static uint32_t page_object[0x1AA0 / 4];
 static int page_now = 84;
 #define PAGE_MODE (*(int32_t *)((char *)page_object + 0x1A90))
@@ -88,6 +93,41 @@ static int sim_page_factory(void *request)
         return 0;
     if (*m >= 5 && *m <= 7)
         page_saw_keys++;
+    if ((*m == 5 || *m == 6) && m[1] == 0x2A)
+        sim_shift = *m == 5;
+    /* The playback buttons as FUN_800C9788 and FUN_801339C8 set the
+       current pad: BPM SYNC, GATE, REVERSE flip; LOOP turns on, with SHIFT
+       the ping pong loop, and off. */
+    if (*m == 5 && m[1] >= 0x1D && m[1] <= 0x20) {
+        uint8_t *r = (uint8_t *)sim_padstore + (sim_bank * 16 + sim_padnow) * 0xAC;
+        uint32_t *gate = (uint32_t *)(r + 0xE0), *loop = (uint32_t *)(r + 0xE4);
+        uint32_t *sync = (uint32_t *)(r + 0xF0), *flags = (uint32_t *)(r + 0x10C);
+        uint32_t v, mode;
+        switch (m[1]) {
+        case 0x1D:
+            *sync = !*sync;
+            break;
+        case 0x1E:
+            *gate = !*gate;
+            break;
+        case 0x1F:
+            v = (*flags & 0xFF) | (*loop << 2);
+            mode = (v & 0xFF) >> 1;
+            if (mode == 3)
+                v = *flags & 1;
+            else if (mode == 2)
+                v = (*flags & 1) | (uint32_t)sim_shift << 1 | (uint32_t)sim_shift << 2;
+            else if (mode == 0)
+                v = (*flags & 1) + (sim_shift ? 6 : 4);
+            *loop = v >> 2;
+            *flags = v & 3;
+            break;
+        case 0x20:
+            if (!sim_shift)
+                *flags ^= 1;
+            break;
+        }
+    }
     if (*m == 1) {
         sim_export_page = page_now == 85 ? (uint32_t)(uintptr_t)page_object : 0;
         sim_padops_page = page_now == 67 ? (uint32_t)(uintptr_t)page_object : 0;
@@ -448,9 +488,11 @@ static void fire(int i)
         break;
     }
     case E_PAD: {
-        /* The key, then the pad, as the unit sends them. */
+        /* The key, then the pad, as the unit sends them; the pad becomes
+           the current one. */
         int16_t key[3] = { 5, (int16_t)(ev[i].x - 1), 0 };
         int16_t pad[3] = { 16, (int16_t)(ev[i].x - 1), 100 };
+        sim_padnow = ev[i].x - 1;
         ((int (*)(void *))sim_page_table[page_now])(key);
         ((int (*)(void *))sim_page_table[page_now])(pad);
         break;

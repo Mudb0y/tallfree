@@ -701,6 +701,26 @@ def poweron():
     d += ['5000 VALUE']
     write('poweron', d, ['B'])
 
+# The playback buttons on the top screen, keys 0x1D to 0x20, each saying
+# its name and what it now is for the current pad, as the firmware's own
+# BANK A GATE ON does: GATE on and off, LOOP on and off, SHIFT and LOOP the
+# ping pong loop, REVERSE, BPM SYNC; SHIFT and GATE, the whole bank, says
+# only the firmware's own message; a pad played, then GATE for it.
+def buttons():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAD 3']
+    for t, key in [(2000, '1e'), (3000, '1e'), (4000, '1f'), (5000, '1f')]:
+        d += [f'{t} KEY DOWN {key}', f'{t + 100} KEY UP {key}']
+    d += ['6000 KEY DOWN 2a', '6050 KEY DOWN 1f', '6100 KEY UP 1f', '6150 KEY UP 2a',
+          '7000 KEY DOWN 1f', '7100 KEY UP 1f', '8000 KEY DOWN 20', '8100 KEY UP 20',
+          '9000 KEY DOWN 1d', '9100 KEY UP 1d',
+          '10000 KEY DOWN 2a', '10050 KEY DOWN 1e', '10080 s1 9 4 ~=8006BECD:BANK A GATE ON ',
+          '10100 KEY UP 1e', '10150 KEY UP 2a',
+          '14000 PAD 5', '14500 KEY DOWN 1e', '14600 KEY UP 1e', '16000 VALUE']
+    write('buttons', d, ['top screen', 'GATE ON', 'GATE OFF', 'LOOP ON', 'LOOP OFF',
+                         'ping pong loop ON', 'LOOP OFF', 'REVERSE ON', 'BPM SYNC ON',
+                         'BANK A GATE ON', 'GATE ON'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -731,3 +751,4 @@ fxgrid()
 copy()
 fxbutton()
 poweron()
+buttons()

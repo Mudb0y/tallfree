@@ -84,6 +84,13 @@ static const uint32_t vt_base[] = {
    67, at 0x80CFD490; each keeps its mode at 0x1A90. */
 #define PICK_STORE      0x82E01144u
 #define BANK_NOW        (*(volatile int32_t *)0x82E2CD1Cu)
+/* Each pad's playback settings, a record of 0xAC bytes a pad over all ten
+   banks from 0x82E2CD08, as FUN_800DC6B8 reads them: GATE at 0xE0 (its
+   parameter 0x6A), LOOP at 0xE4 (0x6B), BPM SYNC at 0xF0 (0x6E), and at
+   0x10C (0x75) REVERSE in bit 0 and the ping pong loop in bit 1. The
+   current pad in its bank, 0 to 15, is at 0x82E2CD20. */
+#define PAD_STORE       0x82E2CD08u
+#define PAD_NOW         (*(volatile int32_t *)0x82E2CD20u)
 #define EXPORT_PAGE     (*(volatile uint32_t *)0x80CFD4E4u)
 #define PADOPS_PAGE     (*(volatile uint32_t *)0x80CFD490u)
 static const uint32_t icon_slots[] = {
@@ -112,9 +119,13 @@ void sim_batch(const char *phrases, int count);
 extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
 extern volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
 extern volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
+extern volatile uint32_t sim_padstore[];
+extern volatile int32_t sim_padnow;
 extern volatile int32_t sim_bank;
 #define PICK_STORE      ((uint32_t)(uintptr_t)sim_store)
 #define BANK_NOW        sim_bank
+#define PAD_STORE       ((uint32_t)(uintptr_t)sim_padstore)
+#define PAD_NOW         sim_padnow
 #define EXPORT_PAGE     sim_export_page
 #define PADOPS_PAGE     sim_padops_page
 void sim_draw_icon(void);
@@ -614,6 +625,23 @@ static int32_t pick_state(int kind, int index)
     return 0;
 }
 
+/* The playback buttons, BPM SYNC to REVERSE, keys 0x1D to 0x20, as
+   FUN_800C9788 handles them, and a pad's settings for them, one bit each. */
+#define KEY_BPM_SYNC 0x1D
+#define KEY_REVERSE  0x20
+enum { SET_GATE = 1, SET_LOOP = 2, SET_SYNC = 4, SET_REVERSE = 8, SET_PINGPONG = 16 };
+
+static int32_t pad_settings(int index)
+{
+    uint32_t r = PAD_STORE + (uint32_t)index * 0xACu;
+    uint32_t flags = *(volatile uint32_t *)(r + 0x10Cu);
+
+    return (*(volatile uint32_t *)(r + 0xE0u) ? SET_GATE : 0)
+        | (*(volatile uint32_t *)(r + 0xE4u) ? SET_LOOP : 0)
+        | (*(volatile uint32_t *)(r + 0xF0u) ? SET_SYNC : 0)
+        | (flags & 1u ? SET_REVERSE : 0) | (flags & 2u ? SET_PINGPONG : 0);
+}
+
 __attribute__((used)) static int page_record(uint32_t page, const int16_t *message)
 {
     struct draw d;
@@ -664,6 +692,18 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
     if ((type >= 5 && type <= 7) || type == 9) {
         d.y = message[1];
         d.x1 = message[2];
+    }
+    /* A playback button goes with the current pad's settings before the
+       page sees it. With SHIFT, BPM SYNC and GATE set the whole bank and
+       say so themselves, BANK A GATE ON, and REVERSE sets the pad mute
+       mode; SHIFT and LOOP is the ping pong loop. */
+    if (type == 5 && d.y >= KEY_BPM_SYNC && d.y <= KEY_REVERSE && (!shift_down || d.y == 0x1F)) {
+        int32_t bank = BANK_NOW, pad = PAD_NOW;
+        if (bank >= 0 && bank <= 9 && pad >= 0 && pad <= 15) {
+            d.y1 = 1;
+            d.x1 = (int16_t)(bank * 16 + pad);
+            d.ink = pad_settings(d.x1);
+        }
     }
     push(&d);
     return 0;
@@ -726,6 +766,10 @@ static int menu_n;
    page has made its choice, and when the last was pressed. */
 static struct { int16_t kind, index; int32_t before; } picks[8];
 static int npicks;
+/* Playback buttons pressed, waiting to be said once the page has set the
+   pad. */
+static struct { int16_t key, index; int32_t before; } presses[8];
+static int npresses;
 static uint32_t last_pick;
 static uint8_t pick_seen;
 /* Whether the page showing has just been built; the bank the firmware last
@@ -1197,6 +1241,16 @@ static int take(const struct draw *d)
             if (d->y >= 0 && d->y < 16) {
                 last_pad = d->tick;
                 pad_seen = 1;
+            }
+            if (d->y1 == 1 && npresses < (int)(sizeof presses / sizeof presses[0])) {
+                presses[npresses].key = d->y;
+                presses[npresses].index = d->x1;
+                presses[npresses].before = d->ink;
+                npresses++;
+                log_line("%lu key down 0x%02x, page %ld, pad %d set %ld\n",
+                         (unsigned long)d->tick, (unsigned)(uint16_t)d->y, (long)d->mark, d->x1,
+                         (long)d->ink);
+                return 1;
             }
         }
         if (d->x == 7) {
@@ -2308,6 +2362,33 @@ static void say_picks(void)
     npicks = 0;
 }
 
+/* The playback buttons pressed, each as its name and what it now is, in the
+   words of the firmware's own BANK A GATE ON, for the pad it set; a press
+   that set nothing says nothing. SHIFT and LOOP's forwards and backwards
+   loop is the ping pong loop. */
+static void say_presses(void)
+{
+    static const char *const names[] = { "BPM SYNC", "GATE", "LOOP", "REVERSE" };
+    static const int32_t bits[] = { SET_SYNC, SET_GATE, SET_LOOP, SET_REVERSE };
+    char t[32];
+    int i;
+
+    for (i = 0; i < npresses; i++) {
+        int k = presses[i].key - KEY_BPM_SYNC;
+        int32_t now = pad_settings(presses[i].index), before = presses[i].before;
+        int32_t mask = k == 2 ? SET_LOOP | SET_PINGPONG : bits[k];
+
+        if ((now & mask) == (before & mask))
+            continue;
+        if (k == 2 && (now & SET_LOOP) && (now & SET_PINGPONG))
+            snprintf(t, sizeof t, "ping pong loop ON");
+        else
+            snprintf(t, sizeof t, "%s %s", names[k], now & bits[k] ? "ON" : "OFF");
+        say3(t, NULL, NULL);
+    }
+    npresses = 0;
+}
+
 /* What to say about a change on the same screen: a message, whenever it is
    drawn; a pop-up that has just appeared, whole; the newly focused item;
    values that changed. On the main screen a pad hit says nothing, and nor
@@ -2600,6 +2681,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < ITEMS; i++)
             items[i].changed = items[i].fresh = 0;
         npicks = 0;
+        npresses = 0;
         bank_moved = 0;
         pending = 0;
         page_pending = 0;
@@ -2644,6 +2726,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
     }
     bank_moved = 0;
     say_picks();
+    say_presses();
     if (screen_mode == SCREEN_ALL) {
         for (i = 0; i < nburst; i++)
             say(&items[burst[i]]);
