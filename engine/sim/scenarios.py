@@ -352,9 +352,9 @@ def bpm():
         d += screen(t, False, '118.50')
     d += ['17000 PAGE 84'] + main_screen(17000, 1, 'A-13')
     d += ['19000 VALUE']
-    write('bpm', d, ['top screen', 'control 1:TEMPO select | PROJECT | 120.00', '121.00',
+    write('bpm', d, ['top screen', 'control 1: TEMPO select | PROJECT | 120.00', '121.00',
                      'BANK A | 118.50', 'PROJECT | 121.00', '118.50', 'BANK A | 118.50',
-                     'control 1:TEMPO select | BANK A | 118.50', 'top screen'])
+                     'control 1: TEMPO select | BANK A | 118.50', 'top screen'])
 
 # The SYSTEM page's tabs as the unit drew them (runs/52): the strip shows
 # four tabs and scrolls, so the page count cannot name a tab by position;
@@ -538,8 +538,8 @@ def sampedit():
     # Pads choose the sample to edit by playing it, and are not said.
     d += ['8000 PAD 2', '8030 s1 58 53 _=80107C83:D-2', '8600 PAD 5',
           '8630 s1 58 53 _=80107C83:D-5', '10000 VALUE']
-    write('sampedit', d, ['top screen', 'START/END | D 1', 'encoder:ZOOM(2x)', 'encoder:ZOOM(3x)',
-                          'mark:[end]'])
+    write('sampedit', d, ['top screen', 'START/END | D 1', 'VALUE: ZOOM(2x)', 'VALUE: ZOOM(3x)',
+                          'mark: [end]'])
 
 # Auto mark, page 88, as runs/58 drew it: the knobs' legends, the pad, MENU
 # and the zoom, the marks along the waveform, the selected one on white.

@@ -1,5 +1,5 @@
 top screen
 START/END | D 1
-encoder:ZOOM(2x)
-encoder:ZOOM(3x)
-mark:[end]
+VALUE: ZOOM(2x)
+VALUE: ZOOM(3x)
+mark: [end]

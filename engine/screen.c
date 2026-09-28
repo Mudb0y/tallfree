@@ -1513,7 +1513,7 @@ static const struct { const char *from, *to; } spelt_phrases[] = {
     { "VinylSim", "Vinyl Sim" },
 };
 static const struct { const char *from, *to; } spelt_words[] = {
-    { "ENC", "encoder" }, { "EXE", "execute" }, { "SEL", "select" }, { "MOV", "move" },
+    { "ENC", "VALUE" }, { "EXE", "execute" }, { "SEL", "select" }, { "MOV", "move" },
     { "CHG", "change" }, { "FLD", "folder" }, { "PTN", "pattern" }, { "SMPL", "sample" },
     { "PROJ", "project" }, { "TOT", "total" }, { "DEST", "destination" },
     { "CURR", "current" }, { "INT", "internal" }, { "EXT", "external" },
@@ -1661,6 +1661,23 @@ static size_t spell_out(char *out, size_t cap, const char *in)
 
 #define WIDE 160
 
+/* A colon between two things, "VALUE:ZOOM(2x)", is read aloud as "colon";
+   a space after it makes OpenEVV pause instead. Not between two digits,
+   where it may be a time. */
+static size_t space_colons(char *s, size_t n, size_t cap)
+{
+    size_t i;
+
+    for (i = 1; i + 1 < n && n + 1 < cap; i++)
+        if (s[i] == ':' && s[i + 1] != ' ' && s[i - 1] != ' '
+            && !(is_digit(s[i - 1]) && is_digit(s[i + 1]))) {
+            memmove(s + i + 2, s + i + 1, n - i);
+            s[i + 1] = ' ';
+            n++;
+        }
+    return n;
+}
+
 /* Adds a phrase made of up to three texts. Answers 1 if added, 2 if the
    batch already says it, 0 if it says nothing or there is no room. */
 static int say3(const char *a, const char *b, const char *c)
@@ -1680,6 +1697,7 @@ static int say3(const char *a, const char *b, const char *c)
         k = spell_out(wide, sizeof wide, part);
         if (k == 0)
             continue;
+        k = space_colons(wide, k, sizeof wide);
         if (n > 0)
             buf[n++] = ' ';
         memcpy(buf + n, wide, k + 1);
