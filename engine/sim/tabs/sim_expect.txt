@@ -2,8 +2,8 @@ A 13
 GENERAL | Edit Knob Mode Direct
 GAIN | Attenuator OFF
 Noise Gate OFF
-Line Out 0dB
-Phones Out 0dB
-USB Out 0dB
+Line Out 0 decibels
+Phones Out 0 decibels
+USB Out 0 decibels
 Anti Feedback OFF
 VERSION | Version: 5.52

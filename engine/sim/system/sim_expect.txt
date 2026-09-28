@@ -1,9 +1,9 @@
 A 13
 UTILITY MENU | SYSTEM
 PAD SET
-EFX SET
+effects SET
 GENERAL | Edit Knob Mode Direct
-EFX Knob Mode Direct
+effects Knob Mode Direct
 Load Project Last
 CLICK | Output Assign ON
 OFF

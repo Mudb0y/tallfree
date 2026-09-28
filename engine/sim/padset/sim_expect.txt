@@ -1,0 +1,2 @@
+D 1
+SPEED 100.0% | PITCH 0.00 | VOLUME 127 | BPM:90.00 | VINYL | BPM SET | manual | D 1 | velocity | 90.00

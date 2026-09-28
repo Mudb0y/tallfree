@@ -2,8 +2,8 @@ A 13
 Slicer
 Equalizer
 Crusher
-Hyper-Reso
-Chromatic PS
+hyper resonator
+chromatic pitch shifter
 Tremolo/Pan
 Slicer
 Crusher

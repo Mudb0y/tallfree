@@ -167,7 +167,7 @@ static const uint32_t vt_base[] = {
    one level up, from what the unit's logs recorded. Anything else is judged
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
-       ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT };
+       ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -175,6 +175,7 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80146135u, ROLE_TITLE },            /* an effect's name, over its grid or page */
     { 0x80146545u, ROLE_EFFECT },           /* an effect's values, FUN_80146260, the
                                                effect page's alone */
+    { 0x801463F7u, ROLE_FXLABEL },          /* and their names, CUTOFF, FEEDBACK */
     { 0x80195269u, ROLE_TITLE },            /* 16 VELOCITY, PAD LINK GROUPS, MUTE GROUP */
     { 0x8013FE3Du, ROLE_IGNORE },           /* a second copy of those, a pixel over */
     { 0x8006BECDu, ROLE_TOAST },            /* STOP, RECORDING, METRO MODE ON */
@@ -189,8 +190,19 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x8015604Bu, ROLE_PICKS },            /* SELECT PAD, TOT SELECTED PADS:1 */
     { 0x80151927u, ROLE_TITLE },            /* the export page's heading over PLEASE
                                                SELECT SMPL, FUN_801518B0 */
-    { 0x8016BAB7u, ROLE_IGNORE },           /* the pattern settings' hint, SHIFT:OTHER */
-    { 0x8016B061u, ROLE_UNLIT },            /* their quantise grid, GRID 16, on white */
+    { 0x8016B061u, ROLE_UNLIT },            /* the pattern settings' quantise grid,
+                                               GRID 16, on white */
+    { 0x80145629u, ROLE_UNLIT },            /* the pad settings' tempo mode, MANU */
+    { 0x800F769Fu, ROLE_HINT },             /* and VALUE under BPM SET, the knob for it */
+    /* The markers along a waveform, which he places by ear: sample edit's
+       start, end, loop and cursor, and auto mark's marks, the selected one
+       on white. */
+    { 0x8014BBB3u, ROLE_IGNORE },           /* S */
+    { 0x8014BCA5u, ROLE_IGNORE },           /* E */
+    { 0x8014BC33u, ROLE_IGNORE },           /* L */
+    { 0x8014B8A9u, ROLE_IGNORE },           /* C */
+    { 0x8014B237u, ROLE_IGNORE },           /* M, selected */
+    { 0x8014B4E1u, ROLE_IGNORE },           /* M */
     /* An outline that marks the chosen one of several strings. */
     { 0x80105153u, ROLE_CHOICE },           /* the BPM screen's, round PROJECT or the bank */
 };
@@ -678,7 +690,8 @@ struct item {
     uint32_t surf, lr, site, first_drawn, last_drawn, last_change, erased, draws, seq, drawn_seq;
     int32_t  mark, ink;
     int16_t  x, y;
-    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed, own;
+    uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed, own,
+             prompted;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -696,6 +709,10 @@ static struct { int16_t kind, index; int32_t before; } picks[8];
 static int npicks;
 static uint32_t last_pick;
 static uint8_t pick_seen;
+/* Whether the last batch had the effect display showing, and the bank and
+   pad the main screen showed under it. */
+static int effect_shown;
+static char effect_pad[ITEM_TEXT];
 
 void screen_mute(int mute)
 {
@@ -733,6 +750,10 @@ static int nframe_sites;
 #define WHITE 0xFFFFFF
 #define STEADY 900u                          /* ticks, 1.2 s */
 #define POPUP_LIFE 2250u                     /* ticks, 3 s */
+/* Text erased and drawn back within a frame is unchanged: the auto mark
+   page draws over its menu every frame and the menu is drawn again the
+   next. */
+#define ERASED_LIFE 60u                      /* ticks, 80 ms */
 
 /* When a knob, VALUE or CTRL, last moved, and a key was last pressed, as
    the pages were sent them. A page redraws what a knob changed within 40
@@ -875,6 +896,14 @@ static int live(const struct item *it)
    value moves when its text changes length, unless the old one was drawn
    in this same frame and is simply its neighbour. Drawn by other code, it
    is new text in the old one's place, as a new screen's is. */
+/* Text erased more than a frame before is gone, whether or not a batch has
+   yet taken it off the model: a dialog cancelled and shown again, on a
+   screen where nothing else changed between, is drawn afresh. */
+static int stale(const struct item *it, uint32_t tick)
+{
+    return it->erased && tick - it->erased > ERASED_LIFE;
+}
+
 static struct item *find(const struct draw *d)
 {
     struct item *free_one = NULL, *oldest = NULL;
@@ -882,13 +911,16 @@ static struct item *find(const struct draw *d)
 
     for (i = 0; i < ITEMS; i++) {
         struct item *it = &items[i];
-        if (it->used && it->surf == d->surf && it->x == d->x && it->y == d->y)
-            return it;
+        if (it->used && it->surf == d->surf && it->x == d->x && it->y == d->y) {
+            if (!stale(it, d->tick))
+                return it;
+            it->used = 0;
+        }
     }
     for (i = 0; i < ITEMS; i++) {
         struct item *it = &items[i];
         if (it->used && it->surf == d->surf && it->y == d->y && it->site == d->site
-            && d->tick - it->last_drawn > 2u && overlaps(it, d)) {
+            && d->tick - it->last_drawn > 2u && overlaps(it, d) && !stale(it, d->tick)) {
             if (free_one == NULL) {
                 free_one = it;
                 free_one->x = d->x;
@@ -941,7 +973,8 @@ static int is_status(const struct item *it)
    selected icon, a selected settings row, or a choice in its outline. */
 static int is_lit(const struct item *it)
 {
-    return (it->mark == WHITE && it->y >= 10 && !it->title && it->role != ROLE_UNLIT)
+    return (it->mark == WHITE && it->y >= 10 && !it->title && it->role != ROLE_UNLIT
+            && it->role != ROLE_HINT)
         || it->icon_sel || it->row_sel || it->framed;
 }
 
@@ -971,6 +1004,8 @@ static int padlike(const char *t)
 {
     int digits = 0;
 
+    while (*t == ' ')
+        t++;
     if (t[0] < 'A' || t[0] > 'J')
         return 0;
     t += t[1] == '-' || t[1] == ' ' ? 2 : 1;
@@ -1003,6 +1038,50 @@ static void erase(uint32_t surf, int x0, int y0, int x1, int y1, int whole, uint
    so fast it waits to be heard until it holds still. A redraw that changes
    nothing is not a change, and nor is text erased and drawn straight back:
    some screens redraw every item continually. */
+/* Text as drawn, without the spaces either side, is WORD. */
+static int reads(const char *t, const char *word)
+{
+    size_t n = strlen(word);
+
+    while (*t == ' ')
+        t++;
+    if (strncmp(t, word, n) != 0)
+        return 0;
+    for (t += n; *t == ' '; t++)
+        ;
+    return *t == 0;
+}
+
+/* What text is by how it reads, where its drawing code has no role. A key's
+   legend: a key's name, a colon and a capitalised action or a bracket,
+   ENTER:EXE, ENC:ZOOM(2x), C2:LOOP, M:[S] for the MARK button, and the MENU
+   box. The power source at the end of the status bar, as FUN_8014A018 draws
+   it, DC, USB, BAT or ??? when unknown, which nobody needs to hear; LOW and
+   LOW!, the batteries running out, are said. */
+static uint8_t role_by_text(const struct draw *d)
+{
+    static const char *const keys[] = {
+        "C1", "C2", "C3", "ENC", "ENT", "ENTER", "EXIT", "SHIFT", "M", "MARK", "ROLL",
+        "PAD", "SUB",
+    };
+    const char *t = d->text;
+    size_t i, n;
+
+    if (d->y <= 5 && (reads(t, "DC") || reads(t, "USB") || reads(t, "BAT") || reads(t, "???")))
+        return ROLE_IGNORE;
+    if (reads(t, "MENU"))
+        return ROLE_HINT;
+    while (*t == ' ')
+        t++;
+    for (i = 0; i < sizeof keys / sizeof keys[0]; i++) {
+        n = strlen(keys[i]);
+        if (strncmp(t, keys[i], n) == 0 && t[n] == ':'
+            && ((t[n + 1] >= 'A' && t[n + 1] <= 'Z') || t[n + 1] == '[' || t[n + 1] == '('))
+            return ROLE_HINT;
+    }
+    return ROLE_NONE;
+}
+
 static int take(const struct draw *d)
 {
     struct item *it;
@@ -1024,7 +1103,7 @@ static int take(const struct draw *d)
         }
         return 0;
     }
-    if (d->kind == EV_PAGE && d->x == 16) {
+    if (d->kind == EV_PAGE && d->x == 16 && d->y1 != PICK_NONE) {
         log_line("%lu pick %d, pad %d, index %d, was %ld, page %ld\n", (unsigned long)d->tick,
                  d->y1, d->y, d->x1, (long)d->ink, (long)d->mark);
         if (npicks < (int)(sizeof picks / sizeof picks[0])) {
@@ -1160,6 +1239,8 @@ static int take(const struct draw *d)
     it->site = d->site;
     it->task = d->task;
     it->role = role_of(d->site);
+    if (it->role == ROLE_NONE)
+        it->role = role_by_text(d);
     it->title = it->role == ROLE_TITLE;
     text_changed = strcmp(it->text, d->text) != 0;
     if (text_changed || it->mark != d->mark || it->ink != d->ink)
@@ -1173,11 +1254,12 @@ static int take(const struct draw *d)
     if (text_changed) {
         int turned = just_after(last_turn, turn_seen, d->tick);
 
+        it->prompted = (uint8_t)(turned || just_after(last_press, press_seen, d->tick));
         /* Text that changes with nothing just pressed or turned changes on
            its own, as a meter, a clock or the sequencer's bar does, and is
            never taken for a value turned until the screen changes, however
            busy the knobs are meanwhile. */
-        if (it->last_change != 0 && !turned && !just_after(last_press, press_seen, d->tick))
+        if (it->last_change != 0 && !it->prompted)
             it->own = 1;
         /* A first change is said at once. One that follows another within
            STEADY neither interrupts nor is said until the item has held still
@@ -1320,11 +1402,177 @@ static int in_batch(const char *text)
     return 0;
 }
 
+/* Roland's abbreviations, said in full, as he approved them on 27 September
+   2026 from every screen logged and every key legend in the firmware: whole
+   words only, capitals as written, and a number stuck to one set apart,
+   "2MEAS" as "2 measures". Everything else is read as Roland writes it.
+   The engine's own dictionary stays off, since SD is not South Dakota. */
+static const struct { const char *from, *to; } spelt_phrases[] = {
+    { "PC Rx", "program change receive" },
+    { "MANU-F", "manual fine" },
+    { "X-FADE", "crossfade" },
+    { "TimeCtrlDly", "time control delay" },
+    { "WrmSaturator", "warm saturator" },
+    { "Chromatic PS", "chromatic pitch shifter" },
+    { "Ring Mod", "ring modulator" },
+    { "Gt Amp Sim", "guitar amp simulator" },
+    { "Hyper-Reso", "hyper resonator" },
+    { "Cassette Sim", "cassette simulator" },
+    { "VinylSim", "vinyl simulator" },
+};
+static const struct { const char *from, *to; } spelt_words[] = {
+    { "ENC", "encoder" }, { "EXE", "execute" }, { "SEL", "select" }, { "MOV", "move" },
+    { "CHG", "change" }, { "FLD", "folder" }, { "PTN", "pattern" }, { "SMPL", "sample" },
+    { "PROJ", "project" }, { "TOT", "total" }, { "DEST", "destination" },
+    { "CURR", "current" }, { "INT", "internal" }, { "EXT", "external" },
+    { "SRC", "source" }, { "DEL", "delete" }, { "QTZ", "quantize" }, { "MANU", "manual" },
+    { "SBS", "skip-back sampling" }, { "SEQ", "sequencer" }, { "VELO", "velocity" },
+    { "Vel", "velocity" }, { "Fix", "fixed" }, { "Retrig", "retrigger" },
+    { "Chrom", "chromatic" }, { "Lin", "linear" }, { "Def", "default" },
+    { "Init", "initialize" }, { "Dtct", "detect" }, { "Rng", "range" },
+    { "Scrn", "screen" }, { "Disp", "display" }, { "Trig", "trigger" },
+    { "Sens", "sensitivity" }, { "METRO", "metronome" }, { "XFADE", "crossfade" },
+    { "EFX", "effects" }, { "FX", "effects" }, { "FLT", "filter" }, { "HPF", "high pass" },
+    { "LPF", "low pass" }, { "BPF", "band pass" }, { "COMP", "compression" },
+    { "FLUT", "flutter" }, { "Mst", "master" }, { "Phn", "phones" }, { "Rx", "receive" },
+    { "SBF", "sideband filter" }, { "msec", "milliseconds" }, { "Hz", "hertz" },
+    { "kHz", "kilohertz" }, { "dB", "decibels" }, { "SEMI", "semitones" },
+};
+/* Before a number: C1 for the CTRL 1 knob, CH1, DECK1. */
+static const struct { const char *from, *to; } spelt_numbered[] = {
+    { "C", "control" }, { "CTR", "control" }, { "CTRL", "control" }, { "CH", "channel" },
+    { "DECK", "deck" },
+};
+
+static int is_digit(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
+static int is_letter(char c)
+{
+    return (c | 0x20) >= 'a' && (c | 0x20) <= 'z';
+}
+
+/* A word in full, by what is around it: M before a colon is the MARK
+   button; (M) and (C) are auto mark's marker and cursor; [S] and [E] the
+   start and end the MARK button sets; TS a time signature before 4/4 and
+   time stretch otherwise; MEAS one measure after a 1. */
+static const char *spelt(const char *w, size_t n, char before, char after, char after2, int one)
+{
+    size_t i;
+
+    if (n == 1) {
+        if (w[0] == 'M' && after == ':')
+            return "mark";
+        if (before == '(' && after == ')')
+            return w[0] == 'M' ? "marker" : w[0] == 'C' ? "cursor" : NULL;
+        if (before == '[' && after == ']')
+            return w[0] == 'S' ? "start" : w[0] == 'E' ? "end" : NULL;
+        return NULL;
+    }
+    if (n == 2 && strncmp(w, "TS", 2) == 0)
+        return after == ':' && is_digit(after2) ? "time signature" : "time stretch";
+    if (n == 4 && strncmp(w, "MEAS", 4) == 0)
+        return one ? "measure" : "measures";
+    for (i = 0; i < sizeof spelt_words / sizeof spelt_words[0]; i++)
+        if (strlen(spelt_words[i].from) == n && strncmp(w, spelt_words[i].from, n) == 0)
+            return spelt_words[i].to;
+    return NULL;
+}
+
+static void put(char *out, size_t cap, size_t *n, const char *s, size_t k)
+{
+    if (*n + k + 1 > cap)
+        k = cap - *n - 1;
+    memcpy(out + *n, s, k);
+    *n += k;
+    out[*n] = 0;
+}
+
+static size_t spell_out(char *out, size_t cap, const char *in)
+{
+    size_t n = 0, i = 0, len = strlen(in), k;
+    int one = 0;
+
+    out[0] = 0;
+    while (i < len && n + 1 < cap) {
+        size_t t0, a, d;
+        const char *f;
+        int matched = 0;
+        char before, after, after2;
+
+        if (i == 0 || !(is_letter(in[i - 1]) || is_digit(in[i - 1])))
+            for (k = 0; k < sizeof spelt_phrases / sizeof spelt_phrases[0]; k++) {
+                size_t m = strlen(spelt_phrases[k].from);
+                if (strncmp(in + i, spelt_phrases[k].from, m) == 0 && !is_letter(in[i + m])
+                    && !is_digit(in[i + m])) {
+                    put(out, cap, &n, spelt_phrases[k].to, strlen(spelt_phrases[k].to));
+                    i += m;
+                    matched = 1;
+                    one = 0;
+                    break;
+                }
+            }
+        if (matched)
+            continue;
+        if (!is_letter(in[i]) && !is_digit(in[i])) {
+            put(out, cap, &n, in + i, 1);
+            i++;
+            continue;
+        }
+        t0 = i;
+        while (i < len && (is_letter(in[i]) || is_digit(in[i])))
+            i++;
+        before = t0 ? in[t0 - 1] : 0;
+        after = in[i];
+        after2 = after ? in[i + 1] : 0;
+        for (a = 0; t0 + a < i && is_letter(in[t0 + a]); a++)
+            ;
+        for (d = 0; t0 + d < i && is_digit(in[t0 + d]); d++)
+            ;
+        f = NULL;
+        if (a == i - t0) {
+            f = spelt(in + t0, a, before, after, after2, one);
+            if (f != NULL)
+                put(out, cap, &n, f, strlen(f));
+        } else if (a > 0) {
+            for (d = a; t0 + d < i && is_digit(in[t0 + d]); d++)
+                ;
+            for (k = 0; d == i - t0 && k < sizeof spelt_numbered / sizeof spelt_numbered[0]; k++)
+                if (strlen(spelt_numbered[k].from) == a
+                    && strncmp(in + t0, spelt_numbered[k].from, a) == 0) {
+                    f = spelt_numbered[k].to;
+                    put(out, cap, &n, f, strlen(f));
+                    put(out, cap, &n, " ", 1);
+                    put(out, cap, &n, in + t0 + a, i - t0 - a);
+                    break;
+                }
+        } else if (d > 0) {
+            for (a = d; t0 + a < i && is_letter(in[t0 + a]); a++)
+                ;
+            if (a == i - t0 && a > d)
+                f = spelt(in + t0 + d, a - d, 0, after, after2, d == 1 && in[t0] == '1');
+            if (f != NULL) {
+                put(out, cap, &n, in + t0, d);
+                put(out, cap, &n, " ", 1);
+                put(out, cap, &n, f, strlen(f));
+            }
+        }
+        if (f == NULL)
+            put(out, cap, &n, in + t0, i - t0);
+        one = i - t0 == 1 && in[t0] == '1';
+    }
+    return n;
+}
+
+#define WIDE 160
+
 /* Adds a phrase made of up to three texts. Answers 1 if added, 2 if the
    batch already says it, 0 if it says nothing or there is no room. */
 static int say3(const char *a, const char *b, const char *c)
 {
-    char buf[3 * ITEM_TEXT], part[ITEM_TEXT];
+    char buf[3 * WIDE], part[ITEM_TEXT], wide[WIDE];
     size_t n = 0;
     const char *src[3] = { a, b, c };
     int i;
@@ -1334,12 +1582,14 @@ static int say3(const char *a, const char *b, const char *c)
         size_t k;
         if (src[i] == NULL)
             continue;
-        k = clean(part, sizeof part, src[i]);
+        if (clean(part, sizeof part, src[i]) == 0)
+            continue;
+        k = spell_out(wide, sizeof wide, part);
         if (k == 0)
             continue;
         if (n > 0)
             buf[n++] = ' ';
-        memcpy(buf + n, part, k + 1);
+        memcpy(buf + n, wide, k + 1);
         n += k;
     }
     if (n == 0)
@@ -1385,15 +1635,22 @@ static int say_focus(const struct item *it)
 static int say_pad(const struct item *it)
 {
     char t[ITEM_TEXT];
-    size_t n = strlen(it->text);
+    const char *p = it->text;
+    size_t n;
 
+    /* The pad field also shows what is not a pad, EXT for EXT SOURCE. */
+    if (!padlike(p))
+        return say(it);
+    while (*p == ' ')
+        p++;
+    n = strlen(p);
     if (n + 2 > sizeof t)
         return 0;
-    if (it->text[1] == '-' || it->text[1] == ' ') {
-        memcpy(t, it->text, n + 1);
+    if (p[1] == '-' || p[1] == ' ') {
+        memcpy(t, p, n + 1);
     } else {
-        t[0] = it->text[0];
-        memcpy(t + 1, it->text, n + 1);
+        t[0] = p[0];
+        memcpy(t + 1, p, n + 1);
         t[1] = ' ';
         n++;
     }
@@ -1448,8 +1705,8 @@ static int horizontally_near(const struct item *a, const struct item *b)
    not the row is selected. */
 static int plain(const struct item *it)
 {
-    return !is_title(it) && !is_status(it) && it->role != ROLE_TABS && !it->icon_sel
-        && !it->framed && !(it->mark == WHITE && it->y >= 10);
+    return !is_title(it) && !is_status(it) && it->role != ROLE_TABS && it->role != ROLE_HINT
+        && !it->icon_sel && !it->framed && !(it->mark == WHITE && it->y >= 10);
 }
 
 /* A value's label is plain text drawn by other code, and drawn since the
@@ -1461,6 +1718,14 @@ static int plain(const struct item *it)
    thirty over 2 Bars. Text drawn by the same code is a neighbour, as a
    grid's cells are, and so is text beside it on the same background, as a
    menu's items are; neither is a label. */
+/* An effect's value is named by the effect page's own names alone: the page
+   is drawn over the main screen, whose big tempo, redrawn every frame on the
+   same surface, sits between FEEDBACK and its value. */
+static int may_name(const struct item *o, const struct item *v)
+{
+    return v->role != ROLE_EFFECT || o->role == ROLE_FXLABEL;
+}
+
 static const struct item *row_label(const struct item *v)
 {
     const struct item *best = NULL;
@@ -1470,7 +1735,7 @@ static const struct item *row_label(const struct item *v)
         const struct item *o = &items[i];
         if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->site == v->site
             || o->mark == v->mark || o->x >= v->x || o->y - v->y > 2 || v->y - o->y > 2
-            || (int32_t)(o->last_drawn - screen_epoch) < 0)
+            || (int32_t)(o->last_drawn - screen_epoch) < 0 || !may_name(o, v))
             continue;
         if (best == NULL || o->x > best->x)
             best = o;
@@ -1508,6 +1773,20 @@ static int column_top(const struct item *o)
     return 1;
 }
 
+/* Nothing that could be named between a heading and the value under it. */
+static int column_clear(const struct item *o, const struct item *v)
+{
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *p = &items[i];
+        if (live(p) && p != o && p != v && p->surf == v->surf && plain(p) && p->y > o->y + 2
+            && p->y < v->y - 2 && horizontally_near(v, p))
+            return 0;
+    }
+    return 1;
+}
+
 /* Two strings centred on one another, at four pixels a character. */
 static int centred(const struct item *a, const struct item *b)
 {
@@ -1526,7 +1805,8 @@ static const struct item *column_label(const struct item *v, int reach, int head
         if (!live(o) || o == v || o->surf != v->surf || !plain(o) || o->site == v->site
             || o->y >= v->y - 2 || v->y - o->y > reach || !horizontally_near(v, o)
             || (int32_t)(o->last_drawn - screen_epoch) < 0 || labels_its_row(o)
-            || (heading && (!column_top(o) || !centred(o, v))))
+            || !may_name(o, v) || !column_top(o)
+            || (heading && (!centred(o, v) || !column_clear(o, v))))
             continue;
         if (best == NULL || o->y > best->y)
             best = o;
@@ -1535,10 +1815,11 @@ static const struct item *column_label(const struct item *v, int reach, int head
 }
 
 /* Above in its column, the nearest text within twenty pixels, else text
-   heading its column within thirty-two and centred over it: a value two
-   rows down names nothing below it, as the effect page's does not name the
-   effect, and nor does a prompt name a hint under it, as PLEASE SELECT SMPL
-   does not name ENTER:EX. */
+   within thirty-two centred over it, and either way text heading its
+   column: a value names nothing below it, as the effect page's does not
+   name the effect nor the pad settings' SPEED 100.0% its BPM:90.00, and nor
+   does a prompt name what sits far under it, as PLEASE SELECT SMPL does not
+   name ENTER:EXE. */
 static const struct item *label_of(const struct item *v)
 {
     const struct item *best = row_label(v);
@@ -1637,6 +1918,7 @@ static int tab_known(void)
 static int want_fresh(const struct item *it)
 {
     return (!is_status(it) || it->role == ROLE_PICKS) && !is_title(it) && it->role != ROLE_TABS
+        && it->role != ROLE_HINT
         && (it->fresh || it->changed == 1) && !(tab_known() && page_number(it));
 }
 
@@ -1718,6 +2000,19 @@ static const struct item *current_tab(void)
     return page >= 1 && page <= ntabs ? tabs[page - 1] : NULL;
 }
 
+/* Everything on a surface drawn since the last batch: a dialog shown again
+   on the layer it used before finds its buttons there from the last time,
+   drawn again now. */
+static int layer_redrawn(uint32_t surf)
+{
+    int i;
+
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].surf == surf && !drawn_now(&items[i]))
+            return 0;
+    return 1;
+}
+
 /* A dialog that has just opened: a surface newly in use carrying pop-up
    text, not a title, and a focused button, as "Format SD Card, Are you
    sure?" with CANCEL selected. A page titled on a pop-up layer, as PAD LINK
@@ -1729,7 +2024,7 @@ static uint32_t new_dialog(void)
     for (i = 0; i < ITEMS; i++) {
         const struct item *it = &items[i];
         if (!live(it) || it->mark != -1 || it->role != ROLE_NONE || !it->fresh
-            || !layer_is_new(it->surf))
+            || !layer_redrawn(it->surf))
             continue;
         for (k = 0; k < ITEMS; k++)
             if (live(&items[k]) && items[k].surf == it->surf && is_lit(&items[k]))
@@ -1759,7 +2054,7 @@ static char last_tab[ITEM_TEXT];
 static void new_screen(struct item **order)
 {
     const struct item *tab;
-    int n, i, focus, popups;
+    int n, i, focus, popups, effect = 0;
 
     last_label = NULL;
     if ((dialog_surf = new_dialog()) != 0) {
@@ -1789,11 +2084,21 @@ static void new_screen(struct item **order)
     for (i = 0; i < focus; i++)
         say_focus(order[i]);
     /* Only a bank and pad just drawn: the main screen's stay on its layer
-       under the screens opened over it. */
-    if (focus == 0)
+       under the screens opened over it. The effect display is drawn over
+       the main screen, which redraws them in the same frames: arriving there
+       reads the effect. Back from it, as it comes and goes with every touch
+       of an effect's knob, the same bank and pad say nothing. */
+    for (i = 0; i < ITEMS && !effect; i++)
+        effect = live(&items[i]) && items[i].role == ROLE_EFFECT;
+    if (focus == 0 && !effect)
         for (i = 0; i < ITEMS; i++)
-            if (live(&items[i]) && is_pad_field(&items[i]) && drawn_now(&items[i]))
+            if (live(&items[i]) && is_pad_field(&items[i]) && drawn_now(&items[i])) {
+                if (effect_shown && strcmp(items[i].text, effect_pad) == 0) {
+                    focus++;
+                    continue;
+                }
                 focus += say_pad(&items[i]) == 1;
+            }
     popups = in_order(order, ITEMS, want_new_popup);
     for (i = 0; i < popups; i++)
         say(order[i]);
@@ -1949,13 +2254,25 @@ static void same_screen(struct item **order)
         }
         if (it->rapid > 0 && b_now - it->last_change < STEADY)
             continue;
+        /* A key's legend is heard when what you just did changed it, as
+           turning VALUE changes the zoom, not as a screen sets it arriving. */
+        if (it->role == ROLE_HINT) {
+            if (!it->fresh && it->prompted && (int32_t)(it->last_change - screen_epoch) > 75)
+                say(it);
+            it->changed = 0;
+            continue;
+        }
         if (is_pad_field(it)) {
             if (it->prev0 != it->text[0])
                 say_pad(it);
         } else if (padlike(it->text) && is_status(it)) {
             say_pad(it);
         } else if (it->fresh) {
-            /* appeared, not changed */
+            /* Text that appears in answer to a key or a knob is said, as
+               PLEASE SELECT SMPL is once SAMPLE is chosen; text a screen
+               draws a moment after arriving, a meter's scale, is not. */
+            if (it->prompted)
+                say_value(it);
         } else if (it->role == ROLE_MAIN || is_status(it)) {
             if (!(it->role == ROLE_MAIN && pad_hit) && b_now - last_popup_change >= 750u)
                 say(it);
@@ -2120,14 +2437,15 @@ int screen_poll(char *phrases, size_t cap, int *count)
             due = 1;
     if (!due)
         return 0;
-    /* What was erased and not drawn again is gone, and so is a pop-up not
-       drawn for three seconds: a pop-up's layer is not cleared when it
-       closes, so its text would otherwise stay on the model for good. */
+    /* What was erased and not drawn back within a frame is gone, and so is a
+       pop-up not drawn for three seconds: a pop-up's layer is not cleared
+       when it closes, so its text would otherwise stay on the model for
+       good. */
     for (i = 0; i < ITEMS; i++) {
         struct item *it = &items[i];
         if (!it->used)
             continue;
-        if ((it->erased && now - it->erased > 2u)
+        if ((it->erased && now - it->erased > ERASED_LIFE)
             || (is_popup(it) && now - it->last_drawn > POPUP_LIFE)) {
             if (text_len(it) > 0 && it->last_drawn - it->first_drawn >= 750u)
                 log_line("%lu gone %08lx %d %d |%s|\n", (unsigned long)now,
@@ -2173,6 +2491,22 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < ITEMS; i++)
             if (items[i].changed == 2 || !items[i].used)
                 items[i].changed = 0;
+    }
+    {
+        const struct item *pad = NULL;
+        effect_shown = 0;
+        for (i = 0; i < ITEMS; i++) {
+            const struct item *it = &items[i];
+            if (!live(it))
+                continue;
+            if (it->role == ROLE_EFFECT)
+                effect_shown = 1;
+            if (it->role == ROLE_PAD
+                && (pad == NULL || (int32_t)(it->last_drawn - pad->last_drawn) > 0))
+                pad = it;
+        }
+        if (pad != NULL)
+            memcpy(effect_pad, pad->text, ITEM_TEXT);
     }
     for (i = 0; i < ITEMS; i++)
         items[i].fresh = 0;

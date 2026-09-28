@@ -1,3 +1,4 @@
 A 13
 EXPORT SAMPLE/project./MULTIPAD | SAMPLE
-PROJECT
+PLEASE SELECT sample
+A 10 selected
