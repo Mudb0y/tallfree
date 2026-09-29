@@ -807,6 +807,32 @@ def patterns():
                           'PLAY-pattern C1', 'STOP-pattern C1', 'PLAY-pattern C1',
                           'STOP-pattern C1'])
 
+# COPY BANK PAD, the pad operations page in its mode 3, as runs/66 drew it,
+# opened by holding COPY and pressing EXIT: its title, its warning, the
+# project on white, and the banks it copies from and to either side of >>,
+# none chosen. Arriving says the title, the warning, the project and where
+# the cursor is. A bank key sets the bank the cursor is on, pressed again
+# the other bank of its pair, each said with its side in the manual's
+# words; VALUE moves the cursor, said as the side it lands on, the screen
+# showing it only by a bar.
+def copybank():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 23', '1000 PAGE 67', '1000 MODE 0', '1000 s0 FILL 0 0 127 63',
+          '1000 s0 49 4 !=8015592D:COPY PAD', '1000 s0 81 22 !=8015598F:P-01',
+          '1000 s0 35 32 _=801561D5:-- >> --',
+          '2000 KEY DOWN 22', '2000 PAGE 67', '2000 MODE 3', '2000 s0 FILL 0 0 127 63',
+          '2000 s0 39 4 !=80155C61:COPY BANK PAD',
+          '2000 s0 13 12 _=80155C7F:(PAD will be overwritten)',
+          '2000 s0 77 22 !=80155CE1:P-01', '2000 s0 39 32 _=8015608D:-',
+          '2000 s0 55 32 _=8015609B:>>', '2000 s0 81 32 _=801560A9:-',
+          '3000 KEY DOWN 26', '3000 s0 39 32 _=8015608D:B',
+          '3500 KEY DOWN 26', '3500 s0 39 32 _=8015608D:G',
+          '4000 KNOB 0 1', '5000 KEY DOWN 25', '5000 s0 80 32 _=801560A9:A',
+          '6000 KNOB 0 -1', '8000 VALUE']
+    write('copybank', d, ['top screen', 'COPY PAD | P-01',
+                          'COPY BANK PAD | (PAD will be overwritten) | P-01 | source',
+                          'source B', 'source G', 'destination', 'destination A', 'source'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -840,3 +866,4 @@ poweron()
 buttons()
 fxspam()
 patterns()
+copybank()

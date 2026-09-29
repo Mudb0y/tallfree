@@ -163,6 +163,9 @@ static const uint32_t vt_base[] = {
    0x25), as FUN_80134A98 sets it: each press flips it, or with EXT SOURCE
    held and GATE pressed it follows the button, on while held. */
 #define EXT_ON          (*(volatile uint32_t *)(PICK_STORE + 0x5Cu))
+/* COPY BANK PAD's cursor, on the source bank (0) or the destination, at
+   0x488 of the same store (its parameter 0x17), as VALUE moves it. */
+#define COPY_SIDE       (*(volatile int32_t *)(PICK_STORE + 0x488u))
 #define VTABLES   (sizeof vt_base / sizeof vt_base[0])
 #define ICON_SLOTS (sizeof icon_slots / sizeof icon_slots[0])
 #define PAGES 94
@@ -183,7 +186,7 @@ static const uint32_t vt_base[] = {
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
        ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
-       ROLE_CELL, ROLE_QUIET, ROLE_STATE };
+       ROLE_CELL, ROLE_QUIET, ROLE_STATE, ROLE_COPY_FROM, ROLE_COPY_TO, ROLE_NOTICE };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -222,6 +225,12 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80155ED5u, ROLE_TITLE },
     { 0x80155F97u, ROLE_TITLE },
     { 0x80156139u, ROLE_TITLE },
+    /* COPY BANK PAD's warning, (PAD will be overwritten), and the banks it
+       copies from and to, either side of >>. */
+    { 0x80155C7Fu, ROLE_NOTICE },
+    { 0x8015608Du, ROLE_COPY_FROM },
+    { 0x8015609Bu, ROLE_IGNORE },
+    { 0x801560A9u, ROLE_COPY_TO },
     { 0x80151927u, ROLE_TITLE },            /* the export page's heading over PLEASE
                                                SELECT SMPL, FUN_801518B0 */
     { 0x8015F85Fu, ROLE_STATE },            /* the pattern screen's SELECT, STOP-PTN C1,
@@ -649,6 +658,14 @@ static int32_t pad_settings(int index)
         | (flags & 1u ? SET_REVERSE : 0) | (flags & 2u ? SET_PINGPONG : 0);
 }
 
+/* The pad operations page copying a bank, its mode 3. */
+static int copy_bank(uint32_t page)
+{
+    uint32_t p = PADOPS_PAGE;
+
+    return page == PAGE_PADOPS && p != 0 && PAGE_MODE(p) == 3;
+}
+
 __attribute__((used)) static int page_record(uint32_t page, const int16_t *message)
 {
     struct draw d;
@@ -699,6 +716,11 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
     if ((type >= 5 && type <= 7) || type == 9) {
         d.y = message[1];
         d.x1 = message[2];
+    }
+    /* VALUE turned on COPY BANK PAD, with where its cursor was. */
+    if (type == 7 && d.y == 0 && copy_bank(page)) {
+        d.y1 = 2;
+        d.ink = COPY_SIDE;
     }
     /* EXT SOURCE, pressed or let go, with the input's state before. */
     if ((type == 5 || type == 6) && d.y == KEY_EXT_SOURCE && !shift_down) {
@@ -783,8 +805,9 @@ static int npicks;
 static struct { int16_t key, index; int32_t before; } presses[8];
 static int npresses;
 /* EXT SOURCE pressed or let go since the last batch, and whether the input
-   was on before the first of them. */
-static int ext_pending, ext_before = -1;
+   was on before the first of them; likewise VALUE on COPY BANK PAD, and
+   where its cursor was. */
+static int ext_pending, ext_before = -1, side_pending, side_before = -2;
 static uint32_t last_pick;
 static uint8_t pick_seen;
 /* Whether the page showing has just been built; the bank the firmware last
@@ -1331,6 +1354,11 @@ static int take(const struct draw *d)
             if (ext_before < 0)
                 ext_before = d->ink;
         }
+        if (d->x == 7 && d->y1 == 2) {
+            side_pending = 1;
+            if (side_before < -1)
+                side_before = d->ink;
+        }
         if (d->x == 7) {
             last_turn = d->tick;
             turn_seen = 1;
@@ -1340,7 +1368,7 @@ static int take(const struct draw *d)
             log_line("%lu key %s 0x%02x, page %ld\n", (unsigned long)d->tick,
                      d->x == 5 ? "down" : "up", (unsigned)(uint16_t)d->y, (long)d->mark);
         }
-        return d->y == KEY_EXT_SOURCE && d->y1 == 1;
+        return (d->y == KEY_EXT_SOURCE && d->y1 == 1) || (d->x == 7 && d->y1 == 2);
     }
     if (d->kind == EV_PAGE) {
         log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
@@ -1475,7 +1503,8 @@ static int take(const struct draw *d)
            turned is said at every step, as the focus is. A pad, and the main
            screen's status, change only when something is done, however
            quickly, so they are dealt with at once. */
-        if ((turned && !it->own && it->role != ROLE_EFFECT) || it->role == ROLE_STATE) {
+        if ((turned && !it->own && it->role != ROLE_EFFECT) || it->role == ROLE_STATE
+            || it->role == ROLE_COPY_FROM || it->role == ROLE_COPY_TO) {
             it->rapid = 0;
         } else if (it->last_change != 0 && d->tick - it->last_change < STEADY
                    && !padlike(d->text) && it->role != ROLE_MAIN && it->role != ROLE_PAD) {
@@ -2162,6 +2191,11 @@ static int want_new_popup(const struct item *it)
     return is_popup(it) && (it->fresh || it->changed == 1);
 }
 static int want_changed(const struct item *it) { return it->changed != 0; }
+static int drawn_now(const struct item *it);
+static int want_notice(const struct item *it)
+{
+    return it->role == ROLE_NOTICE && drawn_now(it);
+}
 
 /* A tab strip drawn for this screen, which names the current tab itself. */
 static int tab_known(void)
@@ -2184,6 +2218,7 @@ static int want_fresh(const struct item *it)
 {
     return (!is_status(it) || it->role == ROLE_PICKS) && !is_title(it) && it->role != ROLE_TABS
         && it->role != ROLE_HINT && !knob_column(it) && it->role != ROLE_CELL
+        && it->role != ROLE_COPY_FROM && it->role != ROLE_COPY_TO
         && (it->fresh || it->changed == 1) && !(tab_known() && page_number(it));
 }
 
@@ -2328,7 +2363,7 @@ static const struct { int page; const char *name; } page_names[] = {
 static void new_screen(struct item **order)
 {
     const struct item *tab;
-    int n, i, focus, popups, effect = 0, top = 0;
+    int n, i, k, focus, popups, effect = 0, top = 0;
 
     last_label = NULL;
     if ((dialog_surf = new_dialog()) != 0) {
@@ -2342,6 +2377,10 @@ static void new_screen(struct item **order)
     }
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
+        say(order[i]);
+    /* A screen's warning, after its title. */
+    k = in_order(order, ITEMS, want_notice);
+    for (i = 0; i < k; i++)
         say(order[i]);
     /* A screen named by its button says its name and nothing more, as the
        top screen does: START/END's pad and PITCH/SPEED's tempo line were
@@ -2366,6 +2405,8 @@ static void new_screen(struct item **order)
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
         say_focus(order[i]);
+    if (copy_bank(PAGE_PADOPS) && page_now == PAGE_PADOPS)
+        say3(COPY_SIDE ? "destination" : "source", NULL, NULL);
     /* The main screen, the manual's top screen, is named so on arrival,
        known by its bank and pad just drawn: they stay on its layer under the
        screens opened over it. The effect display is drawn over it, and it
@@ -2490,6 +2531,10 @@ static void say_presses(void)
         say3(EXT_ON ? "EXT SOURCE ON" : "EXT SOURCE OFF", NULL, NULL);
     ext_pending = 0;
     ext_before = -1;
+    if (side_pending && side_before > -2 && (COPY_SIDE != 0) != (side_before != 0))
+        say3(COPY_SIDE ? "destination" : "source", NULL, NULL);
+    side_pending = 0;
+    side_before = -2;
 }
 
 /* What to say about a change on the same screen: a message, whenever it is
@@ -2587,6 +2632,12 @@ static void same_screen(struct item **order)
         /* The pattern's state, whatever changed it. */
         if (it->role == ROLE_STATE) {
             say(it);
+            it->changed = 0;
+            continue;
+        }
+        /* A bank COPY BANK PAD copies from or to, by the manual's words. */
+        if (it->role == ROLE_COPY_FROM || it->role == ROLE_COPY_TO) {
+            say3(it->role == ROLE_COPY_FROM ? "source" : "destination", it->text, NULL);
             it->changed = 0;
             continue;
         }
@@ -2791,6 +2842,8 @@ int screen_poll(char *phrases, size_t cap, int *count)
         npresses = 0;
         ext_pending = 0;
         ext_before = -1;
+        side_pending = 0;
+        side_before = -2;
         bank_moved = 0;
         pending = 0;
         page_pending = 0;

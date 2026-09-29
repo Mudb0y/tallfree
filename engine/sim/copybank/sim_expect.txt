@@ -1,0 +1,8 @@
+top screen
+COPY PAD | P-01
+COPY BANK PAD | (PAD will be overwritten) | P-01 | source
+source B
+source G
+destination
+destination A
+source

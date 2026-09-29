@@ -22,9 +22,9 @@
      MS [sN] ROW Y SEL         a settings row whose text is at Y, selected if 1
      MS [sN] TAB CUR A,B,...   a tab strip drawn, tab CUR of those current
      MS PAGE N                 page factory N called: a page being built
-     MS KEY DOWN|UP HEX        a key sent to the main screen's page, 84
-     MS KNOB N STEP            knob N turned by STEP, to page 84
-     MS CTRL N POS             CTRL knob N moved to POS, 0 to 127, to page 84
+     MS KEY DOWN|UP HEX        a key sent to the page last built, 84 at first
+     MS KNOB N STEP            knob N turned by STEP, to that page
+     MS CTRL N POS             CTRL knob N moved to POS, 0 to 127, to that page
      MS PAD N                  pad N, 1 to 16, pressed, to the page last built
      MS MODE M                 the page last built is in mode M
      MS BANK B                 the current bank is B, 0 to 9
@@ -132,6 +132,10 @@ static int sim_page_factory(void *request)
             break;
         }
     }
+    /* VALUE on COPY BANK PAD moves its cursor, the word at 0x488 of the
+       store, to the destination and back. */
+    if (*m == 7 && m[1] == 0 && page_now == 67 && PAGE_MODE == 3)
+        sim_store[0x488 / 4] = m[2] > 0;
     if (*m == 1) {
         sim_export_page = page_now == 85 ? (uint32_t)(uintptr_t)page_object : 0;
         sim_padops_page = page_now == 67 ? (uint32_t)(uintptr_t)page_object : 0;
@@ -482,13 +486,13 @@ static void fire(int i)
     }
     case E_KEY: {
         int16_t m[3] = { (int16_t)ev[i].x, (int16_t)ev[i].y, 0 };
-        ((int (*)(void *))sim_page_table[84])(m);
+        ((int (*)(void *))sim_page_table[page_now])(m);
         break;
     }
     case E_KNOB:
     case E_CTRL: {
         int16_t m[3] = { ev[i].kind == E_KNOB ? 7 : 9, (int16_t)ev[i].x, (int16_t)ev[i].y };
-        ((int (*)(void *))sim_page_table[84])(m);
+        ((int (*)(void *))sim_page_table[page_now])(m);
         break;
     }
     case E_PAD: {
