@@ -971,7 +971,7 @@ def ptndeletebank():
         pattern_screen(3060, 'DELETE BANK', 'Bn:A')
     d += ['5000 KEY DOWN 26'] + pattern_screen(5010, 'DELETE BANK', 'Bn:B')
     d += ['7000 VALUE']
-    write('ptndeletebank', d, ['top screen', 'pattern', 'DELETE BANK | Bn: A', 'B'])
+    write('ptndeletebank', d, ['top screen', 'pattern', 'DELETE BANK | bank: A', 'B'])
 
 # COPY on the pattern screen keeping only some of the pattern's samples:
 # with a source chosen, REMAIN shows Select Samples and the pads choose

@@ -1,4 +1,4 @@
 top screen
 pattern
-DELETE BANK | Bn: A
+DELETE BANK | bank: A
 B

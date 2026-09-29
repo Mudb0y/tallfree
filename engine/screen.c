@@ -1775,7 +1775,8 @@ static int in_batch(const char *text)
    the reference manual's own words: whole words only, capitals as written,
    and a number stuck to one set apart, "2MEAS" as "2 measures". What the
    manual never spells out, Ring Mod, Sim, TS type, stays as Roland writes
-   it. The engine's own dictionary stays off, since SD is not South Dakota. */
+   it. The engine's own dictionary stays off, since SD is not South Dakota.
+   Bn, the pattern screen's DELETE BANK, he added on 29 September. */
 static const struct { const char *from, *to; } spelt_phrases[] = {
     { "PC Rx", "program change receive" },
     { "MANU-F", "manual-F" },
@@ -1804,6 +1805,7 @@ static const struct { const char *from, *to; } spelt_words[] = {
     { "FLUT", "flutter" }, { "Mst", "master" }, { "Phn", "phones" }, { "Rx", "receive" },
     { "SBF", "sideband filter" }, { "msec", "milliseconds" }, { "Hz", "hertz" },
     { "kHz", "kilohertz" }, { "dB", "decibels" }, { "SEMI", "semitones" },
+    { "Bn", "bank" },
 };
 /* Before a number: C1 for the CTRL 1 knob in a key's legend, CH1, DECK1. */
 static const struct { const char *from, *to; } spelt_numbered[] = {
