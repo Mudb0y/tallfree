@@ -2,8 +2,12 @@ top screen
 pattern
 RECORD SETTING | quantize: GRID 16 | MODE: TR-REC | G 1
 TR-REC | pattern: G1 | BAR: 1 of 2 | G-1: TRIG
+step 1 on
+step 5 on
+step 1 off
 G-13: TRIG
 BAR: 2 of 2
+step 13 on
 Microscope | STEP: 7 BAR: 2 of 2 | G 13
 1
 2

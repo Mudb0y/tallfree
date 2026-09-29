@@ -94,6 +94,11 @@ static const uint32_t vt_base[] = {
 #define EXPORT_PAGE     (*(volatile uint32_t *)0x80CFD4E4u)
 #define PADOPS_PAGE     (*(volatile uint32_t *)0x80CFD490u)
 #define PAT_STORE       0x82DFFC88u
+#define SEQ_STATE       (*(volatile uint32_t *)0x80591F60u)
+#define STEP_COUNT      (*(volatile int32_t *)0x802E7430u)
+#define STEP_SLOTS      (*(volatile int32_t *)0x802E7434u)
+#define STEP_LAST       (*(volatile int32_t *)0x802E743Cu)
+#define STEP_BITS       0x80B683DCu
 static const uint32_t icon_slots[] = {
     0x8021CF38u, 0x8021DA78u, 0x8021DC38u, 0x8021DDFCu, 0x8021DFBCu, 0x8021E8B4u,
     0x8021EA40u, 0x8021EBCCu, 0x8021ED58u, 0x8021EEE4u, 0x8021F1F8u, 0x8021F9ACu,
@@ -120,13 +125,20 @@ void sim_batch(const char *phrases, int count);
 extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
 extern volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
 extern volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
-extern volatile uint32_t sim_padstore[], sim_patstore[];
+extern volatile uint32_t sim_padstore[], sim_patstore[], sim_seq_state;
+extern volatile int32_t sim_step_count, sim_step_slots, sim_step_last;
+extern volatile uint16_t sim_step_bits[];
 extern volatile int32_t sim_padnow;
 extern volatile int32_t sim_bank;
 #define PICK_STORE      ((uint32_t)(uintptr_t)sim_store)
 #define BANK_NOW        sim_bank
 #define PAD_STORE       ((uint32_t)(uintptr_t)sim_padstore)
 #define PAT_STORE       ((uint32_t)(uintptr_t)sim_patstore)
+#define SEQ_STATE       sim_seq_state
+#define STEP_COUNT      sim_step_count
+#define STEP_SLOTS      sim_step_slots
+#define STEP_LAST       sim_step_last
+#define STEP_BITS       ((uint32_t)(uintptr_t)sim_step_bits)
 #define PAD_NOW         sim_padnow
 #define EXPORT_PAGE     sim_export_page
 #define PADOPS_PAGE     sim_padops_page
@@ -192,6 +204,61 @@ static const uint32_t vt_base[] = {
 #define PAT_DELETE(i)   PAT_WORD(0x2F8u + 4u * (uint32_t)(i))
 #define PAT_KEEP(i)     PAT_WORD(0x57Cu + 4u * (uint32_t)(i))
 enum { PMODE_DELETE = 6, PMODE_DELETE_BANK, PMODE_COPY, PMODE_COPY_BANK, PMODE_EXCHANGE };
+/* TR-REC's steps as the pads' lights show them: the lights ask
+   FUN_80062070, parameter 0x1D, which asks FUN_80034110. For the bar TR-REC
+   shows, the sequencer keeps a word a note in each of its fine slots, 256
+   bytes a slot from 0x80B683DC: bit 0 for a note up to 126, bit 1 for one
+   above, kept 0x50 lower. A step is its share of the slots, their count at
+   0x802E7434 over the steps' at 0x802E7430, below the last slot in use at
+   0x802E743C; step N is pad N. The sequencer's state is the struct
+   0x80591F60 points at: its mode at +0, 6 in TR-REC, and the note of the
+   sample being input at +0x5A, 47 on from A 1's. */
+#define SEQ_WORD(seq, off) (*(volatile int16_t *)((seq) + (off)))
+#define SEQ_TRREC 6
+
+static int seq_state(uint32_t *seq)
+{
+    uint32_t p = SEQ_STATE;
+
+#ifndef SIM
+    if (p < 0x80000000u || p >= 0x83A00000u || (p & 1u))
+        return 0;
+#endif
+    *seq = p;
+    return p != 0;
+}
+
+/* Whether step STEP of the bar shown holds NOTE, or -1 if that cannot be
+   told. */
+static int step_on(int step, int note)
+{
+    int32_t count = STEP_COUNT, slots = STEP_SLOTS, last = STEP_LAST, k, s;
+    int high = note > 0x7E;
+
+    if (high)
+        note -= 0x50;
+    if (count <= 0 || count > 64 || slots <= 0 || slots > 1024 || note < 0 || note > 127
+        || step < 0 || step > 15)
+        return -1;
+    k = slots / count;
+    for (s = step * k; s < (step + 1) * k && s < last; s++)
+        if (*(volatile uint16_t *)(STEP_BITS + (uint32_t)s * 0x100u + (uint32_t)note * 2u)
+            & (1u << high))
+            return 1;
+    return 0;
+}
+
+/* The bar's sixteen steps for NOTE, for the log. */
+static unsigned step_mask(int note)
+{
+    unsigned m = 0;
+    int k;
+
+    for (k = 0; k < 16; k++)
+        if (step_on(k, note) > 0)
+            m |= 1u << k;
+    return m;
+}
 #define VTABLES   (sizeof vt_base / sizeof vt_base[0])
 #define ICON_SLOTS (sizeof icon_slots / sizeof icon_slots[0])
 #define PAGES 94
@@ -676,7 +743,8 @@ static int keep_for_menu(int type, int code, int step)
 #define PAGE_MICROSCOPE 80
 #define PAGE_REMAIN 49
 #define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
-enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS, PICK_PATTERNS, PICK_KEEP };
+enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS, PICK_PATTERNS, PICK_KEEP,
+       PICK_STEP };
 
 static int pick_kind(uint32_t page, int pad, int *index)
 {
@@ -691,6 +759,16 @@ static int pick_kind(uint32_t page, int pad, int *index)
        it. */
     if (page == PAGE_PATTERN) {
         int32_t mode = PAT_MODE;
+        uint32_t seq;
+        /* TR-REC: the pad's step, with the note of the sample it is for. */
+        if (seq_state(&seq) && SEQ_WORD(seq, 0) == SEQ_TRREC
+            && (mode < PMODE_DELETE || mode > PMODE_EXCHANGE)) {
+            int note = SEQ_WORD(seq, 0x5A);
+            if (note < 0 || note > 0xFF)
+                return PICK_NONE;
+            *index = pad | note << 8;
+            return PICK_STEP;
+        }
         bank = mode == PMODE_DELETE ? PAT_BANK : PAT_KEEP_BANK;
         if (bank < 0 || bank > 9)
             return PICK_NONE;
@@ -738,6 +816,8 @@ static int32_t pick_state(int kind, int index)
         return PAT_DELETE(index);
     case PICK_KEEP:
         return PAT_KEEP(index);
+    case PICK_STEP:
+        return step_on(index & 0xFF, index >> 8);
     }
     return 0;
 }
@@ -810,6 +890,7 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
             d.x = type;
             d.y = message[1];
             d.x1 = (int16_t)index;
+            d.site = (uint32_t)index;
             d.y1 = (int16_t)kind;
             d.ink = pick_state(kind, index);
             push(&d);
@@ -922,8 +1003,10 @@ static int pending, wiped, page_pending, muted;
 static struct { int16_t action, step; } menu_q[16];
 static int menu_n;
 /* Pads pressed where a screen asks for pads, waiting to be said once the
-   page has made its choice, and when the last was pressed. */
-static struct { int16_t kind, index; int32_t before; } picks[8];
+   page has made its choice, and when the last was pressed. A TR-REC step
+   waits for the sequencer: resolved when it has changed, or given up. */
+static struct { int16_t kind; uint8_t resolved; int32_t index, before; uint32_t tick; } picks[8];
+#define STEP_WAIT 190u                       /* ticks, 250 ms */
 static int npicks;
 /* Playback buttons pressed, waiting to be said once the page has set the
    pad. */
@@ -1453,12 +1536,19 @@ static int take(const struct draw *d)
         return 0;
     }
     if (d->kind == EV_PAGE && d->x == 16 && d->y1 != PICK_NONE) {
-        log_line("%lu pick %d, pad %d, index %d, was %ld, page %ld\n", (unsigned long)d->tick,
-                 d->y1, d->y, d->x1, (long)d->ink, (long)d->mark);
+        log_line("%lu pick %d, pad %d, index %ld, was %ld, page %ld\n", (unsigned long)d->tick,
+                 d->y1, d->y, (long)(int32_t)d->site, (long)d->ink, (long)d->mark);
+        if (d->y1 == PICK_STEP)
+            log_line("%lu step pad %d note %ld, bar %04x, steps %ld slots %ld last %ld\n",
+                     (unsigned long)d->tick, d->y, (long)((int32_t)d->site >> 8),
+                     step_mask((int32_t)d->site >> 8), (long)STEP_COUNT, (long)STEP_SLOTS,
+                     (long)STEP_LAST);
         if (npicks < (int)(sizeof picks / sizeof picks[0])) {
             picks[npicks].kind = d->y1;
-            picks[npicks].index = d->x1;
+            picks[npicks].index = (int32_t)d->site;
             picks[npicks].before = d->ink;
+            picks[npicks].tick = d->tick;
+            picks[npicks].resolved = d->y1 != PICK_STEP;
             npicks++;
         }
         last_pick = d->tick;
@@ -2878,10 +2968,32 @@ static void say_picks(void)
     char t[32];
     int i;
 
+    int kept = 0;
+    uint32_t seq;
+
     for (i = 0; i < npicks; i++) {
         int kind = picks[i].kind, index = picks[i].index;
         int32_t now = pick_state(kind, index), before = picks[i].before;
 
+        /* A TR-REC step, once the sequencer has taken it, for the same
+           sample on the same bar, still showing; "step 5 on". */
+        if (kind == PICK_STEP) {
+            if (!picks[i].resolved) {
+                picks[kept++] = picks[i];
+                continue;
+            }
+            log_line("%lu step pad %d note %d %s, was %ld now %ld, bar %04x\n",
+                     (unsigned long)b_now, index & 0xFF, index >> 8,
+                     picks[i].resolved == 2 ? "unchanged" : "changed", (long)before, (long)now,
+                     step_mask(index >> 8));
+            if (picks[i].resolved == 2 || now < 0 || before < 0 || now == before
+                || page_now != PAGE_PATTERN || !trrec_showing() || !seq_state(&seq)
+                || SEQ_WORD(seq, 0x5A) != index >> 8)
+                continue;
+            snprintf(t, sizeof t, "step %d %s", (index & 0xFF) + 1, now > 0 ? "on" : "off");
+            say3(t, NULL, NULL);
+            continue;
+        }
         if (kind == PICK_PATTERN) {
             if (now == before || now < 0 || now >= 160)
                 continue;
@@ -2896,7 +3008,7 @@ static void say_picks(void)
         }
         say3(t, NULL, NULL);
     }
-    npicks = 0;
+    npicks = kept;
 }
 
 /* The playback buttons pressed, each as its name and what it now is, in the
@@ -3224,6 +3336,22 @@ int screen_poll(char *phrases, size_t cap, int *count)
             bank_seen = bank;
         }
     }
+    /* A TR-REC step changes a moment after its pad, as the sequencer takes
+       the note: watched until it does, or a quarter of a second passes. */
+    for (i = 0; i < npicks; i++)
+        if (picks[i].kind == PICK_STEP && !picks[i].resolved) {
+            if (pick_state(PICK_STEP, picks[i].index) != picks[i].before) {
+                picks[i].resolved = 1;
+            } else if (now - picks[i].tick > STEP_WAIT) {
+                picks[i].resolved = 2;
+            } else {
+                continue;
+            }
+            if (!pending)
+                first_pending = now;
+            pending = 1;
+            last_change = now;
+        }
     /* The settings menu answers at once, and nothing else speaks while it
        is open, or while screen reading is off. */
     if (menu_n > 0) {

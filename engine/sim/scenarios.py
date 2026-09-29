@@ -1086,8 +1086,10 @@ def ptnrecord():
 # mode builds the pattern screen with the CTRL knobs' columns, SUBSTEP,
 # PITCH over its mode CHROMATIC, VELOCITY, and below the pattern, the bar
 # and the sample to input. Arriving says TR-REC, which the empty status bar
-# does not, and what the knobs do not set; SUB PAD and a pad choose the
-# sample, said; VALUE chooses the bar. PATTERN EDIT and a pad open the
+# does not, and what the knobs do not set. A pad sets its step or clears
+# it, shown only by the pads' lights, a moment after it is pressed, as the
+# sequencer takes the note: each is said, "step 5 on". SUB PAD and a pad
+# choose the sample, said, and set no step; VALUE chooses the bar. PATTERN EDIT and a pad open the
 # Microscope, its knobs' legends in the status bar and the note's step and
 # sample over its timing, on white, its pitch and its velocity: arriving
 # names it and the note; the timing is said bare as VALUE moves it, the
@@ -1111,9 +1113,10 @@ def trrec():
     d = main_screen(0, 0, 'A-13')
     d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
     d += record_setting(2000, 'G-1') + ['2000 s1 5 54 _=8016BB45:MODE : TR-REC']
-    d += ['4000 KEY DOWN 1b'] + screen(4010, '1/2', 'G-1 : TRIG')
+    d += ['4000 KEY DOWN 1b', '4000 TRREC 143'] + screen(4010, '1/2', 'G-1 : TRIG')
+    d += ['4600 PAD 1', '5000 PAD 5', '5400 PAD 1']
     d += ['6000 KEY DOWN 13', '6400 PAD 13', '6435 s0 5 51 _=8016C75F:G-13 : TRIG', '6600 KEY UP 13']
-    d += ['7500 KNOB 0 1', '7540 s0 92 43 _=8016C6D9:BAR:2/2']
+    d += ['7500 KNOB 0 1', '7540 s0 92 43 _=8016C6D9:BAR:2/2', '8200 PAD 13']
     d += ['9000 KEY DOWN 15', '9400 PAD 7'] + micro(9410) + ['9700 KEY UP 15']
     for k in range(3):
         t = 11000 + 130 * k
@@ -1125,14 +1128,15 @@ def trrec():
         t = 15000 + 55 * k
         d += [f'{t} CTRL 3 {67 + 3 * k}', f'{t + 20} s1 102 22 _=8015F0BD:{v}']
     d += ['17000 KEY DOWN 22'] + screen(17000, '2/2', 'G-13 : TRIG')
-    d += ['19000 KEY DOWN 22', '19000 PAGE 60', '19000 s0 CLEAR', '19000 s0 88 2 !=8015F85F:',
+    d += ['19000 KEY DOWN 22', '19000 TRREC 0', '19000 PAGE 60', '19000 s0 CLEAR', '19000 s0 88 2 !=8015F85F:',
           '19000 s0 8 2 !=80156727:BPM 103.0', f'19000 s0 45 14 _{PBIG}2.2.',
           f'19000 s0 112 59 _{PBIG}2.4'] + pattern_status(19066, 'PLAY-PTN G1')
     d += ['21000 VALUE']
     write('trrec', d, ['top screen', 'pattern',
                        'RECORD SETTING | quantize: GRID 16 | MODE: TR-REC | G 1',
-                       'TR-REC | pattern: G1 | BAR: 1 of 2 | G-1: TRIG', 'G-13: TRIG',
-                       'BAR: 2 of 2', 'Microscope | STEP: 7 BAR: 2 of 2 | G 13', '1', '2', '3',
+                       'TR-REC | pattern: G1 | BAR: 1 of 2 | G-1: TRIG', 'step 1 on',
+                       'step 5 on', 'step 1 off', 'G-13: TRIG', 'BAR: 2 of 2', 'step 13 on',
+                       'Microscope | STEP: 7 BAR: 2 of 2 | G 13', '1', '2', '3',
                        'CHROM: -10', 'CHROM: -8', 'CHROM: -6', 'velocity 68', '74', '77',
                        'TR-REC | pattern: G1 | BAR: 2 of 2 | G-13: TRIG', 'PLAY-pattern G1'])
 

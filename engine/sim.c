@@ -30,6 +30,8 @@
      MS BANK B                 the current bank is B, 0 to 9
      MS PMODE M                the pattern store's mode is M, 8 for COPY
      MS PKEEP 0|1              COPY choosing the samples to keep, or not
+     MS TRREC NOTE             TR-REC inputting NOTE, 47 for A 1, or 0 for
+                               not in TR-REC; its pads set steps 60 ms on
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
@@ -68,6 +70,18 @@ volatile int32_t sim_padnow;
    the samples to keep, the flag at 0x2A of the store at 0x82E01144. */
 volatile uint32_t sim_patstore[0x800 / 4];
 static int sim_keep;
+/* The sequencer's state, which 0x80591F60 points at, and TR-REC's steps for
+   the bar shown as FUN_80034110 reads them: sixteen steps of four fine
+   slots, 256 bytes a slot. A pad in TR-REC sets or clears its step a moment
+   after it is pressed, as the sequencer takes the note; with SUB PAD held
+   it chooses the sample instead, and with PATTERN EDIT held it opens the
+   Microscope. */
+static int16_t sim_seq[0x60 / 2];
+volatile uint32_t sim_seq_state;
+volatile int32_t sim_step_count = 16, sim_step_slots = 64, sim_step_last = 64;
+volatile uint16_t sim_step_bits[64 * 128];
+static int sim_subpad, sim_patedit, step_due_pad = -1;
+static uint32_t step_due_ms;
 #define PSTORE(off) (*(int32_t *)((char *)sim_patstore + (off)))
 static int sim_shift;
 static uint32_t page_object[0x1AA0 / 4];
@@ -102,6 +116,10 @@ static int sim_page_factory(void *request)
         page_saw_keys++;
     if ((*m == 5 || *m == 6) && m[1] == 0x2A)
         sim_shift = *m == 5;
+    if ((*m == 5 || *m == 6) && m[1] == 0x13)
+        sim_subpad = *m == 5;
+    if ((*m == 5 || *m == 6) && m[1] == 0x15)
+        sim_patedit = *m == 5;
     /* EXT SOURCE as FUN_80134A98 sets the input, the word at 0x5C of the
        store: each press flips it. */
     if (*m == 5 && m[1] == 0x12 && !sim_shift)
@@ -168,6 +186,13 @@ static int sim_page_factory(void *request)
     if (*m != 16 || m[1] < 0 || m[1] > 15)
         return 0;
     pad = m[1];
+    if (page_now == 60 && sim_seq[0] == 6) {
+        if (sim_subpad)
+            sim_seq[0x5A / 2] = (int16_t)(0x2F + PSTORE(0x2BC) * 16 + pad);
+        else if (!sim_patedit)
+            step_due_pad = pad;
+        return 0;
+    }
     /* The pattern screen's pads, as FUN_801350B8 takes them: DELETE flips
        the pattern; COPY and EXCHANGE choose the source, then the
        destination, or COPY flips a sample to keep. */
@@ -260,7 +285,7 @@ static char *slurp(const char *name)
 }
 
 enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
-       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP };
+       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -318,6 +343,9 @@ static void load_events(void)
         } else if (strncmp(p, "PAGE", 4) == 0) {
             ev[nev].kind = E_PAGE;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
+        } else if (strncmp(p, "TRREC", 5) == 0) {
+            ev[nev].kind = E_TRREC;
+            ev[nev].x = (int)strtol(p + 5, &p, 10);
         } else if (strncmp(p, "PMODE", 5) == 0 || strncmp(p, "PKEEP", 5) == 0) {
             ev[nev].kind = p[1] == 'M' ? E_PMODE : E_PKEEP;
             ev[nev].x = (int)strtol(p + 5, &p, 10);
@@ -570,6 +598,12 @@ static void fire(int i)
     case E_PKEEP:
         sim_keep = ev[i].x;
         break;
+    case E_TRREC:
+        sim_seq_state = (uint32_t)(uintptr_t)sim_seq;
+        sim_seq[0] = ev[i].x ? 6 : 1;
+        if (ev[i].x)
+            sim_seq[0x5A / 2] = (int16_t)ev[i].x;
+        break;
     case E_PAGE: {
         /* Building the page, then the page's steady traffic, which must
            not count. */
@@ -633,6 +667,15 @@ void target_sleep(int ms)
         ticks += tick_acc / 4;
         tick_acc %= 4;
         play_one_ms();
+        if (step_due_pad >= 0 && step_due_ms == 0)
+            step_due_ms = now_ms + 60;
+        if (step_due_pad >= 0 && now_ms >= step_due_ms) {
+            int note = sim_seq[0x5A / 2], high = note > 0x7E;
+            volatile uint16_t *w = &sim_step_bits[step_due_pad * 4 * 128 + (high ? note - 0x50 : note)];
+            *w ^= (uint16_t)(1u << high);
+            step_due_pad = -1;
+            step_due_ms = 0;
+        }
         if (!live && sim_vtables[0][0x12C / 4] != (uint32_t)(uintptr_t)sim_draw_string) {
             live = 1;
             live_ms = now_ms;
