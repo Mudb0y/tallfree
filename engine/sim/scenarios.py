@@ -59,7 +59,7 @@ def menu():
     write('menu', d, ['top screen', 'B',
                       'IMPORT/EXPORT MENU | IMPORT from SD-CARD',
                       'EXPORT to SD-CARD', 'FORMAT SD-CARD', 'EXPORT to SD-CARD',
-                      'EXPORT SAMPLE/project./MULTIPAD | SAMPLE', 'PROJECT', 'top screen'])
+                      'EXPORT SAMPLE/project/MULTIPAD | SAMPLE', 'PROJECT', 'top screen'])
 
 # Filter+Drive: three columns of label, value and unit, the effect's name at
 # the bottom; CUTOFF turned fast with CTRL 1 and let go, then RESONANCE with
@@ -175,7 +175,7 @@ def submenu():
           '1100 s0 17 30 PROJECT', '1150 s0 17 38 MULTIPAD', '1200 s0 17 46 CANCEL',
           '2000 s0 17 22 SAMPLE', '2000 s0 17 30 !PROJECT',
           '3000 VALUE']
-    write('submenu', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE', 'PROJECT'])
+    write('submenu', d, ['top screen', 'EXPORT SAMPLE/project/MULTIPAD | SAMPLE', 'PROJECT'])
 
 # The recording screen drawing its meter's scale after it appears, and the
 # pad named without a dash; the doubled title of the pad link groups page.
@@ -298,7 +298,7 @@ def sdreturn():
     d += lst(5000, top, 0)
     d += ['7000 VALUE']
     write('sdreturn', d, ['top screen', 'IMPORT/EXPORT MENU | IMPORT from SD-CARD',
-                          'EXPORT to SD-CARD', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE',
+                          'EXPORT to SD-CARD', 'EXPORT SAMPLE/project/MULTIPAD | SAMPLE',
                           'CANCEL', 'IMPORT from SD-CARD'])
 
 # The speech settings menu: SHIFT + EXIT on the main screen, the VALUE knob
@@ -468,7 +468,7 @@ def export():
         d += [f'{t} PAD {pad}'] + status(t + 40)
     d += ['8000 MODE 1', '8500 PAD 3', '9500 MODE 2', '9600 BANK 0', '10000 PAD 4',
           '11000 PAD 4', '12000 MODE 3', '12500 PAD 2', '14000 VALUE']
-    write('export', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | PLEASE SELECT sample',
+    write('export', d, ['top screen', 'EXPORT SAMPLE/project/MULTIPAD | PLEASE SELECT sample',
                         'A 5 selected', 'A 5 deselected', 'B', 'B 1 selected',
                         'B 16 selected', 'project 03 selected', 'A', 'pattern A 4'])
 
@@ -547,7 +547,7 @@ def sampedit():
     # Pads choose the sample to edit by playing it, and are not said.
     d += ['8000 PAD 2', '8030 s1 58 53 _=80107C83:D-2', '8600 PAD 5',
           '8630 s1 58 53 _=80107C83:D-5', '10000 VALUE']
-    write('sampedit', d, ['top screen', 'START/END', 'VALUE: ZOOM(2x)', 'VALUE: ZOOM(3x)',
+    write('sampedit', d, ['top screen', 'START/END', 'VALUE: ZOOM (2x)', 'VALUE: ZOOM (3x)',
                           'mark: [end]'])
 
 # Auto mark, page 88, as runs/58 drew it: the knobs' legends, the pad, MENU
@@ -703,7 +703,7 @@ def export2():
           '3000 KEY DOWN 31', '3000 s1 26 20 _=80151995:PLEASE SELECT\\nSMPL',
           '3000 s1 61 48 !=800EE779:ENTER:EXE',
           '5000 PAD 10', '7000 VALUE']
-    write('export2', d, ['top screen', 'EXPORT SAMPLE/project./MULTIPAD | SAMPLE',
+    write('export2', d, ['top screen', 'EXPORT SAMPLE/project/MULTIPAD | SAMPLE',
                          'PLEASE SELECT sample', 'A 10 selected'])
 
 # EXT SOURCE pressed and let go twice, as runs/62 drew it: the pad field
@@ -1196,6 +1196,30 @@ def remain():
                         'STORAGE AVAILABLE 14.36GB | PROJECT 1 PROJECT_01 | NAME New Sample | '
                         'Color White | Remaining Time -00:05 | STEREO/MONO STEREO'])
 
+# SELECT PROJECT, SHIFT and SUB PAD, page 59, as runs/69 drew it: its
+# title in the status bar, SEL. PROJECT(INT)-CURR:02(INT), which OpenEVV
+# spelled out a letter at a time and read a dash in, and the big S E L.
+# Arriving says the title, its brackets and the hyphen read as pauses and
+# the stop after SEL dropped, and not S E L's "select" again. A pad loads
+# its project: the bank goes back to A, not said; the message box says
+# Working and Load Project 01 while the title is drawn again for the new
+# project, which is not said; then the top screen.
+def project():
+    d = main_screen(0, 0, 'A-13')
+    d += ['800 KEY DOWN 26', '800 BANK 1', '840 s0 34 2 !=80149DD5:B-1']
+    d += ['2000 KEY DOWN 2a', '2300 KEY DOWN 13', '2300 PAGE 59', '2300 s0 CLEAR',
+          '2300 s0 6 4 !=80156139:SEL. PROJECT(INT)-CURR:02(INT)',
+          f'2300 s0 28 18 _{PBIG}S E L', '2500 KEY UP 13', '2600 KEY UP 2a']
+    d += ['5000 PAD 1', '5284 BANK 0', '5288 s1 18 20 ~=8001F4BD:Working',
+          '5288 s1 18 31 ~=8001F677:Load Project 01', '5288 s1 18 40 ~=8001F6B5: ',
+          '5288 s0 6 4 !=80156139:SEL. PROJECT(INT)-CURR:01(INT)',
+          '5290 s1 72 20 _=8006B7F9:. ', '5500 s1 72 20 _=8006B7F9:.. ']
+    d += ['6025 PAGE 84'] + main_screen(6025, 0, 'A-1', big='- - - ')
+    d += ['8000 VALUE']
+    write('project', d, ['top screen', 'B',
+                         'select PROJECT (internal), current: 02 (internal)',
+                         'Working | Load Project 01', 'top screen'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -1243,3 +1267,4 @@ ptnrecord()
 trrec()
 chain()
 remain()
+project()

@@ -1,4 +1,4 @@
 top screen
-EXPORT SAMPLE/project./MULTIPAD | SAMPLE
+EXPORT SAMPLE/project/MULTIPAD | SAMPLE
 PLEASE SELECT sample
 A 10 selected

@@ -350,8 +350,10 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { CHAIN_TITLE, ROLE_TITLE },
     { 0x8016EBDBu, ROLE_IGNORE },           /* its position as it plays, 1.2, - stopped */
     /* The message box FUN_8001F4xx shows an operation's messages in, Working
-       and Operation Completed!, and dialogs' questions. */
+       and Operation Completed!, and dialogs' questions, a line at a time:
+       Working, Load Project 02. */
     { 0x8001F4BDu, ROLE_MESSAGE },
+    { 0x8001F677u, ROLE_MESSAGE },
     { 0x8001F6B5u, ROLE_MESSAGE },
     /* The Microscope's values, FUN_8015F0xx: the timing VALUE moves, the
        pitch, CHROM:0, and the velocity; the timing is on white. */
@@ -742,6 +744,7 @@ static int keep_for_menu(int type, int code, int step)
 #define PAGE_RECORD_SETTING 62
 #define PAGE_MICROSCOPE 80
 #define PAGE_REMAIN 49
+#define PAGE_PROJECT 59
 #define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
 enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS, PICK_PATTERNS, PICK_KEEP,
        PICK_STEP };
@@ -1498,6 +1501,11 @@ static uint8_t role_by_text(const struct draw *d)
 
 static size_t clean(char *out, size_t cap, const char *in);
 
+static int is_alnum_char(char c)
+{
+    return (c >= '0' && c <= '9') || ((c | 0x20) >= 'a' && (c | 0x20) <= 'z');
+}
+
 /* Two texts the same but for a (*) at the end of one. */
 static int same_but_star(const char *a, const char *b)
 {
@@ -1832,7 +1840,10 @@ static int take(const struct draw *d)
 }
 
 /* A string worth saying: runs of spaces closed up, and a space before a
-   colon dropped, since OpenEVV says "colon" for MODE : TR-REC; the ends
+   colon dropped, since OpenEVV says "colon" for MODE : TR-REC; a space put
+   before a bracket a word runs into, since it spells ZOOM(2x) out a letter
+   at a time, and a hyphen after a bracket read as a pause, not "dash",
+   as in PROJECT(INT)-CURR; the ends
    trimmed, a trailing ".." of truncation dropped, text spaced out a letter
    at a time ("9 4", "R E C") closed up, a bar of so many, BAR:1/2, as 1 of
    2, which OpenEVV would read as a half, and at least one letter or digit
@@ -1851,6 +1862,14 @@ static size_t clean(char *out, size_t cap, const char *in)
         if (space && c != ':' && n + 2 < cap)
             out[n++] = ' ';
         space = 0;
+        if (c == '(' && n > 0 && n + 2 < cap
+            && (is_alnum_char(out[n - 1]) || out[n - 1] == '.'))
+            out[n++] = ' ';
+        if (c == '-' && n > 0 && out[n - 1] == ')' && n + 3 < cap) {
+            out[n++] = ',';
+            space = 1;
+            continue;
+        }
         if ((c >= '0' && c <= '9') || ((c | 0x20) >= 'a' && (c | 0x20) <= 'z'))
             alnum = 1;
         out[n++] = (char)c;
@@ -2117,6 +2136,10 @@ static size_t spell_out(char *out, size_t cap, const char *in)
             f = spelt(in + t0, a, before, after, after2, one);
             if (f != NULL)
                 put(out, cap, &n, f, strlen(f));
+            /* The dot of an abbreviation said in full, SEL. PROJECT, which
+               would stop the phrase. */
+            if (f != NULL && in[i] == '.' && !is_digit(in[i + 1]))
+                i++;
         } else if (a > 0) {
             for (d = a; t0 + d < i && is_digit(in[t0 + d]); d++)
                 ;
@@ -2209,6 +2232,31 @@ static int say3(const char *a, const char *b, const char *c)
 static int say(const struct item *it)
 {
     return say3(full_text(it), NULL, NULL);
+}
+
+/* A title of one word the batch has already said, as the big S E L under
+   SEL. PROJECT(INT)-CURR:02(INT): "select" once. */
+static int title_said(const struct item *it)
+{
+    char part[ITEM_TEXT], word[WIDE];
+    const char *p = b_out;
+    size_t n;
+    int i;
+
+    if (clean(part, sizeof part, full_text(it)) == 0)
+        return 0;
+    n = spell_out(word, sizeof word, part);
+    if (n == 0 || strchr(word, ' ') != NULL)
+        return 0;
+    for (i = 0; i < b_count; i++, p += strlen(p) + 1) {
+        const char *q = p;
+        while ((q = strstr(q, word)) != NULL) {
+            if ((q == p || !is_letter(q[-1])) && !is_letter(q[n]))
+                return 1;
+            q += n;
+        }
+    }
+    return 0;
 }
 
 static const struct item *row_label(const struct item *v);
@@ -2847,7 +2895,8 @@ static void new_screen(struct item **order)
     }
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
-        say(order[i]);
+        if (!title_said(order[i]))
+            say(order[i]);
     /* The pattern screen with no big title names itself by its state in
        the status bar, STOP-PTN C1, COUNT IN, COPY, EXCHANGE; TR-REC, whose
        status bar is empty, by its mode, as Roland names it. */
@@ -3302,7 +3351,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
 {
     static struct item *order[ITEMS];
     uint32_t now = device_ticks();
-    int i, due = 0, kind = 0;
+    int i, due = 0, kind = 0, working = 0;
 
     while (draw_rd != draw_wr) {
         const struct draw *dr = &draws[draw_rd % DRAWS];
@@ -3431,17 +3480,25 @@ int screen_poll(char *phrases, size_t cap, int *count)
     b_count = 0;
     b_now = now;
     /* An operation's message comes first, before the bank letter and the
-       screen it leaves you on: "Operation Completed!, pattern". */
+       screen it leaves you on: "Operation Completed!, pattern". While it
+       says Working, the screen behind it is changing and is not said: the
+       SELECT PROJECT screen redraws its title for the project it loads. */
     if (screen_mode != SCREEN_ALL) {
         int k = in_order(order, ITEMS, want_message);
         for (i = 0; i < k; i++) {
             say(order[i]);
             order[i]->changed = 0;
         }
+        for (i = 0; i < ITEMS && !working; i++)
+            working = live(&items[i]) && items[i].role == ROLE_MESSAGE
+                && reads(items[i].text, "Working") && now - items[i].last_drawn < POPUP_LIFE
+                && (!page_pending || (int32_t)(items[i].drawn_seq - page_seq) > 0);
     }
     /* A bank change is its letter alone, on every screen but the tempo
        screen, whose choice of PROJECT or BANK A reads it already. */
-    if (bank_moved && page_now != 81) {
+    if (working) {
+        ;
+    } else if (bank_moved && page_now != 81 && page_now != PAGE_PROJECT) {
         char t[2] = { (char)('A' + bank_seen), 0 };
         say3(t, NULL, NULL);
     } else if (pat_pending && page_now != 81) {
@@ -3464,7 +3521,11 @@ int screen_poll(char *phrases, size_t cap, int *count)
     if (chain_removed[0] && page_now == PAGE_CHAIN)
         say3("delete,", chain_removed, NULL);
     chain_removed[0] = 0;
-    if (screen_mode == SCREEN_ALL) {
+    if (working) {
+        for (i = 0; i < ITEMS; i++)
+            if (items[i].role != ROLE_MESSAGE)
+                items[i].changed = 0;
+    } else if (screen_mode == SCREEN_ALL) {
         for (i = 0; i < nburst; i++)
             say(&items[burst[i]]);
         nburst = 0;

@@ -1,5 +1,5 @@
 top screen
-EXPORT SAMPLE/project./MULTIPAD | PLEASE SELECT sample
+EXPORT SAMPLE/project/MULTIPAD | PLEASE SELECT sample
 A 5 selected
 A 5 deselected
 B
