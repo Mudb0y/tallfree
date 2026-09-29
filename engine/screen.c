@@ -212,7 +212,17 @@ enum { PMODE_DELETE = 6, PMODE_DELETE_BANK, PMODE_COPY, PMODE_COPY_BANK, PMODE_E
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
        ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
-       ROLE_CELL, ROLE_QUIET, ROLE_STATE, ROLE_COPY_FROM, ROLE_COPY_TO, ROLE_NOTICE, ROLE_ANSWER };
+       ROLE_CELL, ROLE_QUIET, ROLE_STATE, ROLE_COPY_FROM, ROLE_COPY_TO, ROLE_NOTICE, ROLE_ANSWER,
+       ROLE_MESSAGE };
+#define CHAIN_TITLE     0x80141D3Fu
+#define CHAIN_SLOT      0x8008D11Bu
+#define CHAIN_SLOT_LIT  0x8008D19Bu
+#define MICRO_TIMING    0x8015F007u
+#define MICRO_PITCH     0x8015F09Bu
+#define MICRO_VELOCITY  0x8015F0BDu
+#define TRREC_PATTERN   0x8016C6C5u            /* TR-REC's Ptn:G1 */
+#define BIG_TEXT        0x800EE779u            /* the big font's drawer, for
+                                                  every screen */
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -262,6 +272,27 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80149303u, ROLE_ANSWER },
     { 0x801495A1u, ROLE_ANSWER },
     { 0x80149869u, ROLE_ANSWER },
+    /* TR-REC's sample for input, G-13 : TRIG, which SUB PAD and a pad
+       choose, FUN_8016C4xx. */
+    { 0x8016C75Fu, ROLE_ANSWER },
+    /* The pattern chain's slots, FUN_8008D0xx, which the pads fill: the
+       rest, and the highlighted one. Its heading, PATTERN CHAIN [1], with
+       (*) once it is changed. */
+    { CHAIN_SLOT, ROLE_ANSWER },
+    { CHAIN_SLOT_LIT, ROLE_ANSWER },
+    { CHAIN_TITLE, ROLE_TITLE },
+    { 0x8016EBDBu, ROLE_IGNORE },           /* its position as it plays, 1.2, - stopped */
+    /* The message box FUN_8001F4xx shows an operation's messages in, Working
+       and Operation Completed!, and dialogs' questions. */
+    { 0x8001F4BDu, ROLE_MESSAGE },
+    { 0x8001F6B5u, ROLE_MESSAGE },
+    /* The Microscope's values, FUN_8015F0xx: the timing VALUE moves, the
+       pitch, CHROM:0, and the velocity; the timing is on white. */
+    { MICRO_TIMING, ROLE_KNOB },
+    { MICRO_PITCH, ROLE_KNOB },
+    { MICRO_VELOCITY, ROLE_KNOB },
+    /* TR-REC's PITCH knob's mode under its name, CHROMATIC or PAD. */
+    { 0x801709C7u, ROLE_KNOB },
     /* COPY BANK PAD's warning, (PAD will be overwritten), and the banks it
        copies from and to, either side of >>. */
     { 0x80155C7Fu, ROLE_NOTICE },
@@ -640,6 +671,10 @@ static int keep_for_menu(int type, int code, int step)
 #define PAGE_PADOPS 67
 #define PAGE_EXPORT 85
 #define PAGE_PATTERN 60
+#define PAGE_CHAIN 57
+#define PAGE_RECORD_SETTING 62
+#define PAGE_MICROSCOPE 80
+#define PAGE_REMAIN 49
 #define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
 enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS, PICK_PATTERNS, PICK_KEEP };
 
@@ -963,6 +998,10 @@ static int nframe_sites;
 static uint32_t last_turn, last_press, last_pad, last_fx, last_bank_key, last_ctrl_logged;
 static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen, bank_key_seen;
 static int pad_page;
+/* The last key pressed, and what DEL last emptied from a chain's slot. */
+#define KEY_DEL 0x1A
+static int last_key = -1;
+static char chain_removed[ITEM_TEXT];
 /* The pattern's state, STOP-PTN C1 or PLAY-PTN C1, is said as soon as it
    settles: one pad draws STOP and then PLAY a frame later. */
 static uint32_t state_hold;
@@ -979,8 +1018,9 @@ static int played_just_before(uint32_t then, int seen, uint32_t now)
     return seen && now - then <= PLAY_WINDOW;
 }
 
-/* The page showing, by the last page built. */
-static int page_now = 84;
+/* The page showing, by the last page built; the one built before it; and
+   the one showing when the last batch was said. */
+static int page_now = 84, page_prev = 84, batch_page = 84;
 
 /* Screens where the pads play, as they do on the main screen, and choose
    nothing: START/END, CHOP and PITCH/SPEED select the sample to edit by
@@ -1203,11 +1243,12 @@ static int is_status(const struct item *it)
 }
 
 /* The focus: white below the status bar, the label under an icon menu's
-   selected icon, a selected settings row, or a choice in its outline. */
+   selected icon, a selected settings row, or a choice in its outline. A
+   knob's value on white, as the Microscope's timing, is not. */
 static int is_lit(const struct item *it)
 {
     return (it->mark == WHITE && it->y >= 10 && !it->title && it->role != ROLE_UNLIT
-            && it->role != ROLE_HINT)
+            && it->role != ROLE_HINT && it->role != ROLE_KNOB)
         || it->icon_sel || it->row_sel || it->framed;
 }
 
@@ -1304,12 +1345,15 @@ static int spaced_capitals(const char *t)
     return 1;
 }
 
-/* Bar, dot, beat, dot: "1.1.", "12.4.". */
-static int bar_beat(const char *t)
+/* Bar, dot, beat, dot: "1.1.", "12.4.", and "-1.1." counting in; with
+   SHORT, also without the last dot, "1.2", as the pattern chain counts. */
+static int bar_beat(const char *t, int short_form)
 {
     int dots = 0, digits = 0;
 
     while (*t == ' ')
+        t++;
+    if (*t == '-')
         t++;
     for (; *t && *t != ' '; t++) {
         if (*t == '.') {
@@ -1323,7 +1367,7 @@ static int bar_beat(const char *t)
             return 0;
         }
     }
-    return dots == 2 && digits == 0;
+    return (dots == 2 && digits == 0) || (short_form && dots == 1 && digits > 0);
 }
 
 /* What text is by how it reads, where its drawing code has no role. A key's
@@ -1344,8 +1388,10 @@ static uint8_t role_by_text(const struct draw *d)
     if (d->y <= 5 && (reads(t, "DC") || reads(t, "USB") || reads(t, "BAT") || reads(t, "???")))
         return ROLE_IGNORE;
     /* A pattern's bar and beat as it plays, 1.1., 2.4.: a running
-       position, never said. */
-    if (bar_beat(t))
+       position, never said. The pattern screen and the pattern chain draw
+       it and the 2.4 in their corners without the last dot, and no other
+       figure of theirs looks so. */
+    if (bar_beat(t, page_now == PAGE_PATTERN || page_now == PAGE_CHAIN))
         return ROLE_IGNORE;
     if (reads(t, "MENU"))
         return ROLE_HINT;
@@ -1365,6 +1411,24 @@ static uint8_t role_by_text(const struct draw *d)
             return ROLE_HINT;
     }
     return ROLE_NONE;
+}
+
+static size_t clean(char *out, size_t cap, const char *in);
+
+/* Two texts the same but for a (*) at the end of one. */
+static int same_but_star(const char *a, const char *b)
+{
+    size_t na = strlen(a), nb = strlen(b);
+
+    if (na > nb) {
+        const char *t = a;
+        size_t n = na;
+        a = b;
+        b = t;
+        na = nb;
+        nb = n;
+    }
+    return nb == na + 3 && strncmp(a, b, na) == 0 && strcmp(b + na, "(*)") == 0;
 }
 
 static int take(const struct draw *d)
@@ -1417,6 +1481,7 @@ static int take(const struct draw *d)
         if (d->x == 5) {
             last_press = d->tick;
             press_seen = 1;
+            last_key = d->y;
             /* Keys 0 to 15 are the pads, 1 to 16; with an effect's button
                held they choose an effect, which is said, and play nothing. */
             if (d->y >= 0 && d->y < 16 && !fx_held) {
@@ -1481,6 +1546,8 @@ static int take(const struct draw *d)
         log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
         if (d->x != 1)
             return 0;
+        if ((int)d->mark != page_now)
+            page_prev = page_now;
         page_now = (int)d->mark;
         page_pending = 1;
         page_seq = draw_seq;
@@ -1575,8 +1642,20 @@ static int take(const struct draw *d)
     it->role = role_of(d->site);
     if (it->role == ROLE_NONE)
         it->role = role_by_text(d);
+    /* The pattern screen's big fields: in its corners the pattern and a
+       figure, 2.4, which the state names, never said; in the middle the
+       pattern chosen, C 1, which the state names too, said only when it
+       changes. */
+    if (page_now == PAGE_PATTERN && d->site == BIG_TEXT && it->role == ROLE_NONE)
+        it->role = d->y >= 50 ? ROLE_IGNORE : padlike(d->text) ? ROLE_QUIET : ROLE_NONE;
     it->title = it->role == ROLE_TITLE;
     text_changed = strcmp(it->text, d->text) != 0;
+    /* The chain's heading gaining (*) once the chain is changed is not
+       news. */
+    if (text_changed && d->site == CHAIN_TITLE && same_but_star(it->text, d->text)) {
+        memcpy(it->text, d->text, ITEM_TEXT);
+        text_changed = 0;
+    }
     if (text_changed || it->mark != d->mark || it->ink != d->ink)
         log_line("%lu %u %08lx %d %d %ld %ld %u %08lx %08lx |%s|\n", (unsigned long)d->tick,
                  (unsigned)d->task, (unsigned long)d->surf, d->x, d->y, (long)d->mark,
@@ -1589,10 +1668,21 @@ static int take(const struct draw *d)
         int turned = just_after(last_turn, turn_seen, d->tick);
 
         it->prompted = (uint8_t)(turned || just_after(last_press, press_seen, d->tick));
-        it->by_pad = (uint8_t)(pads_play() && it->role != ROLE_STATE
-                               && (played_just_before(last_pad, pad_seen, d->tick)
-                                   || played_just_before(last_bank_key, bank_key_seen,
-                                                         d->tick)));
+        /* What a pad or a bank key changes where the pads play, and the
+           tempo a bank key brings on the pattern screen in every mode, is
+           not said; what a pad chooses is. */
+        it->by_pad = (uint8_t)(it->role != ROLE_STATE && it->role != ROLE_ANSWER
+                               && ((pads_play() && played_just_before(last_pad, pad_seen, d->tick))
+                                   || ((pads_play() || page_now == PAGE_PATTERN)
+                                       && played_just_before(last_bank_key, bank_key_seen,
+                                                             d->tick))));
+        /* A chain's slot emptied by DEL: what it held, to be said. */
+        if ((d->site == CHAIN_SLOT || d->site == CHAIN_SLOT_LIT) && last_key == KEY_DEL
+            && just_after(last_press, press_seen, d->tick) && !page_pending) {
+            char t[ITEM_TEXT];
+            if (clean(t, sizeof t, d->text) == 0 && clean(t, sizeof t, it->text) > 0)
+                memcpy(chain_removed, it->text, ITEM_TEXT);
+        }
         if (it->role == ROLE_STATE) {
             state_hold = d->tick + 75u;
             state_seen = 1;
@@ -1607,11 +1697,12 @@ static int take(const struct draw *d)
            STEADY neither interrupts nor is said until the item has held still
            that long: a meter or a clock that never stops is not heard at all,
            and an effect being played is heard where it stops. A value just
-           turned is said at every step, as the focus is. A pad, and the main
-           screen's status, change only when something is done, however
-           quickly, so they are dealt with at once, and so is what a copy
-           draws in answer to them. */
-        if ((turned && !it->own && it->role != ROLE_EFFECT) || it->role == ROLE_STATE
+           turned or changed by a key is said at every step, as the focus is,
+           the pop-ups a key brings among them, COUNT-IN 2MEAS, COUNT-IN WAIT.
+           A pad, and the main screen's status, change only when something
+           is done, however quickly, so they are dealt with at once, and so is
+           what a copy draws in answer to them. */
+        if ((it->prompted && !it->own && it->role != ROLE_EFFECT) || it->role == ROLE_STATE
             || it->role == ROLE_COPY_FROM || it->role == ROLE_COPY_TO || it->role == ROLE_ANSWER) {
             it->rapid = 0;
         } else if (it->last_change != 0 && d->tick - it->last_change < STEADY
@@ -1631,6 +1722,8 @@ static int take(const struct draw *d)
         counts = it->rapid == 0 || now_lit;
     } else if (now_lit && !was_lit) {
         it->changed = 2;
+        it->prompted = (uint8_t)(just_after(last_turn, turn_seen, d->tick)
+                                 || just_after(last_press, press_seen, d->tick));
         it->seq = ++change_seq;
         counts = 1;
     }
@@ -1648,9 +1741,12 @@ static int take(const struct draw *d)
     return counts;
 }
 
-/* A string worth saying: runs of spaces closed up, the ends trimmed, a
-   trailing ".." of truncation dropped, text spaced out a letter at a time
-   ("9 4", "R E C") closed up, and at least one letter or digit in it. */
+/* A string worth saying: runs of spaces closed up, and a space before a
+   colon dropped, since OpenEVV says "colon" for MODE : TR-REC; the ends
+   trimmed, a trailing ".." of truncation dropped, text spaced out a letter
+   at a time ("9 4", "R E C") closed up, a bar of so many, BAR:1/2, as 1 of
+   2, which OpenEVV would read as a half, and at least one letter or digit
+   in it. */
 static size_t clean(char *out, size_t cap, const char *in)
 {
     size_t n = 0, i, k;
@@ -1662,7 +1758,7 @@ static size_t clean(char *out, size_t cap, const char *in)
             space = n > 0;
             continue;
         }
-        if (space && n + 2 < cap)
+        if (space && c != ':' && n + 2 < cap)
             out[n++] = ' ';
         space = 0;
         if ((c >= '0' && c <= '9') || ((c | 0x20) >= 'a' && (c | 0x20) <= 'z'))
@@ -1674,6 +1770,22 @@ static size_t clean(char *out, size_t cap, const char *in)
         out[n -= 2] = 0;
     while (n > 0 && out[n - 1] == ' ')
         out[--n] = 0;
+    {
+        char *b = strstr(out, "BAR:"), *d;
+        if (b != NULL) {
+            for (d = b + 4; *d == ' '; d++)
+                ;
+            if (*d >= '0' && *d <= '9') {
+                while (*d >= '0' && *d <= '9')
+                    d++;
+                if (*d == '/' && d[1] >= '0' && d[1] <= '9' && n + 4 < cap) {
+                    memmove(d + 4, d + 1, strlen(d + 1) + 1);
+                    memcpy(d, " of ", 4);
+                    n += 3;
+                }
+            }
+        }
+    }
     /* A page count, "1/ 5", as "1 of 5". */
     {
         size_t d1 = 0, j;
@@ -1733,6 +1845,14 @@ static const char *full_text(const struct item *it)
     const char *found = NULL;
     int i;
 
+    /* The chain's heading without the (*) a change adds, which OpenEVV
+       reads as "asterisk". */
+    if (it->site == CHAIN_TITLE && n > 3 && strcmp(it->text + n - 3, "(*)") == 0) {
+        static char bare[ITEM_TEXT];
+        memcpy(bare, it->text, n - 3);
+        bare[n - 3] = 0;
+        return bare;
+    }
     if (n < 3 || it->text[n - 1] != '.' || it->text[n - 2] != '.')
         return it->text;
     n -= 2;
@@ -1776,7 +1896,8 @@ static int in_batch(const char *text)
    and a number stuck to one set apart, "2MEAS" as "2 measures". What the
    manual never spells out, Ring Mod, Sim, TS type, stays as Roland writes
    it. The engine's own dictionary stays off, since SD is not South Dakota.
-   Bn, the pattern screen's DELETE BANK, he added on 29 September. */
+   Bn, the pattern screen's DELETE BANK, and Ptn, TR-REC's, he added on 29
+   September. */
 static const struct { const char *from, *to; } spelt_phrases[] = {
     { "PC Rx", "program change receive" },
     { "MANU-F", "manual-F" },
@@ -1804,7 +1925,7 @@ static const struct { const char *from, *to; } spelt_words[] = {
     { "LPF", "low pass" }, { "BPF", "band pass" }, { "COMP", "compression" },
     { "FLUT", "flutter" }, { "Mst", "master" }, { "Phn", "phones" }, { "Rx", "receive" },
     { "SBF", "sideband filter" }, { "msec", "milliseconds" }, { "Hz", "hertz" },
-    { "kHz", "kilohertz" }, { "dB", "decibels" }, { "SEMI", "semitones" },
+    { "kHz", "kilohertz" }, { "dB", "decibels" }, { "SEMI", "semitones" }, { "Ptn", "pattern" },
     { "Bn", "bank" },
 };
 /* Before a number: C1 for the CTRL 1 knob in a key's legend, CH1, DECK1. */
@@ -2056,6 +2177,52 @@ static int say_pad(const struct item *it)
     return 1;
 }
 
+/* A copy's or an exchange's pads either side of >> or <>, A1 >> B3, which
+   OpenEVV reads as "greater than" twice: the side a pad has just chosen,
+   in the manual's words as COPY BANK has them, "source A1", then
+   "destination B3", and for an exchange the pad alone; -- is nothing
+   chosen. The sides as last said, to know which changed; a new screen
+   starts with none. */
+static char pair_said[2][ITEM_TEXT];
+
+static void pair_side(char *out, const char *from, const char *to)
+{
+    size_t n;
+
+    while (from < to && *from == ' ')
+        from++;
+    while (to > from && to[-1] == ' ')
+        to--;
+    n = (size_t)(to - from) < ITEM_TEXT - 1 ? (size_t)(to - from) : ITEM_TEXT - 1;
+    memcpy(out, from, n);
+    out[n] = 0;
+    if (strcmp(out, "--") == 0 || strcmp(out, "-") == 0)
+        out[0] = 0;
+}
+
+static int say_pair(const struct item *it)
+{
+    const char *copy = strstr(it->text, ">>"), *swap = strstr(it->text, "<>");
+    const char *mark = copy != NULL ? copy : swap;
+    char side[2][ITEM_TEXT];
+    int k;
+
+    if (mark == NULL)
+        return 0;
+    pair_side(side[0], it->text, mark);
+    pair_side(side[1], mark + 2, it->text + strlen(it->text));
+    for (k = 0; k < 2; k++) {
+        if (side[k][0] && strcmp(side[k], pair_said[k]) != 0) {
+            if (copy != NULL)
+                say3(k == 0 ? "source" : "destination", side[k], NULL);
+            else
+                say3(side[k], NULL, NULL);
+        }
+        memcpy(pair_said[k], side[k], ITEM_TEXT);
+    }
+    return 1;
+}
+
 /* Reading order: the screen before any pop-up over it, then top to bottom,
    then left to right. */
 static int before(const struct item *a, const struct item *b)
@@ -2214,9 +2381,35 @@ static const struct item *column_label(const struct item *v, int reach, int head
    name the effect nor the pad settings' SPEED 100.0% its BPM:90.00, and nor
    does a prompt name what sits far under it, as PLEASE SELECT SMPL does not
    name ENTER:EXE. */
+/* Values whose names are not beside them: the Microscope's, under the
+   knobs' legends in its status bar, C1:ITEM, C2:PITCH and C3:VELO, with the
+   note's step line between. The pitch names itself, CHROM:-8, and the
+   timing VALUE moves has no name on the screen. */
+static const struct { uint32_t site; const char *label; } fixed_labels[] = {
+    { MICRO_TIMING, "" }, { MICRO_PITCH, "" }, { MICRO_VELOCITY, "VELO" },
+};
+static uint32_t last_fixed;
+
+static int fixed_label(const struct item *v, const char **label)
+{
+    unsigned i;
+
+    for (i = 0; i < sizeof fixed_labels / sizeof fixed_labels[0]; i++)
+        if (fixed_labels[i].site == v->site) {
+            *label = fixed_labels[i].label;
+            return 1;
+        }
+    return 0;
+}
+
 static const struct item *label_of(const struct item *v)
 {
-    const struct item *best = row_label(v);
+    const struct item *best;
+    const char *fixed;
+
+    if (fixed_label(v, &fixed))
+        return NULL;
+    best = row_label(v);
 
     if (best == NULL)
         best = column_label(v, 20, 0);
@@ -2272,9 +2465,19 @@ static const char *unit_said(const struct item *v, const struct item *l)
 static int say_value(const struct item *v)
 {
     const struct item *l = label_of(v);
+    const char *fixed;
 
+    if (fixed_label(v, &fixed)) {
+        if (*fixed && last_fixed != v->site) {
+            last_fixed = v->site;
+            last_label = NULL;
+            return say3(fixed, full_text(v), NULL);
+        }
+        return say3(full_text(v), NULL, NULL);
+    }
     if (l != NULL && l != last_label) {
         last_label = l;
+        last_fixed = 0;
         return say3(l->text, full_text(v), unit_said(v, l));
     }
     return say3(full_text(v), NULL, NULL);
@@ -2306,9 +2509,23 @@ static int want_notice(const struct item *it)
 {
     return it->role == ROLE_NOTICE && drawn_now(it);
 }
+/* An operation's message, Working, Operation Completed!, just drawn in the
+   message box: a dialog's question there has its buttons with it, and is
+   read with them as the dialog. */
+static int want_message(const struct item *it)
+{
+    int i;
+
+    if (it->role != ROLE_MESSAGE || !(it->fresh || it->changed == 1))
+        return 0;
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].surf == it->surf && is_lit(&items[i]))
+            return 0;
+    return 1;
+}
 static int want_new_state(const struct item *it)
 {
-    return it->role == ROLE_STATE && it->changed == 1;
+    return it->role == ROLE_STATE && (it->changed == 1 || (page_arrived && drawn_now(it)));
 }
 
 /* A tab strip drawn for this screen, which names the current tab itself. */
@@ -2360,7 +2577,9 @@ static void say_contents(struct item **order, int n)
             skip = live(&items[j]) && knob_column(&items[j]) && unit_of(&items[j]) == it;
         if (skip || (l != NULL && unit_of(l) == it))
             continue;
-        if (l != NULL) {
+        if (it->role == ROLE_ANSWER && say_pair(it)) {
+            ;
+        } else if (l != NULL) {
             last_label = l;
             say3(l->text, full_text(it), unit_said(it, l));
         } else if (padlike(it->text)) {
@@ -2440,7 +2659,8 @@ static uint32_t new_dialog(void)
 
     for (i = 0; i < ITEMS; i++) {
         const struct item *it = &items[i];
-        if (!live(it) || it->mark != -1 || it->role != ROLE_NONE || !it->fresh
+        if (!live(it) || it->mark != -1 || (it->role != ROLE_NONE && it->role != ROLE_MESSAGE)
+            || !it->fresh
             || !layer_redrawn(it->surf))
             continue;
         for (k = 0; k < ITEMS; k++)
@@ -2464,9 +2684,47 @@ static char last_tab[ITEM_TEXT];
 
 /* Screens with no title of their own, named as the buttons that open them
    are: PITCH/SPEED, SHIFT and START/END for CHOP, and START/END. */
-static const struct { int page; const char *name; } page_names[] = {
-    { 83, "PITCH/SPEED" }, { 88, "CHOP" }, { 90, "START/END" },
+static const struct { int page; const char *name; int alone; } page_names[] = {
+    { 83, "PITCH/SPEED", 1 }, { 88, "CHOP", 1 }, { 90, "START/END", 1 },
+    /* And two named as the manual does, which go on to say what they show,
+       only when they are new: RECORD SETTING is built again as REMAIN
+       changes its MODE. */
+    { PAGE_RECORD_SETTING, "RECORD SETTING", 0 }, { PAGE_MICROSCOPE, "Microscope", 0 },
 };
+
+/* TR-REC, on the pattern screen, shown by its line Ptn:G1; and whether it
+   was showing when the last batch was said. */
+static int trrec_last;
+
+static int trrec_showing(void)
+{
+    int i;
+
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].site == TRREC_PATTERN)
+            return 1;
+    return 0;
+}
+
+/* The REMAIN page, a line at a time, each name with its value. */
+static int want_drawn(const struct item *it)
+{
+    return drawn_now(it) && !is_popup(it);
+}
+
+static void say_rows(struct item **order)
+{
+    int n = in_order(order, ITEMS, want_drawn), i, k;
+
+    for (i = 0; i < n; i = k) {
+        const char *part[3] = { NULL, NULL, NULL };
+        int m = 0;
+        for (k = i; k < n && order[k]->y - order[i]->y <= 2; k++)
+            if (m < 3)
+                part[m++] = order[k]->text;
+        say3(part[0], part[1], part[2]);
+    }
+}
 
 /* What to say about a new screen. A dialog that has just opened is all
    there is: its text, then its own focused button. Otherwise the title, the
@@ -2480,6 +2738,8 @@ static void new_screen(struct item **order)
     int n, i, k, focus, popups, effect = 0, top = 0;
 
     last_label = NULL;
+    last_fixed = 0;
+    pair_said[0][0] = pair_said[1][0] = 0;
     if ((dialog_surf = new_dialog()) != 0) {
         n = in_order(order, ITEMS, want_dialog_text);
         for (i = 0; i < n; i++)
@@ -2489,16 +2749,27 @@ static void new_screen(struct item **order)
             say(order[i]);
         return;
     }
+    /* REMAIN's page, shown while the key is held on the top screen, is
+       all information. */
+    if (page_now == PAGE_REMAIN) {
+        say_rows(order);
+        return;
+    }
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
         say(order[i]);
-    /* The pattern screen's COPY, EXCHANGE and the rest have no title but the
-       mode in its status bar, which leads. */
-    if (n == 0 && page_now == PAGE_PATTERN && PAT_MODE >= PMODE_DELETE
-        && PAT_MODE <= PMODE_EXCHANGE) {
-        k = in_order(order, ITEMS, want_new_state);
-        for (i = 0; i < k; i++)
-            n += say(order[i]) == 1;
+    /* The pattern screen with no big title names itself by its state in
+       the status bar, STOP-PTN C1, COUNT IN, COPY, EXCHANGE; TR-REC, whose
+       status bar is empty, by its mode, as Roland names it. */
+    if (n == 0 && page_now == PAGE_PATTERN) {
+        if (trrec_showing()) {
+            if (!trrec_last)
+                n += say3("TR-REC", NULL, NULL) == 1;
+        } else {
+            k = in_order(order, ITEMS, want_new_state);
+            for (i = 0; i < k; i++)
+                n += say(order[i]) == 1;
+        }
     }
     /* A screen's warning, after its title. */
     k = in_order(order, ITEMS, want_notice);
@@ -2510,8 +2781,12 @@ static void new_screen(struct item **order)
     if (n == 0 && page_arrived)
         for (i = 0; i < (int)(sizeof page_names / sizeof page_names[0]); i++)
             if (page_names[i].page == page_now) {
-                say3(page_names[i].name, NULL, NULL);
-                return;
+                if (page_names[i].alone) {
+                    say3(page_names[i].name, NULL, NULL);
+                    return;
+                }
+                if (batch_page != page_now)
+                    say3(page_names[i].name, NULL, NULL);
             }
     if (tab_known()) {
         if (strcmp(tab_now, last_tab) != 0) {
@@ -2545,7 +2820,9 @@ static void new_screen(struct item **order)
                     focus += say_pad(&items[i]) == 1;
                     continue;
                 }
-                top = !effect_shown;
+                /* Nor does letting go of REMAIN, whose page shows only
+                   while it is held. */
+                top = !effect_shown && !(page_arrived && page_prev == PAGE_REMAIN);
                 focus++;
                 break;
             }
@@ -2713,6 +2990,11 @@ static void same_screen(struct item **order)
             it->changed = 0;
             continue;
         }
+        /* The chain's highlight moving from slot to slot as it plays. */
+        if (page_now == PAGE_CHAIN && it->changed == 2 && !it->prompted) {
+            it->changed = 0;
+            continue;
+        }
         /* A value turned on the selected row says the value alone. */
         if (it->changed == 1 && (l = row_label(it)) != NULL && l->row_sel) {
             if (say3(it->text, NULL, NULL))
@@ -2735,7 +3017,9 @@ static void same_screen(struct item **order)
         struct item *it = order[i];
         if (it->changed != 1 || is_lit(it) || is_title(it))
             continue;
-        if (mirrors_focus(it)) {
+        /* A chain's slot filled with the pattern the highlighted one holds
+           is news. */
+        if (it->role != ROLE_ANSWER && mirrors_focus(it)) {
             it->changed = 0;
             continue;
         }
@@ -2761,6 +3045,11 @@ static void same_screen(struct item **order)
         /* A bank COPY BANK PAD copies from or to, by the manual's words. */
         if (it->role == ROLE_COPY_FROM || it->role == ROLE_COPY_TO) {
             say3(it->role == ROLE_COPY_FROM ? "source" : "destination", it->text, NULL);
+            it->changed = 0;
+            continue;
+        }
+        /* And the pads a copy or an exchange is between. */
+        if (it->role == ROLE_ANSWER && say_pair(it)) {
             it->changed = 0;
             continue;
         }
@@ -2973,6 +3262,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
         side_before = -2;
         bank_moved = 0;
         pat_pending = 0;
+        chain_removed[0] = 0;
         pending = 0;
         page_pending = 0;
         tab_changed = 0;
@@ -2982,8 +3272,10 @@ int screen_poll(char *phrases, size_t cap, int *count)
         due = 1;
     if (due && state_seen && (int32_t)(now - state_hold) < 0)
         due = 0;
+    /* Only what can be said: a running bar and beat, never said, would
+       otherwise make every poll a batch once it held still. */
     for (i = 0; i < ITEMS && !due; i++)
-        if (items[i].used && items[i].changed == 1 && items[i].rapid > 0
+        if (live(&items[i]) && items[i].changed == 1 && items[i].rapid > 0
             && now - items[i].last_change >= STEADY)
             due = 1;
     if (!due)
@@ -3010,6 +3302,15 @@ int screen_poll(char *phrases, size_t cap, int *count)
     b_used = 0;
     b_count = 0;
     b_now = now;
+    /* An operation's message comes first, before the bank letter and the
+       screen it leaves you on: "Operation Completed!, pattern". */
+    if (screen_mode != SCREEN_ALL) {
+        int k = in_order(order, ITEMS, want_message);
+        for (i = 0; i < k; i++) {
+            say(order[i]);
+            order[i]->changed = 0;
+        }
+    }
     /* A bank change is its letter alone, on every screen but the tempo
        screen, whose choice of PROJECT or BANK A reads it already. */
     if (bank_moved && page_now != 81) {
@@ -3032,6 +3333,9 @@ int screen_poll(char *phrases, size_t cap, int *count)
     pat_pending = 0;
     say_picks();
     say_presses();
+    if (chain_removed[0] && page_now == PAGE_CHAIN)
+        say3("delete,", chain_removed, NULL);
+    chain_removed[0] = 0;
     if (screen_mode == SCREEN_ALL) {
         for (i = 0; i < nburst; i++)
             say(&items[burst[i]]);
@@ -3078,7 +3382,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
     } else {
         same_screen(order);
         for (i = 0; i < ITEMS; i++)
-            if (items[i].changed == 2 || !items[i].used)
+            if (items[i].changed == 2 || !live(&items[i]))
                 items[i].changed = 0;
     }
     effect_shown = 0;
@@ -3090,6 +3394,8 @@ int screen_poll(char *phrases, size_t cap, int *count)
     wiped = 0;
     tab_changed = 0;
     b_prev = now;
+    batch_page = page_now;
+    trrec_last = trrec_showing();
     /* A screen that says just what the one before said, less than a second
        ago with no key pressed between: an effect's button shows the grid,
        titled with the effect, for a tenth of a second before the effect's

@@ -1,6 +1,6 @@
 top screen
 pattern
 EXCHANGE
-A2 <> --
+A2
 C
-A2 <> C7
+C7

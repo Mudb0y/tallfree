@@ -1,8 +1,8 @@
 top screen
 pattern
 COPY | PATTERN | P-01
-A1 >> -- | REMAIN: Samples to copy
+source A1 | REMAIN: Samples to copy
 B
-A1 >> B3
-SAMPLE | A1 >> --
-A1 >> B5
+destination B3
+SAMPLE
+destination B5

@@ -1,0 +1,18 @@
+top screen
+pattern
+RECORD SETTING | quantize: GRID 16 | MODE: TR-REC | G 1
+TR-REC | pattern: G1 | BAR: 1 of 2 | G-1: TRIG
+G-13: TRIG
+BAR: 2 of 2
+Microscope | STEP: 7 BAR: 2 of 2 | G 13
+1
+2
+3
+CHROM: -10
+CHROM: -8
+CHROM: -6
+velocity 68
+74
+77
+TR-REC | pattern: G1 | BAR: 2 of 2 | G-13: TRIG
+PLAY-pattern G1

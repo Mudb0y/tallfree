@@ -1,0 +1,11 @@
+top screen
+pattern
+Please Select Chain 1-16
+PATTERN CHAIN [1] | REPEAT All
+G.1
+G.1
+G.1
+G.2
+delete, G.2
+Current
+Off

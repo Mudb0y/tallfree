@@ -2,4 +2,4 @@ top screen
 pattern
 REC | Select PAD for RECORDING
 C
-quantize: GRID 16 | MODE : Real-Time | C 2
+RECORD SETTING | quantize: GRID 16 | MODE: Real-Time | C 2

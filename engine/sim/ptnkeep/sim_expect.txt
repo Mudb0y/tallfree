@@ -1,7 +1,7 @@
 top screen
 pattern
 COPY | PATTERN | P-01
-A1 >> -- | REMAIN: Samples to copy
+source A1 | REMAIN: Samples to copy
 Select Samples
 A 2 selected
 A 3 selected

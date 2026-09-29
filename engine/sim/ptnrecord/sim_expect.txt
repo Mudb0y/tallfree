@@ -1,0 +1,7 @@
+top screen
+pattern
+REC | Select PAD for RECORDING
+RECORD SETTING | quantize: GRID 16 | MODE: Real-Time | G 1
+COUNT IN
+PLAY-pattern G1
+pattern

@@ -1,5 +1,5 @@
 top screen
 COPY PAD | P-01
-A13 >> --
+source A13
 B
-A13 >> B1
+destination B1

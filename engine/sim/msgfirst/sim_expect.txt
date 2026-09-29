@@ -1,0 +1,5 @@
+top screen
+pattern
+delete
+A 1 selected
+Operation Completed! | pattern

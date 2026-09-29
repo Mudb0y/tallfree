@@ -1,5 +1,5 @@
 top screen
-quantize: GRID 16 | MODE : Real-Time | A 1
+RECORD SETTING | quantize: GRID 16 | MODE: Real-Time | A 1
 BPM 93.0
 97.0
 105.0

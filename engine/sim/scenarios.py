@@ -422,7 +422,9 @@ def turned():
 # columns, each a name at the top and a line at the bottom, BPM's tempo in
 # the middle over its unit, BPM again; below, on a surface of its own, a
 # hint and the quantise grid on white, the mode and the pattern. Entering
-# reads what the knobs do not set; CTRL 1 turns the tempo, CTRL 2 the
+# names it RECORD SETTING, as the manual does, and reads what the knobs do
+# not set, MODE : Real-Time closed up so the colon is not read out; CTRL 1
+# turns the tempo, CTRL 2 the
 # length and CTRL 3 the strength, each named on its first step only.
 def patrec():
     NAME, LOW, TEMPO = '=801709AB:', '=801709EF:', '=80170A15:'
@@ -444,7 +446,7 @@ def patrec():
         t = 7000 + 50 * k
         d += [f'{t} CTRL 3 {53 + 4 * k}', f'{t} s0 100 34 _{LOW}{v}']
     d += ['9000 VALUE']
-    write('patrec', d, ['top screen', 'quantize: GRID 16 | MODE : Real-Time | A 1',
+    write('patrec', d, ['top screen', 'RECORD SETTING | quantize: GRID 16 | MODE: Real-Time | A 1',
                         'BPM 93.0', '97.0', '105.0', '111.0', 'LENGTH 38 Bars', '41 Bars',
                         'STRENGTH 43%', '49%'])
 
@@ -718,9 +720,11 @@ def extpower():
 
 # COPY on the pad operations page, 67 in its mode 0, as runs/60 drew it:
 # COPY PAD in the status bar, the project it copies into on white, the
-# source and destination below. Arriving says the heading and the project;
-# a pad names the source; a bank key, which the screen does not show, is
-# said; a pad in the new bank names the destination.
+# source and destination below, A13 >> B1. Arriving says the heading and
+# the project; a pad names the source, "source A13"; a bank key, which the
+# screen does not show, is said; a pad in the new bank names the
+# destination, "destination B1", in the manual's words: OpenEVV reads >> as
+# "greater than" twice.
 def copy():
     d = main_screen(0, 0, 'A-13')
     d += ['1000 KEY DOWN 23', '1000 PAGE 67', '1000 MODE 0', '1000 s0 FILL 0 0 127 63',
@@ -729,7 +733,7 @@ def copy():
           '3000 PAD 13', '3040 s0 35 32 _=801561D5:A13 >> --',
           '4000 KEY DOWN 26', '4000 BANK 1',
           '5000 PAD 1', '5040 s0 35 32 _=801561D5:A13 >> B1', '7000 VALUE']
-    write('copy', d, ['top screen', 'COPY PAD | P-01', 'A13 >> --', 'B', 'A13 >> B1'])
+    write('copy', d, ['top screen', 'COPY PAD | P-01', 'source A13', 'B', 'destination B1'])
 
 # An effect's button pressed, as runs/60 drew it: the grid, its cell for the
 # effect on white and the effect's name as its title, for a tenth of a
@@ -840,23 +844,23 @@ def copybank():
 # again whole whenever anything changes.
 PST, PBIG = '=8015F85F:', '=800EE779:'
 
-def pattern_status(t, state):
+def pattern_status(t, state, bpm='103.0'):
     return [f'{t} s0 FILL 44 0 128 8', f'{t} s0 {88 - 2 * len(state)} 2 !{PST}{state}',
-            f'{t} s0 8 2 !=80156727:BPM 103.0']
+            f'{t} s0 8 2 !=80156727:BPM {bpm:>5}']
 
-def pattern_screen(t, state='SELECT', big='P T N'):
-    return ['%d s0 FILL 0 0 127 63' % t] + pattern_status(t, state) + \
+def pattern_screen(t, state='SELECT', big='P T N', bpm='103.0'):
+    return ['%d s0 FILL 0 0 127 63' % t] + pattern_status(t, state, bpm) + \
         [f'{t} s0 {28 + 17 * (5 - len(big))} 14 _{PBIG}{big}']
 
 # COPY on the pattern screen, its mode 8: its headings on white, PATTERN
 # and PATTERN, or SAMPLE once PATTERN SELECT makes it a bounce, the project
 # under the second, and the source and destination between >>, drawn as
 # text: FUN_801350B8 takes the pads. Arriving says the mode, the headings
-# and the project; each pad is said as the line shows it; a bank key,
-# which moves the destination's bank once there is a source, says its
-# letter, which nothing shows; PATTERN SELECT says SAMPLE and the line
-# without its destination. Pressed as quickly as a hand does, each change
-# of the line is said at once.
+# and the project; each pad is said as the side of the line it sets,
+# source or destination; a bank key, which moves the destination's bank
+# once there is a source, says its letter, which nothing shows; PATTERN
+# SELECT says SAMPLE, the destination it clears unsaid. Pressed as quickly
+# as a hand does, each change of the line is said at once.
 def ptncopy():
     def body(t, line, right='PATTERN', hint=None):
         d = [f'{t} s0 FILL 0 9 128 64', f'{t} s0 35 30 _=80149303:{line}',
@@ -878,21 +882,23 @@ def ptncopy():
     d += ['7600 PAD 5'] + pattern_status(7610, 'COPY') + body(7610, 'A1 >> B5', right='SAMPLE', hint=hint)
     d += ['9500 VALUE']
     write('ptncopy', d, ['top screen', 'pattern', 'COPY | PATTERN | P-01',
-                         'A1 >> -- | REMAIN: Samples to copy', 'B', 'A1 >> B3',
-                         'SAMPLE | A1 >> --', 'A1 >> B5'])
+                         'source A1 | REMAIN: Samples to copy', 'B', 'destination B3',
+                         'SAMPLE', 'destination B5'])
 
 # DELETE on the pattern screen, its mode 6: the big D E L, which names it,
 # and DELETE in the status bar. The pads choose patterns shown only by their
 # lights, flipping a word each in the pattern store, from the bank a bank
-# key moves, as FUN_801350B8 does; each is said chosen or let go.
+# key moves, as FUN_801350B8 does; each is said chosen or let go. The bank
+# key brings the new bank's tempo to the status bar, as runs/68 drew it,
+# which is not said.
 def ptndelete():
     d = main_screen(0, 0, 'A-13')
     d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
     d += ['3000 KEY DOWN 1a', '3000 PMODE 6'] + pattern_screen(3010, 'DELETE', 'D E L')
-    d += ['5000 KEY DOWN 26'] + pattern_screen(5010, 'DELETE', 'D E L')
+    d += ['5000 KEY DOWN 26'] + pattern_screen(5010, 'DELETE', 'D E L', '90.0')
     for k, pad in enumerate([3, 3, 4]):
         t = 6000 + 1000 * k
-        d += [f'{t} PAD {pad}'] + pattern_screen(t + 10, 'DELETE', 'D E L')
+        d += [f'{t} PAD {pad}'] + pattern_screen(t + 10, 'DELETE', 'D E L', '90.0')
     d += ['10000 VALUE']
     write('ptndelete', d, ['top screen', 'pattern', 'delete', 'B', 'B 3 selected',
                            'B 3 deselected', 'B 4 selected'])
@@ -940,13 +946,13 @@ def ptnrec():
           f'7030 s0 86 4 _{NAME} STRENGTH ', f'7030 s0 102 34 _{LOW}0%']
     d += ['9000 VALUE']
     write('ptnrec', d, ['top screen', 'pattern', 'REC | Select PAD for RECORDING', 'C',
-                        'quantize: GRID 16 | MODE : Real-Time | C 2'])
+                        'RECORD SETTING | quantize: GRID 16 | MODE: Real-Time | C 2'])
 
 
 # EXCHANGE on the pattern screen, its mode 10, SHIFT and pad 5: EXCHANGE in
 # the status bar and the pads it swaps between <>, which FUN_801350B8 sets
-# as COPY's, nothing said until one is chosen. The pad that opens it is
-# not a choice.
+# as COPY's, nothing said until one is chosen, then each pad alone. The pad
+# that opens it is not a choice.
 def ptnexchange():
     def body(t, line):
         return [f'{t} s0 FILL 0 9 128 64', f'{t} s0 35 30 _=80149303:{line}']
@@ -958,8 +964,7 @@ def ptnexchange():
     d += ['5600 KEY DOWN 27'] + pattern_status(5610, 'EXCHANGE') + body(5610, 'A2 <> --')
     d += ['6100 PAD 7'] + pattern_status(6110, 'EXCHANGE') + body(6110, 'A2 <> C7')
     d += ['8000 VALUE']
-    write('ptnexchange', d, ['top screen', 'pattern', 'EXCHANGE', 'A2 <> --', 'C',
-                             'A2 <> C7'])
+    write('ptnexchange', d, ['top screen', 'pattern', 'EXCHANGE', 'A2', 'C', 'C7'])
 
 # DELETE BANK on the pattern screen, its mode 7, held DEL and EXIT: the bank
 # in the big field, Bn:A, which a bank key moves; its letter is said, and
@@ -999,8 +1004,193 @@ def ptnkeep():
         d += [f'{t} PAD {pad}'] + pattern_status(t + 10, 'COPY') + body(t + 10, 'A1 >> --', 'Select Samples')
     d += ['10000 VALUE']
     write('ptnkeep', d, ['top screen', 'pattern', 'COPY | PATTERN | P-01',
-                         'A1 >> -- | REMAIN: Samples to copy', 'Select Samples', 'A 2 selected',
+                         'source A1 | REMAIN: Samples to copy', 'Select Samples', 'A 2 selected',
                          'A 3 selected', 'A 2 deselected'])
+
+# The message box, FUN_8001F4xx, as runs/68 drew it deleting a pattern:
+# Working, then Operation Completed! as the pattern screen goes back to
+# choosing patterns. The message leads, before the screen it leaves you on.
+def msgfirst():
+    MSG = '=8001F4BD:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 1a', '3000 PMODE 6'] + pattern_screen(3010, 'DELETE', 'D E L')
+    d += ['4000 PAD 1'] + pattern_screen(4010, 'DELETE', 'D E L')
+    d += ['5000 KEY DOWN 1a', f'5000 s1 18 20 ~{MSG}Working', '5000 s1 18 40 ~=8001F6B5: ',
+          '5010 PMODE 1'] + pattern_screen(5010) + \
+        [f'5010 s1 18 20 ~{MSG}Operation\\nCompleted!', '5010 s1 18 40 ~=8001F6B5:']
+    d += ['7000 VALUE']
+    write('msgfirst', d, ['top screen', 'pattern', 'delete', 'A 1 selected',
+                          'Operation Completed! | pattern'])
+
+# COUNT-IN on the pattern screen, SHIFT and pad 10, as runs/68 drew it:
+# each press brings its pop-up a moment later, and presses come within a
+# second of each other; each is said as it comes.
+def countin():
+    TOAST = '=8006BECD:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 2a', '3100 PAD 10', f'3128 s1 9 4 ~{TOAST}COUNT-IN 2MEAS',
+          '3810 PAD 10', f'3838 s1 10 4 ~{TOAST}COUNT-IN WAIT',
+          '4340 PAD 10', f'4368 s1 10 4 ~{TOAST}COUNT-IN OFF', '4500 KEY UP 2a', '7000 VALUE']
+    write('countin', d, ['top screen', 'pattern', 'COUNT-IN 2 measures', 'COUNT-IN WAIT',
+                         'COUNT-IN OFF'])
+
+# The recording settings, page 62, as runs/57 and runs/68 drew them.
+def record_setting(t, pattern):
+    NAME, LOW, TEMPO = '=801709AB:', '=801709EF:', '=80170A15:'
+    return [f'{t} PAGE 62', f'{t} s1 83 46 !=8016B061:GRID 16',
+            f'{t} s1 5 45 !=8016BAB7:SHIFT:OTHER', f'{t} s1 83 54 _=8016BB11:{pattern}',
+            f'{t} s1 5 54 _=8016BB45:MODE : Real-Time', f'{t} s1 65 46 _=8016BB55:QTZ:',
+            f'{t} s0 CLEAR',
+            f'{t} s0 15 4 _{NAME}BPM', f'{t} s0 15 34 _{LOW}BPM', f'{t} s0 9 19 _{TEMPO}95.0',
+            f'{t} s0 53 4 _{NAME}LENGTH', f'{t} s0 53 34 _{LOW}2 Bars',
+            f'{t} s0 86 4 _{NAME} STRENGTH ', f'{t} s0 98 34 _{LOW}100%']
+
+# Recording a pattern in real time, as runs/68 drew it: REC on the
+# recording settings builds the pattern screen, STAND BY, WAIT NOTE... and
+# COUNT IN in the status bar a moment apart, which says COUNT IN; the
+# count-in's bars, -1.1. on, are not said. Recording begins with the
+# metronome's and the quantise's settings in the status bar and the pattern
+# and 2.4 in the corners, none of it said. EXIT ends it with the pattern
+# playing, PLAY-PTN G1, and EXIT again stops it.
+def ptnrecord():
+    BAR = f'{PBIG}'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['2000 KEY DOWN 1b', '2000 s1 9 4 ~=8006BECD:Select PAD\\nfor RECORDING'] + \
+        pattern_status(2040, 'STAND BY') + ['2040 s0 FILL 0 9 128 64', f'2040 s0 28 14 _{PBIG}R E C']
+    d += ['3000 PAD 1'] + record_setting(3010, 'G-1')
+    d += ['5000 KEY DOWN 1b', '5010 PAGE 60', '5010 s0 CLEAR'] + pattern_status(5010, 'STAND BY-PTN G1') + \
+        ['5010 s0 FILL 0 9 128 64', f'5010 s0 28 14 _{PBIG}R E C'] + \
+        pattern_status(5026, 'WAIT NOTE...-PTN G1') + pattern_status(5055, 'COUNT IN') + \
+        ['5055 s0 FILL 0 9 128 64', f'5055 s0 21 14 _{BAR}-1.1.']
+    for k, t in enumerate([5690, 6325, 6910]):
+        d += [f'{t} s0 FILL 0 9 128 64', f'{t} s0 21 14 _{BAR}-1.{k + 2}.']
+    d += ['7540 s0 FILL 44 0 128 8', '7540 s0 51 2 !=8015F7D3:METRO 5',
+          '7540 s0 86 2 !=8015F7E1:GRID 100%', '7540 s0 8 2 !=80156727:BPM 103.0',
+          '7540 s0 FILL 0 9 128 64', f'7540 s0 45 14 _{BAR}1.1.', f'7540 s0 8 53 _{PBIG}G1',
+          f'7540 s0 112 59 _{PBIG}2.4']
+    for k, t in enumerate([8175, 8810, 9445, 10080]):
+        d += [f'{t} s0 FILL 0 9 128 64', f'{t} s0 45 14 _{BAR}{1 + (k + 1) // 4}.{(k + 1) % 4 + 1}.',
+              f'{t} s0 8 53 _{PBIG}G1', f'{t} s0 112 59 _{PBIG}2.4']
+    d += ['10500 KEY DOWN 22'] + pattern_status(10533, 'PLAY-PTN G1') + \
+        ['10585 s0 FILL 0 9 128 64', f'10585 s0 45 14 _{BAR}2.2.', f'10585 s0 112 59 _{PBIG}2.4']
+    d += ['12000 KEY DOWN 22'] + pattern_screen(12050)
+    d += ['14000 VALUE']
+    write('ptnrecord', d, ['top screen', 'pattern', 'REC | Select PAD for RECORDING',
+                           'RECORD SETTING | quantize: GRID 16 | MODE: Real-Time | G 1',
+                           'COUNT IN', 'PLAY-pattern G1', 'pattern'])
+
+# TR-REC, as runs/68 drew it: REC on the recording settings in its TR-REC
+# mode builds the pattern screen with the CTRL knobs' columns, SUBSTEP,
+# PITCH over its mode CHROMATIC, VELOCITY, and below the pattern, the bar
+# and the sample to input. Arriving says TR-REC, which the empty status bar
+# does not, and what the knobs do not set; SUB PAD and a pad choose the
+# sample, said; VALUE chooses the bar. PATTERN EDIT and a pad open the
+# Microscope, its knobs' legends in the status bar and the note's step and
+# sample over its timing, on white, its pitch and its velocity: arriving
+# names it and the note; the timing is said bare as VALUE moves it, the
+# pitch names itself, the velocity is named by its legend, VELO. EXIT goes
+# back to TR-REC, and EXIT again leaves it with the pattern playing.
+def trrec():
+    NAME, MID, LOW, VAL = '=801709AB:', '=801709C7:', '=801709EF:', '=80170A15:'
+    def screen(t, bar, sample):
+        return [f'{t} PAGE 60', f'{t} s0 CLEAR', f'{t} s0 88 2 !=8015F85F:',
+                f'{t} s0 8 4 _{NAME}SUBSTEP', f'{t} s0 55 4 _{NAME}PITCH', f'{t} s0 46 10 _{MID}CHROMATIC',
+                f'{t} s0 65 34 _{LOW}', f'{t} s0 58 19 _{VAL}+0', f'{t} s0 90 4 _{NAME}VELOCITY',
+                f'{t} s0 99 19 _{VAL}90', f'{t} s0 5 43 !=8016C5CD:SHIFT:OTHER',
+                f'{t} s0 58 43 _=8016C6C5:Ptn:G1', f'{t} s0 92 43 _=8016C6D9:BAR:{bar}',
+                f'{t} s0 5 51 _=8016C75F:{sample}', f'{t} s0 112 59 _{PBIG}2.4']
+    def micro(t):
+        return ['%d PAGE 80' % t, f'{t} s1 CLEAR', f'{t} s1 21 22 !=8015F007:0',
+                f'{t} s1 50 22 _=8015F09B:CHROM:0', f'{t} s1 102 22 _=8015F0BD:90',
+                f'{t} s1 9 2 !=80172FF5:C1:ITEM', f'{t} s1 49 2 !=8017301B:C2:PITCH',
+                f'{t} s1 93 2 !=8017303D:C3:VELO', f'{t} s1 10 12 _=801730D3:STEP: 7  BAR:2/2',
+                f'{t} s1 104 12 _{PBIG}G-13']
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += record_setting(2000, 'G-1') + ['2000 s1 5 54 _=8016BB45:MODE : TR-REC']
+    d += ['4000 KEY DOWN 1b'] + screen(4010, '1/2', 'G-1 : TRIG')
+    d += ['6000 KEY DOWN 13', '6400 PAD 13', '6435 s0 5 51 _=8016C75F:G-13 : TRIG', '6600 KEY UP 13']
+    d += ['7500 KNOB 0 1', '7540 s0 92 43 _=8016C6D9:BAR:2/2']
+    d += ['9000 KEY DOWN 15', '9400 PAD 7'] + micro(9410) + ['9700 KEY UP 15']
+    for k in range(3):
+        t = 11000 + 130 * k
+        d += [f'{t} KNOB 0 1', f'{t + 13} s1 21 22 !=8015F007:{k + 1}']
+    for k, v in enumerate(['-10', '-8', '-6']):
+        t = 13000 + 55 * k
+        d += [f'{t} CTRL 2 {5 - k}', f'{t + 50} s1 {46 if k == 0 else 48} 22 _=8015F09B:CHROM:{v}']
+    for k, v in enumerate(['68', '74', '77']):
+        t = 15000 + 55 * k
+        d += [f'{t} CTRL 3 {67 + 3 * k}', f'{t + 20} s1 102 22 _=8015F0BD:{v}']
+    d += ['17000 KEY DOWN 22'] + screen(17000, '2/2', 'G-13 : TRIG')
+    d += ['19000 KEY DOWN 22', '19000 PAGE 60', '19000 s0 CLEAR', '19000 s0 88 2 !=8015F85F:',
+          '19000 s0 8 2 !=80156727:BPM 103.0', f'19000 s0 45 14 _{PBIG}2.2.',
+          f'19000 s0 112 59 _{PBIG}2.4'] + pattern_status(19066, 'PLAY-PTN G1')
+    d += ['21000 VALUE']
+    write('trrec', d, ['top screen', 'pattern',
+                       'RECORD SETTING | quantize: GRID 16 | MODE: TR-REC | G 1',
+                       'TR-REC | pattern: G1 | BAR: 1 of 2 | G-1: TRIG', 'G-13: TRIG',
+                       'BAR: 2 of 2', 'Microscope | STEP: 7 BAR: 2 of 2 | G 13', '1', '2', '3',
+                       'CHROM: -10', 'CHROM: -8', 'CHROM: -6', 'velocity 68', '74', '77',
+                       'TR-REC | pattern: G1 | BAR: 2 of 2 | G-13: TRIG', 'PLAY-pattern G1'])
+
+# The pattern chain, page 57, as runs/68 drew it: key 0x11 on the pattern
+# screen asks for a chain in the message box, and a pad opens it: its
+# heading, sixteen slots and REPEAT. Each pad adds its pattern to the next
+# slot, the first highlighted, the heading gaining (*), which is not said;
+# each is said, a pattern the highlighted slot holds too. DEL takes the last
+# off, said as what it held. SUB PAD plays the chain: its position and the
+# 2.4 over the slots are not said, nor the highlight moving from slot to
+# slot with it. REMAIN changes REPEAT, said at once.
+def chain():
+    CELL, LIT, POS = '=8008D11B:', '=8008D19B:', '=8016EBDB:'
+    xs, ys = [17, 38, 59, 80], [21, 32, 43, 54]
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 11', '3045 s1 18 20 ~=8001F4BD:Please Select\\nChain 1-16',
+          '3045 s1 18 40 ~=8001F6B5:', '3500 KEY UP 11']
+    d += ['4800 PAD 1', '4810 PAGE 57', '4810 s0 CLEAR']
+    d += [f'4810 s0 {x} {y} _{CELL} ' for y in ys for x in xs]
+    d += [f'4810 s0 106 22 _{POS}-', '4810 s0 23 2 _=80141D3F:PATTERN CHAIN [1]',
+          '4810 s0 97 40 _=800FE92F:REPEAT', '4810 s0 103 48 _=800FE983:All']
+    d += ['7000 PAD 1', f'7010 s0 14 21 !{LIT}G.1', f'7010 s0 100 22 _{POS}1.1',
+          '7010 s0 14 2 _=80141D3F:PATTERN CHAIN [1](*)']
+    for k, (pad, x, y) in enumerate([(1, 35, 21), (1, 56, 21), (2, 77, 21)]):
+        t = 9000 + 2000 * k
+        d += [f'{t} PAD {pad}', f'{t + 10} s0 {x} {y} _{CELL}G.{pad}']
+    d += ['16000 KEY DOWN 1a', '16010 s0 80 21 _=8008D11B: ', '16100 KEY UP 1a']
+    d += ['18000 KEY DOWN 13', f'18050 s0 72 11 _{PBIG}2.4', '18100 KEY UP 13']
+    for k in range(8):
+        d.append(f'{18700 + 650 * k} s0 100 22 _{POS}{1 + (k + 1) // 4}.{(k + 1) % 4 + 1}')
+    d += ['23900 s0 14 21 _=8008D11B:G.1', '23900 s0 35 21 !=8008D19B:G.1',
+          f'23900 s0 100 22 _{POS}1.1']
+    d += ['25000 KEY DOWN 24', '25050 s0 101 48 _=800FE983:Current', '25100 KEY UP 24',
+          '25500 KEY DOWN 24', '25550 s0 103 48 _=800FE983:Off', '25600 KEY UP 24']
+    d += ['27000 VALUE']
+    write('chain', d, ['top screen', 'pattern', 'Please Select Chain 1-16',
+                       'PATTERN CHAIN [1] | REPEAT All', 'G.1', 'G.1', 'G.1', 'G.2',
+                       'delete, G.2', 'Current', 'Off'])
+
+# REMAIN held on the top screen, as runs/68 drew it: page 49, a list of
+# names and values, one on white; let go, the top screen again. Each line
+# is said, name and value together; letting go says nothing.
+def remain():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['3500 KEY UP 24', '3500 PAGE 84'] + main_screen(3500, 0, 'A-13')
+    d += ['5000 VALUE']
+    write('remain', d, ['top screen',
+                        'STORAGE AVAILABLE 14.36GB | PROJECT 1 PROJECT_01 | NAME New Sample | '
+                        'Color White | Remaining Time -00:05 | STEREO/MONO STEREO'])
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
@@ -1043,3 +1233,9 @@ ptnrec()
 ptnexchange()
 ptndeletebank()
 ptnkeep()
+msgfirst()
+countin()
+ptnrecord()
+trrec()
+chain()
+remain()
