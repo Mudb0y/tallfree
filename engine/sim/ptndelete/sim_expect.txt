@@ -1,0 +1,7 @@
+top screen
+pattern
+delete
+B
+B 3 selected
+B 3 deselected
+B 4 selected

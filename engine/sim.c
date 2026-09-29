@@ -28,6 +28,8 @@
      MS PAD N                  pad N, 1 to 16, pressed, to the page last built
      MS MODE M                 the page last built is in mode M
      MS BANK B                 the current bank is B, 0 to 9
+     MS PMODE M                the pattern store's mode is M, 8 for COPY
+     MS PKEEP 0|1              COPY choosing the samples to keep, or not
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
@@ -62,6 +64,11 @@ volatile int32_t sim_bank;
    current pad in its bank. */
 volatile uint32_t sim_padstore[160 * 0xAC / 4 + 16];
 volatile int32_t sim_padnow;
+/* The pattern sequencer's store at 0x82DFFC88, and whether COPY is choosing
+   the samples to keep, the flag at 0x2A of the store at 0x82E01144. */
+volatile uint32_t sim_patstore[0x800 / 4];
+static int sim_keep;
+#define PSTORE(off) (*(int32_t *)((char *)sim_patstore + (off)))
 static int sim_shift;
 static uint32_t page_object[0x1AA0 / 4];
 static int page_now = 84;
@@ -133,9 +140,26 @@ static int sim_page_factory(void *request)
         }
     }
     /* VALUE on COPY BANK PAD moves its cursor, the word at 0x488 of the
-       store, to the destination and back. */
+       store, to the destination and back; on the pattern screen's COPY BANK
+       the word at 0x2EC of the pattern store. */
     if (*m == 7 && m[1] == 0 && page_now == 67 && PAGE_MODE == 3)
         sim_store[0x488 / 4] = m[2] > 0;
+    if (*m == 7 && m[1] == 0 && page_now == 60 && PSTORE(0x34) == 9)
+        PSTORE(0x2EC) = m[2] > 0;
+    /* The bank keys in pattern mode, as FUN_80084258 and FUN_800C9788 set
+       the pattern store: the bank the pads show; once COPY or EXCHANGE has
+       a source, the destination's, or the samples' to keep; on COPY BANK
+       the bank the cursor is on. A key pressed again gives the other bank
+       of its pair. */
+    if (*m == 5 && m[1] >= 0x25 && m[1] <= 0x29 && PSTORE(0x34) > 0) {
+        int k = m[1] - 0x25, mode = PSTORE(0x34);
+        uint32_t off = 0x2BC;
+        if (page_now == 60 && mode == 9)
+            off = PSTORE(0x2EC) ? 0x2E4 : 0x2E8;
+        else if (page_now == 60 && (mode == 8 || mode == 10) && PSTORE(0x2B8) >= 0)
+            off = mode == 8 && sim_keep ? 0x2F0 : 0x2DC;
+        PSTORE(off) = PSTORE(off) == k ? k + 5 : k;
+    }
     if (*m == 1) {
         sim_export_page = page_now == 85 ? (uint32_t)(uintptr_t)page_object : 0;
         sim_padops_page = page_now == 67 ? (uint32_t)(uintptr_t)page_object : 0;
@@ -144,6 +168,27 @@ static int sim_page_factory(void *request)
     if (*m != 16 || m[1] < 0 || m[1] > 15)
         return 0;
     pad = m[1];
+    /* The pattern screen's pads, as FUN_801350B8 takes them: DELETE flips
+       the pattern; COPY and EXCHANGE choose the source, then the
+       destination, or COPY flips a sample to keep. */
+    if (page_now == 60) {
+        int mode = PSTORE(0x34), bank = PSTORE(0x2BC);
+        if (mode == 6) {
+            PSTORE(0x2F8 + 4 * (bank * 16 + pad)) = PSTORE(0x2F8 + 4 * (bank * 16 + pad)) > 0 ? 0 : 1;
+        } else if ((mode == 8 || mode == 10) && PSTORE(0x2B8) < 0) {
+            PSTORE(0x2B8) = pad;
+            PSTORE(0x2DC) = bank;
+            PSTORE(0x2F0) = bank;
+        } else if (mode == 8 && sim_keep) {
+            int i = PSTORE(0x2F0) * 16 + pad;
+            PSTORE(0x57C + 4 * i) = PSTORE(0x57C + 4 * i) == 0;
+        } else if (mode == 8 || mode == 10) {
+            PSTORE(0x2D8) = pad;
+        } else {
+            PSTORE(0x2B8) = pad;
+        }
+        return 0;
+    }
     index = sim_bank * 16 + pad;
     if (page_now == 85 && PAGE_MODE == 0)
         store[0x134 + index] = store[0x134 + index] == 0;
@@ -215,7 +260,7 @@ static char *slurp(const char *name)
 }
 
 enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
-       E_TAB, E_PAD, E_MODE, E_BANK };
+       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -273,6 +318,9 @@ static void load_events(void)
         } else if (strncmp(p, "PAGE", 4) == 0) {
             ev[nev].kind = E_PAGE;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
+        } else if (strncmp(p, "PMODE", 5) == 0 || strncmp(p, "PKEEP", 5) == 0) {
+            ev[nev].kind = p[1] == 'M' ? E_PMODE : E_PKEEP;
+            ev[nev].x = (int)strtol(p + 5, &p, 10);
         } else if (strncmp(p, "PAD ", 4) == 0 || strncmp(p, "MODE", 4) == 0
                    || strncmp(p, "BANK", 4) == 0) {
             ev[nev].kind = p[1] == 'A' ? (p[2] == 'D' ? E_PAD : E_BANK) : E_MODE;
@@ -510,6 +558,17 @@ static void fire(int i)
         break;
     case E_BANK:
         sim_bank = ev[i].x;
+        break;
+    case E_PMODE:
+        /* Each operation starts with nothing chosen, as FUN_800E11D0 sets
+           the mode. */
+        PSTORE(0x34) = ev[i].x;
+        PSTORE(0x2B8) = PSTORE(0x2D8) = PSTORE(0x2E4) = PSTORE(0x2E8) = -1;
+        PSTORE(0x2EC) = 0;
+        memset((char *)sim_patstore + 0x2F8, 0, 160 * 4);
+        break;
+    case E_PKEEP:
+        sim_keep = ev[i].x;
         break;
     case E_PAGE: {
         /* Building the page, then the page's steady traffic, which must

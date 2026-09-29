@@ -779,8 +779,9 @@ def buttons():
                          'BANK A GATE ON', 'GATE ON'])
 
 # The pattern screen, page 60, as runs/64 and runs/65 drew it: the status
-# line's SELECT and tempo, the big P T N, which names it. A bank key says
-# its letter and not the tempo it brings. A pad starts C1, drawing STOP and
+# line's SELECT and tempo, the big P T N, which names it. A bank key moves
+# the pattern store's bank and not the sample bank, and says its letter and
+# not the tempo it brings. A pad starts C1, drawing STOP and
 # then PLAY 83 ms later, which is said as it settles, PLAY; pressed again
 # and again, quickly, each state is said as it comes; the big field, the
 # bar and beat running and the time signature are not. C1 is the pattern
@@ -788,10 +789,10 @@ def buttons():
 def patterns():
     ST, BIG = '=8015F85F:', '=800EE779:'
     d = main_screen(0, 0, 'A-13')
-    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 s0 FILL 0 0 127 63',
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1', '1000 s0 FILL 0 0 127 63',
           f'1000 s0 76 2 !{ST}SELECT', '1000 s0 8 2 !=80156727:BPM 103.0',
           f'1000 s0 28 14 _{BIG}P T N',
-          '3000 KEY DOWN 27', '3000 BANK 2', '3015 s0 8 2 !=80156727:BPM  90.0',
+          '3000 KEY DOWN 27', '3015 s0 8 2 !=80156727:BPM  90.0',
           '4000 PAD 1', f'4020 s0 66 2 !{ST}STOP-PTN C1', '4020 s0 FILL 0 9 127 40',
           f'4020 s0 60 14 _{BIG}C 1', f'4083 s0 66 2 !{ST}PLAY-PTN C1',
           f'4085 s0 112 59 _{BIG}4.4', '4300 s0 FILL 0 9 127 40', f'4300 s0 45 14 _{BIG}1.1.']
@@ -833,6 +834,174 @@ def copybank():
                           'COPY BANK PAD | (PAD will be overwritten) | P-01 | source',
                           'source B', 'source G', 'destination', 'destination A', 'source'])
 
+# The pattern screen's status line and body, as FUN_8015F4A8 and FUN_80148B50
+# draw them, found in the firmware rather than a log: its mode or state
+# centred in the status bar beside the tempo, and the body wiped and drawn
+# again whole whenever anything changes.
+PST, PBIG = '=8015F85F:', '=800EE779:'
+
+def pattern_status(t, state):
+    return [f'{t} s0 FILL 44 0 128 8', f'{t} s0 {88 - 2 * len(state)} 2 !{PST}{state}',
+            f'{t} s0 8 2 !=80156727:BPM 103.0']
+
+def pattern_screen(t, state='SELECT', big='P T N'):
+    return ['%d s0 FILL 0 0 127 63' % t] + pattern_status(t, state) + \
+        [f'{t} s0 {28 + 17 * (5 - len(big))} 14 _{PBIG}{big}']
+
+# COPY on the pattern screen, its mode 8: its headings on white, PATTERN
+# and PATTERN, or SAMPLE once PATTERN SELECT makes it a bounce, the project
+# under the second, and the source and destination between >>, drawn as
+# text: FUN_801350B8 takes the pads. Arriving says the mode, the headings
+# and the project; each pad is said as the line shows it; a bank key,
+# which moves the destination's bank once there is a source, says its
+# letter, which nothing shows; PATTERN SELECT says SAMPLE and the line
+# without its destination. Pressed as quickly as a hand does, each change
+# of the line is said at once.
+def ptncopy():
+    def body(t, line, right='PATTERN', hint=None):
+        d = [f'{t} s0 FILL 0 9 128 64', f'{t} s0 35 30 _=80149303:{line}',
+             f'{t} s0 19 12 !=80149361:PATTERN', f'{t} s0 {94 - 2 * len(right)} 12 !=801493ED:{right}']
+        if right == 'PATTERN':
+            d.append(f'{t} s0 81 22 !=80149449:P-01')
+        if hint:
+            d.append(f'{t} s0 20 54 _=80149869:{hint}')
+        return d
+    hint = 'REMAIN: Samples to copy'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 23', '3000 PMODE 8'] + pattern_status(3010, 'COPY') + body(3010, '-- >> --')
+    d += ['3100 KEY UP 23', '5000 PAD 1'] + pattern_status(5010, 'COPY') + body(5010, 'A1 >> --', hint=hint)
+    d += ['6000 KEY DOWN 26'] + pattern_status(6010, 'COPY') + body(6010, 'A1 >> --', hint=hint)
+    d += ['6500 PAD 3'] + pattern_status(6510, 'COPY') + body(6510, 'A1 >> B3', hint=hint)
+    d += ['7000 KEY DOWN 14'] + pattern_status(7010, 'COPY') + \
+        body(7010, 'A1 >> --', right='SAMPLE', hint=hint)
+    d += ['7600 PAD 5'] + pattern_status(7610, 'COPY') + body(7610, 'A1 >> B5', right='SAMPLE', hint=hint)
+    d += ['9500 VALUE']
+    write('ptncopy', d, ['top screen', 'pattern', 'COPY | PATTERN | P-01',
+                         'A1 >> -- | REMAIN: Samples to copy', 'B', 'A1 >> B3',
+                         'SAMPLE | A1 >> --', 'A1 >> B5'])
+
+# DELETE on the pattern screen, its mode 6: the big D E L, which names it,
+# and DELETE in the status bar. The pads choose patterns shown only by their
+# lights, flipping a word each in the pattern store, from the bank a bank
+# key moves, as FUN_801350B8 does; each is said chosen or let go.
+def ptndelete():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 1a', '3000 PMODE 6'] + pattern_screen(3010, 'DELETE', 'D E L')
+    d += ['5000 KEY DOWN 26'] + pattern_screen(5010, 'DELETE', 'D E L')
+    for k, pad in enumerate([3, 3, 4]):
+        t = 6000 + 1000 * k
+        d += [f'{t} PAD {pad}'] + pattern_screen(t + 10, 'DELETE', 'D E L')
+    d += ['10000 VALUE']
+    write('ptndelete', d, ['top screen', 'pattern', 'delete', 'B', 'B 3 selected',
+                           'B 3 deselected', 'B 4 selected'])
+
+# COPY BANK on the pattern screen, its mode 9, held COPY and EXIT: as COPY
+# BANK PAD, its warning, the project on white, and the banks either side of
+# >>, which the bank keys set on the side the cursor is on and VALUE moves
+# it between, as FUN_80084258 does.
+def ptncopybank():
+    def body(t, src, dst):
+        return [f'{t} s0 FILL 0 9 128 64', f'{t} s0 25 10 _=801496DD:PATTERN will be\\noverwritten',
+                f'{t} s0 81 22 !=80149739:P-01', f'{t} s0 39 30 _=8014989F:{src}',
+                f'{t} s0 57 30 _=801498AB:>>', f'{t} s0 81 30 _=801498B7:{dst}']
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 23', '3050 KEY DOWN 22', '3050 PMODE 9'] + \
+        pattern_status(3060, 'COPY BANK') + body(3060, '-', '-')
+    d += ['4000 KEY DOWN 26'] + pattern_status(4010, 'COPY BANK') + body(4010, 'B', '-')
+    d += ['4500 KEY DOWN 26'] + pattern_status(4510, 'COPY BANK') + body(4510, 'G', '-')
+    d += ['5000 KNOB 0 1'] + pattern_status(5010, 'COPY BANK') + body(5010, 'G', '-')
+    d += ['6000 KEY DOWN 25'] + pattern_status(6010, 'COPY BANK') + body(6010, 'G', 'A')
+    d += ['7000 KNOB 0 -1'] + pattern_status(7010, 'COPY BANK') + body(7010, 'G', 'A')
+    d += ['9000 VALUE']
+    write('ptncopybank', d, ['top screen', 'pattern',
+                             'COPY BANK | PATTERN will be overwritten | P-01 | source',
+                             'source B', 'source G', 'destination', 'destination A', 'source'])
+
+# REC on the pattern screen, as runs/57 drew it: Select PAD for RECORDING,
+# STAND BY and the big R E C. A bank key moves the pattern store's bank; a
+# pad then chooses the pattern to record, moving the sample bank to its
+# bank, which is not said, and the recording settings follow, naming it.
+def ptnrec():
+    NAME, LOW, TEMPO = '=801709AB:', '=801709EF:', '=80170A15:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 1b', '3010 s1 9 4 ~=8006BECD:Select PAD\\nfor RECORDING'] + \
+        pattern_status(3040, 'STAND BY') + [f'3040 s0 28 14 _{PBIG}R E C', '3100 KEY UP 1b']
+    d += ['5000 KEY DOWN 27', '5100 KEY UP 27']
+    d += ['7000 PAD 2', '7000 BANK 2', '7030 PAGE 62', '7030 s1 83 46 !=8016B061:GRID 16',
+          '7030 s1 5 45 !=8016BAB7:SHIFT:OTHER', '7030 s1 83 54 _=8016BB11:C-2',
+          '7030 s1 5 54 _=8016BB45:MODE : Real-Time', '7030 s1 65 46 _=8016BB55:QTZ:',
+          '7030 s0 CLEAR',
+          f'7030 s0 15 4 _{NAME}BPM', f'7030 s0 15 34 _{LOW}BPM', f'7030 s0 9 19 _{TEMPO}90.0',
+          f'7030 s0 53 4 _{NAME}LENGTH', f'7030 s0 53 34 _{LOW}2 Bars',
+          f'7030 s0 86 4 _{NAME} STRENGTH ', f'7030 s0 102 34 _{LOW}0%']
+    d += ['9000 VALUE']
+    write('ptnrec', d, ['top screen', 'pattern', 'REC | Select PAD for RECORDING', 'C',
+                        'quantize: GRID 16 | MODE : Real-Time | C 2'])
+
+
+# EXCHANGE on the pattern screen, its mode 10, SHIFT and pad 5: EXCHANGE in
+# the status bar and the pads it swaps between <>, which FUN_801350B8 sets
+# as COPY's, nothing said until one is chosen. The pad that opens it is
+# not a choice.
+def ptnexchange():
+    def body(t, line):
+        return [f'{t} s0 FILL 0 9 128 64', f'{t} s0 35 30 _=80149303:{line}']
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 2a', '3050 PAD 5', '3050 PMODE 10'] + pattern_status(3060, 'EXCHANGE') + \
+        body(3060, '-- <> --') + ['3200 KEY UP 2a']
+    d += ['5000 PAD 2'] + pattern_status(5010, 'EXCHANGE') + body(5010, 'A2 <> --')
+    d += ['5600 KEY DOWN 27'] + pattern_status(5610, 'EXCHANGE') + body(5610, 'A2 <> --')
+    d += ['6100 PAD 7'] + pattern_status(6110, 'EXCHANGE') + body(6110, 'A2 <> C7')
+    d += ['8000 VALUE']
+    write('ptnexchange', d, ['top screen', 'pattern', 'EXCHANGE', 'A2 <> --', 'C',
+                             'A2 <> C7'])
+
+# DELETE BANK on the pattern screen, its mode 7, held DEL and EXIT: the bank
+# in the big field, Bn:A, which a bank key moves; its letter is said, and
+# the field drawn again for it is not.
+def ptndeletebank():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 1a', '3050 KEY DOWN 22', '3050 PMODE 7'] + \
+        pattern_screen(3060, 'DELETE BANK', 'Bn:A')
+    d += ['5000 KEY DOWN 26'] + pattern_screen(5010, 'DELETE BANK', 'Bn:B')
+    d += ['7000 VALUE']
+    write('ptndeletebank', d, ['top screen', 'pattern', 'DELETE BANK | Bn: A', 'B'])
+
+# COPY on the pattern screen keeping only some of the pattern's samples:
+# with a source chosen, REMAIN shows Select Samples and the pads choose
+# samples from the source's bank, shown only by their lights, a word each
+# in the pattern store as FUN_801350B8 flips them; each is said chosen or
+# let go. Both lines under the pads come from one call, at x 20 and x 32,
+# and REMAIN pressed a second after the source changes it at once.
+def ptnkeep():
+    def body(t, line, hint=None):
+        d = [f'{t} s0 FILL 0 9 128 64', f'{t} s0 35 30 _=80149303:{line}',
+             f'{t} s0 19 12 !=80149361:PATTERN', f'{t} s0 80 12 !=801493ED:PATTERN',
+             f'{t} s0 81 22 !=80149449:P-01']
+        if hint:
+            d.append(f'{t} s0 {32 if hint.startswith("Select") else 20} 54 _=80149869:{hint}')
+        return d
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 14', '1000 PAGE 60', '1000 PMODE 1'] + pattern_screen(1000)
+    d += ['3000 KEY DOWN 23', '3000 PMODE 8'] + pattern_status(3010, 'COPY') + \
+        body(3010, '-- >> --')
+    d += ['5000 PAD 1'] + pattern_status(5010, 'COPY') + body(5010, 'A1 >> --', 'REMAIN: Samples to copy')
+    d += ['6000 KEY DOWN 24', '6000 PKEEP 1'] + pattern_status(6010, 'COPY') + \
+        body(6010, 'A1 >> --', 'Select Samples')
+    for k, pad in enumerate([2, 3, 2]):
+        t = 7000 + 600 * k
+        d += [f'{t} PAD {pad}'] + pattern_status(t + 10, 'COPY') + body(t + 10, 'A1 >> --', 'Select Samples')
+    d += ['10000 VALUE']
+    write('ptnkeep', d, ['top screen', 'pattern', 'COPY | PATTERN | P-01',
+                         'A1 >> -- | REMAIN: Samples to copy', 'Select Samples', 'A 2 selected',
+                         'A 3 selected', 'A 2 deselected'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -867,3 +1036,10 @@ buttons()
 fxspam()
 patterns()
 copybank()
+ptncopy()
+ptndelete()
+ptncopybank()
+ptnrec()
+ptnexchange()
+ptndeletebank()
+ptnkeep()

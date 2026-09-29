@@ -93,6 +93,7 @@ static const uint32_t vt_base[] = {
 #define PAD_NOW         (*(volatile int32_t *)0x82E2CD20u)
 #define EXPORT_PAGE     (*(volatile uint32_t *)0x80CFD4E4u)
 #define PADOPS_PAGE     (*(volatile uint32_t *)0x80CFD490u)
+#define PAT_STORE       0x82DFFC88u
 static const uint32_t icon_slots[] = {
     0x8021CF38u, 0x8021DA78u, 0x8021DC38u, 0x8021DDFCu, 0x8021DFBCu, 0x8021E8B4u,
     0x8021EA40u, 0x8021EBCCu, 0x8021ED58u, 0x8021EEE4u, 0x8021F1F8u, 0x8021F9ACu,
@@ -119,12 +120,13 @@ void sim_batch(const char *phrases, int count);
 extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
 extern volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
 extern volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
-extern volatile uint32_t sim_padstore[];
+extern volatile uint32_t sim_padstore[], sim_patstore[];
 extern volatile int32_t sim_padnow;
 extern volatile int32_t sim_bank;
 #define PICK_STORE      ((uint32_t)(uintptr_t)sim_store)
 #define BANK_NOW        sim_bank
 #define PAD_STORE       ((uint32_t)(uintptr_t)sim_padstore)
+#define PAT_STORE       ((uint32_t)(uintptr_t)sim_patstore)
 #define PAD_NOW         sim_padnow
 #define EXPORT_PAGE     sim_export_page
 #define PADOPS_PAGE     sim_padops_page
@@ -166,6 +168,30 @@ static const uint32_t vt_base[] = {
 /* COPY BANK PAD's cursor, on the source bank (0) or the destination, at
    0x488 of the same store (its parameter 0x17), as VALUE moves it. */
 #define COPY_SIDE       (*(volatile int32_t *)(PICK_STORE + 0x488u))
+/* The pattern sequencer's store at 0x82DFFC88, as FUN_800E26D0 reads it.
+   Its mode at 0x34 (parameter 0x77): 1 choosing patterns, and the pattern
+   screen's operations, 6 DELETE, 7 DELETE BANK, 8 COPY, 9 COPY BANK, 10
+   EXCHANGE. The pattern chosen in its bank, or -1, at 0x2B8 (0x79): COPY's
+   and EXCHANGE's source. The bank the pads show patterns from at 0x2BC
+   (0x7A), which the bank keys set in pattern mode, as FUN_80084258 and
+   FUN_800C9788 do, and the sample bank at 0x82E2CD1C stays as it was. Once a
+   source is chosen they set the destination's bank instead, at 0x2DC (0x82),
+   or, choosing the samples a copy keeps, those samples' bank, at 0x2F0
+   (0x94); on COPY BANK the bank the cursor is on, the source at 0x2E8 (0x8B)
+   or the destination at 0x2E4 (0x8A), the cursor at 0x2EC (0x8C) and 0 on
+   the source. FUN_801350B8 takes the pads: DELETE flips a word a pattern
+   from 0x2F8 (0x85), and choosing the samples to keep a word a sample from
+   0x57C (0x8E). */
+#define PAT_WORD(off)   (*(volatile int32_t *)(PAT_STORE + (off)))
+#define PAT_MODE        PAT_WORD(0x34u)
+#define PAT_CHOSEN      PAT_WORD(0x2B8u)
+#define PAT_BANK        PAT_WORD(0x2BCu)
+#define PAT_DEST_BANK   PAT_WORD(0x2DCu)
+#define PAT_KEEP_BANK   PAT_WORD(0x2F0u)
+#define PAT_COPY_SIDE   PAT_WORD(0x2ECu)
+#define PAT_DELETE(i)   PAT_WORD(0x2F8u + 4u * (uint32_t)(i))
+#define PAT_KEEP(i)     PAT_WORD(0x57Cu + 4u * (uint32_t)(i))
+enum { PMODE_DELETE = 6, PMODE_DELETE_BANK, PMODE_COPY, PMODE_COPY_BANK, PMODE_EXCHANGE };
 #define VTABLES   (sizeof vt_base / sizeof vt_base[0])
 #define ICON_SLOTS (sizeof icon_slots / sizeof icon_slots[0])
 #define PAGES 94
@@ -186,7 +212,7 @@ static const uint32_t vt_base[] = {
    by how it is drawn. */
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
        ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
-       ROLE_CELL, ROLE_QUIET, ROLE_STATE, ROLE_COPY_FROM, ROLE_COPY_TO, ROLE_NOTICE };
+       ROLE_CELL, ROLE_QUIET, ROLE_STATE, ROLE_COPY_FROM, ROLE_COPY_TO, ROLE_NOTICE, ROLE_ANSWER };
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -225,12 +251,29 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80155ED5u, ROLE_TITLE },
     { 0x80155F97u, ROLE_TITLE },
     { 0x80156139u, ROLE_TITLE },
+    /* Text a copy or an exchange draws only in answer to the pads and keys:
+       the pads it is between, A13 >> B1, on the pad operations page and the
+       pattern screen's COPY and EXCHANGE, FUN_80148B50, and under COPY's,
+       REMAIN: Samples to copy or Select Samples. */
+    { 0x801561D5u, ROLE_ANSWER },
+    { 0x80148DF3u, ROLE_ANSWER },
+    { 0x80149013u, ROLE_ANSWER },
+    { 0x8014910Du, ROLE_ANSWER },
+    { 0x80149303u, ROLE_ANSWER },
+    { 0x801495A1u, ROLE_ANSWER },
+    { 0x80149869u, ROLE_ANSWER },
     /* COPY BANK PAD's warning, (PAD will be overwritten), and the banks it
        copies from and to, either side of >>. */
     { 0x80155C7Fu, ROLE_NOTICE },
     { 0x8015608Du, ROLE_COPY_FROM },
     { 0x8015609Bu, ROLE_IGNORE },
     { 0x801560A9u, ROLE_COPY_TO },
+    /* The same on the pattern screen's COPY BANK, as FUN_80148B50 draws it:
+       (PATTERN will be overwritten), and the banks either side of >>. */
+    { 0x801496DDu, ROLE_NOTICE },
+    { 0x8014989Fu, ROLE_COPY_FROM },
+    { 0x801498ABu, ROLE_IGNORE },
+    { 0x801498B7u, ROLE_COPY_TO },
     { 0x80151927u, ROLE_TITLE },            /* the export page's heading over PLEASE
                                                SELECT SMPL, FUN_801518B0 */
     { 0x8015F85Fu, ROLE_STATE },            /* the pattern screen's SELECT, STOP-PTN C1,
@@ -590,20 +633,40 @@ static int keep_for_menu(int type, int code, int step)
 }
 
 /* A pad pressed where a screen asks for pads: which choice it makes, by
-   the page and its mode, as FUN_80151688 (export) and FUN_8012E0B8 (pad
-   operations) make it. The pad operations' other modes, copy and exchange,
+   the page and its mode, as FUN_80151688 (export), FUN_8012E0B8 (pad
+   operations) and FUN_801350B8 (the pattern screen) make it. The pad
+   operations' other modes, copy and exchange, and the pattern screen's,
    draw their pads as text. */
 #define PAGE_PADOPS 67
 #define PAGE_EXPORT 85
+#define PAGE_PATTERN 60
 #define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
-enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS };
+enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS, PICK_PATTERNS, PICK_KEEP };
 
 static int pick_kind(uint32_t page, int pad, int *index)
 {
     uint32_t p;
     int32_t bank = BANK_NOW;
 
-    if (pad < 0 || pad > 15 || bank < 0 || bank > 9)
+    if (pad < 0 || pad > 15)
+        return PICK_NONE;
+    /* The pattern screen's DELETE, from the bank the pads show, and COPY
+       with a source chosen, choosing the samples to keep from theirs; a pad
+       that sets COPY's destination instead is said as the screen shows
+       it. */
+    if (page == PAGE_PATTERN) {
+        int32_t mode = PAT_MODE;
+        bank = mode == PMODE_DELETE ? PAT_BANK : PAT_KEEP_BANK;
+        if (bank < 0 || bank > 9)
+            return PICK_NONE;
+        *index = (int)bank * 16 + pad;
+        if (mode == PMODE_DELETE)
+            return PICK_PATTERNS;
+        if (mode == PMODE_COPY && PAT_CHOSEN >= 0)
+            return PICK_KEEP;
+        return PICK_NONE;
+    }
+    if (bank < 0 || bank > 9)
         return PICK_NONE;
     if (page == PAGE_EXPORT && (p = EXPORT_PAGE) != 0) {
         switch (PAGE_MODE(p)) {
@@ -636,6 +699,10 @@ static int32_t pick_state(int kind, int index)
         return *(volatile int32_t *)(PICK_STORE + 0x1E4u);
     case PICK_PADS:
         return *(volatile int32_t *)(PICK_STORE + 0x200u + 4u * (uint32_t)index);
+    case PICK_PATTERNS:
+        return PAT_DELETE(index);
+    case PICK_KEEP:
+        return PAT_KEEP(index);
     }
     return 0;
 }
@@ -658,12 +725,30 @@ static int32_t pad_settings(int index)
         | (flags & 1u ? SET_REVERSE : 0) | (flags & 2u ? SET_PINGPONG : 0);
 }
 
-/* The pad operations page copying a bank, its mode 3. */
+/* A screen copying a bank: the pad operations page in its mode 3, or the
+   pattern screen's COPY BANK. */
 static int copy_bank(uint32_t page)
 {
     uint32_t p = PADOPS_PAGE;
 
+    if (page == PAGE_PATTERN)
+        return PAT_MODE == PMODE_COPY_BANK;
     return page == PAGE_PADOPS && p != 0 && PAGE_MODE(p) == 3;
+}
+
+/* Where its cursor is, 0 on the source bank. */
+static int32_t copy_side(uint32_t page)
+{
+    return page == PAGE_PATTERN ? PAT_COPY_SIDE : COPY_SIDE;
+}
+
+/* The pattern store's banks, each a byte, as they were before a bank key:
+   the bank the pads show, the destination's, and the samples' to keep. */
+#define PAT_BANKS 3
+static int32_t pat_banks(void)
+{
+    return (int32_t)(((uint32_t)PAT_BANK & 0xFFu) | ((uint32_t)PAT_DEST_BANK & 0xFFu) << 8
+                     | ((uint32_t)PAT_KEEP_BANK & 0xFFu) << 16);
 }
 
 __attribute__((used)) static int page_record(uint32_t page, const int16_t *message)
@@ -717,10 +802,15 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
         d.y = message[1];
         d.x1 = message[2];
     }
-    /* VALUE turned on COPY BANK PAD, with where its cursor was. */
+    /* VALUE turned copying a bank, with where its cursor was. */
     if (type == 7 && d.y == 0 && copy_bank(page)) {
         d.y1 = 2;
-        d.ink = COPY_SIDE;
+        d.ink = copy_side(page);
+    }
+    /* A bank key, with the pattern store's banks before it. */
+    if (type == 5 && d.y >= 0x25 && d.y <= 0x29) {
+        d.y1 = 3;
+        d.ink = pat_banks();
     }
     /* EXT SOURCE, pressed or let go, with the input's state before. */
     if ((type == 5 || type == 6) && d.y == KEY_EXT_SOURCE && !shift_down) {
@@ -808,6 +898,10 @@ static int npresses;
    was on before the first of them; likewise VALUE on COPY BANK PAD, and
    where its cursor was. */
 static int ext_pending, ext_before = -1, side_pending, side_before = -2;
+/* A bank key pressed since the last batch, and the pattern store's banks
+   before the first. */
+static int pat_pending;
+static int32_t pat_before;
 static uint32_t last_pick;
 static uint8_t pick_seen;
 /* Whether the page showing has just been built; the bank the firmware last
@@ -868,6 +962,7 @@ static int nframe_sites;
 #define PLAY_WINDOW 110u                     /* ticks, 147 ms */
 static uint32_t last_turn, last_press, last_pad, last_fx, last_bank_key, last_ctrl_logged;
 static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen, bank_key_seen;
+static int pad_page;
 /* The pattern's state, STOP-PTN C1 or PLAY-PTN C1, is said as soon as it
    settles: one pad draws STOP and then PLAY a frame later. */
 static uint32_t state_hold;
@@ -893,11 +988,17 @@ static int page_now = 84;
    pressed there is heard, not said, and nor is what it changes, nor what a
    bank key changes there, the bank's letter being said. The screens that
    ask for a pad, recording's, delete, copy, export, import, still name
-   it. */
+   it, and so do the pattern screen's DELETE, COPY and EXCHANGE, where the
+   pads choose patterns. */
 static int pads_play(void)
 {
-    return page_now == 84 || page_now == 83 || page_now == 88 || page_now == 90
-        || page_now == 60;
+    int32_t mode;
+
+    if (page_now == PAGE_PATTERN) {
+        mode = PAT_MODE;
+        return mode != PMODE_DELETE && mode != PMODE_COPY && mode != PMODE_EXCHANGE;
+    }
+    return page_now == 84 || page_now == 83 || page_now == 88 || page_now == 90;
 }
 
 /* The draw log: every change of text or background in full; at the end a
@@ -1321,6 +1422,7 @@ static int take(const struct draw *d)
             if (d->y >= 0 && d->y < 16 && !fx_held) {
                 last_pad = d->tick;
                 pad_seen = 1;
+                pad_page = (int)d->mark;
             }
             /* The bank keys, A/F to E/J. */
             if (d->y >= 0x25 && d->y <= 0x29) {
@@ -1359,6 +1461,10 @@ static int take(const struct draw *d)
             if (side_before < -1)
                 side_before = d->ink;
         }
+        if (d->x == 5 && d->y1 == 3 && !pat_pending) {
+            pat_pending = 1;
+            pat_before = d->ink;
+        }
         if (d->x == 7) {
             last_turn = d->tick;
             turn_seen = 1;
@@ -1368,7 +1474,8 @@ static int take(const struct draw *d)
             log_line("%lu key %s 0x%02x, page %ld\n", (unsigned long)d->tick,
                      d->x == 5 ? "down" : "up", (unsigned)(uint16_t)d->y, (long)d->mark);
         }
-        return (d->y == KEY_EXT_SOURCE && d->y1 == 1) || (d->x == 7 && d->y1 == 2);
+        return (d->y == KEY_EXT_SOURCE && d->y1 == 1) || (d->x == 7 && d->y1 == 2)
+            || (d->x == 5 && d->y1 == 3);
     }
     if (d->kind == EV_PAGE) {
         log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
@@ -1502,9 +1609,10 @@ static int take(const struct draw *d)
            and an effect being played is heard where it stops. A value just
            turned is said at every step, as the focus is. A pad, and the main
            screen's status, change only when something is done, however
-           quickly, so they are dealt with at once. */
+           quickly, so they are dealt with at once, and so is what a copy
+           draws in answer to them. */
         if ((turned && !it->own && it->role != ROLE_EFFECT) || it->role == ROLE_STATE
-            || it->role == ROLE_COPY_FROM || it->role == ROLE_COPY_TO) {
+            || it->role == ROLE_COPY_FROM || it->role == ROLE_COPY_TO || it->role == ROLE_ANSWER) {
             it->rapid = 0;
         } else if (it->last_change != 0 && d->tick - it->last_change < STEADY
                    && !padlike(d->text) && it->role != ROLE_MAIN && it->role != ROLE_PAD) {
@@ -2196,6 +2304,10 @@ static int want_notice(const struct item *it)
 {
     return it->role == ROLE_NOTICE && drawn_now(it);
 }
+static int want_new_state(const struct item *it)
+{
+    return it->role == ROLE_STATE && it->changed == 1;
+}
 
 /* A tab strip drawn for this screen, which names the current tab itself. */
 static int tab_known(void)
@@ -2378,6 +2490,14 @@ static void new_screen(struct item **order)
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
         say(order[i]);
+    /* The pattern screen's COPY, EXCHANGE and the rest have no title but the
+       mode in its status bar, which leads. */
+    if (n == 0 && page_now == PAGE_PATTERN && PAT_MODE >= PMODE_DELETE
+        && PAT_MODE <= PMODE_EXCHANGE) {
+        k = in_order(order, ITEMS, want_new_state);
+        for (i = 0; i < k; i++)
+            n += say(order[i]) == 1;
+    }
     /* A screen's warning, after its title. */
     k = in_order(order, ITEMS, want_notice);
     for (i = 0; i < k; i++)
@@ -2405,8 +2525,8 @@ static void new_screen(struct item **order)
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
         say_focus(order[i]);
-    if (copy_bank(PAGE_PADOPS) && page_now == PAGE_PADOPS)
-        say3(COPY_SIDE ? "destination" : "source", NULL, NULL);
+    if (copy_bank((uint32_t)page_now))
+        say3(copy_side((uint32_t)page_now) ? "destination" : "source", NULL, NULL);
     /* The main screen, the manual's top screen, is named so on arrival,
        known by its bank and pad just drawn: they stay on its layer under the
        screens opened over it. The effect display is drawn over it, and it
@@ -2531,8 +2651,9 @@ static void say_presses(void)
         say3(EXT_ON ? "EXT SOURCE ON" : "EXT SOURCE OFF", NULL, NULL);
     ext_pending = 0;
     ext_before = -1;
-    if (side_pending && side_before > -2 && (COPY_SIDE != 0) != (side_before != 0))
-        say3(COPY_SIDE ? "destination" : "source", NULL, NULL);
+    if (side_pending && side_before > -2
+        && (copy_side((uint32_t)page_now) != 0) != (side_before != 0))
+        say3(copy_side((uint32_t)page_now) ? "destination" : "source", NULL, NULL);
     side_pending = 0;
     side_before = -2;
 }
@@ -2794,11 +2915,15 @@ int screen_poll(char *phrases, size_t cap, int *count)
         draw_rd++;
     }
     /* The bank changes with no drawing on screens that do not show it, as
-       the copy and delete screens do not. */
+       the copy and delete screens do not. A pad on the pattern screen
+       choosing a pattern to record moves it to the pattern's bank, which the
+       recording screen that follows names with the pattern. */
     {
         int32_t bank = BANK_NOW;
         if (bank >= 0 && bank <= 9 && bank != bank_seen) {
-            if (bank_seen >= 0) {
+            if (bank_seen >= 0
+                && !(pad_page == PAGE_PATTERN && played_just_before(last_pad, pad_seen, now)
+                     && !played_just_before(last_bank_key, bank_key_seen, now))) {
                 if (!pending)
                     first_pending = now;
                 pending = 1;
@@ -2845,6 +2970,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
         side_pending = 0;
         side_before = -2;
         bank_moved = 0;
+        pat_pending = 0;
         pending = 0;
         page_pending = 0;
         tab_changed = 0;
@@ -2887,8 +3013,21 @@ int screen_poll(char *phrases, size_t cap, int *count)
     if (bank_moved && page_now != 81) {
         char t[2] = { (char)('A' + bank_seen), 0 };
         say3(t, NULL, NULL);
+    } else if (pat_pending && page_now != 81) {
+        /* In pattern mode the bank keys set the pattern store's banks, which
+           nothing on the screen shows: the first of them a key moved. */
+        int32_t banks = pat_banks();
+        for (i = 0; i < PAT_BANKS; i++) {
+            int b = (int)(int8_t)(banks >> (8 * i)), was = (int)(int8_t)(pat_before >> (8 * i));
+            if (b != was && b >= 0 && b <= 9) {
+                char t[2] = { (char)('A' + b), 0 };
+                say3(t, NULL, NULL);
+                break;
+            }
+        }
     }
     bank_moved = 0;
+    pat_pending = 0;
     say_picks();
     say_presses();
     if (screen_mode == SCREEN_ALL) {

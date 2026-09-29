@@ -1,0 +1,8 @@
+top screen
+pattern
+COPY BANK | PATTERN will be overwritten | P-01 | source
+source B
+source G
+destination
+destination A
+source

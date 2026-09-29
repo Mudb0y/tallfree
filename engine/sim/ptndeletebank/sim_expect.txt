@@ -1,0 +1,4 @@
+top screen
+pattern
+DELETE BANK | Bn: A
+B

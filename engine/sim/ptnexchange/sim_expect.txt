@@ -1,0 +1,6 @@
+top screen
+pattern
+EXCHANGE
+A2 <> --
+C
+A2 <> C7
