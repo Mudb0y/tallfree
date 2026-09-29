@@ -19,9 +19,12 @@ but you can always go back to Roland's firmware; see below.
   new value, and a setting is read with its name.
 - Tabbed pages announce the tab. A dialog is read on its own, then its
   selected button.
-- On the main screen you hear the bank and pad when you get there and when you
-  change bank. Hitting pads is silent, except on screens where you pick a pad,
-  such as sampling.
+- On the main screen, which Roland calls the top screen, you hear "top screen"
+  when you get there, and a bank change is its letter, on every screen. Pads
+  are silent wherever they play a sound, and named on screens where you pick
+  one, such as sampling, export or delete.
+- GATE, LOOP, REVERSE, BPM SYNC and EXT SOURCE say whether they're on or off,
+  and turning an effect on says its name.
 
 Speech plays through the main outputs over whatever the SP is playing, and it
 isn't recorded when you sample or resample.
