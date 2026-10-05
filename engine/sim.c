@@ -24,7 +24,8 @@
      MS [sN] SCROLL K X Y TEXT a name scrolling in a list, drawn from its
                                Kth character, flags as for a draw; the list
                                keeps it whole, and the page K, as the import
-                               list and REMAIN do
+                               list and REMAIN do; the list draws a folder
+                               named .. as ^
      MS PAGE N                 page factory N called: a page being built
      MS KEY DOWN|UP HEX        a key sent to the page last built, 84 at first
      MS KNOB N STEP            knob N turned by STEP, to that page
@@ -671,7 +672,7 @@ static void fire(int i)
             snprintf(whole, 256, "%s", t);
             scroll_owner[0x1A8C / 4] = (uint32_t)ev[i].x1;
             sim_scroll_owner = (uint32_t)(uintptr_t)scroll_owner;
-            t = whole + ev[i].x1;
+            t = strcmp(whole, "..") == 0 ? "^" : whole + ev[i].x1;
         }
         ((int (*)(void *, int, int, const char *, int))vt[0x12C / 4])(
             s, ev[i].x, ev[i].y, t, (int)strlen(t));

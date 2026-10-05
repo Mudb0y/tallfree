@@ -489,7 +489,8 @@ static void push(const struct draw *d)
    +0x35C and is in r5 as it calls FUN_800D80E0. REMAIN's NAME, FUN_8008C4A0,
    draws its own copy a character further every draw, the count at +0x1A8C
    of the page, which is in r5 likewise. FUN_800D80E0 pushes r4 to r7 under
-   its return, so the caller's r5 is two words above the stacked length. */
+   its return, so the caller's r5 is two words above the stacked length.
+   The file lists also draw the folder "..", which goes back up, as ^. */
 #define SCROLL_LIST     0x80155187u
 #define SCROLL_REMAIN   0x8008C701u
 #ifndef SIM
@@ -525,6 +526,10 @@ static const char *scroll_whole(const uint32_t *f, uint32_t site, const char *st
         if (k < 0 || k > 63)
             return NULL;
         whole = str - k;
+    }
+    if (site == SCROLL_LIST && *len == 1 && str[0] == '^' && strcmp(whole, "..") == 0) {
+        *len = 2;
+        return whole;
     }
     for (n = 0; n < 256 && whole[n]; n++)
         ;
@@ -2018,6 +2023,10 @@ static const char *full_text(const struct item *it)
         bare[n - 3] = 0;
         return bare;
     }
+    /* A file list's folder "..", by what it does: the manual has no name
+       for it, and this one was chosen on 5 October 2026. */
+    if (it->site == SCROLL_LIST && strcmp(it->text, "..") == 0)
+        return "parent folder";
     if (n < 3 || it->text[n - 1] != '.' || it->text[n - 2] != '.')
         return it->text;
     n -= 2;

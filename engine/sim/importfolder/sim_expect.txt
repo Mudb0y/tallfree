@@ -1,0 +1,7 @@
+top screen
+SAMPLE
+Splice_Pack | destination: PRESS PAD
+parent folder
+snare_01.wav
+parent folder
+Splice_Pack

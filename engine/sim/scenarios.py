@@ -1284,6 +1284,42 @@ def importlist():
                             'kick.wav', 'file_name_example_140bpm_gmaj_whow.wav', 'SAMPLE',
                             'file_name_example_140bpm_gmaj_whow.wav | destination: PRESS PAD'])
 
+# Folders in IMPORT SAMPLE's file list: each drawn at x 15 behind its icon,
+# whose outline comes first; VALUE pressed on one goes into it, the path at
+# the top naming it, with the focus on the first row, its "..", which the
+# list draws as ^ and a press on goes back up, the focus then on the folder
+# left, as FUN_80152D60 and FUN_800BA280 do. Only the focused row is said,
+# the .. as parent folder; the path is not.
+def importfolder():
+    LIST, ICON = '=80155187:', '=801551CF'
+    top = [('Splice_Pack', True), ('kick.wav', False)]
+    inner = [('..', True), ('snare_01.wav', False), ('hat_02.wav', False)]
+
+    def frame(t, rows, sel, path):
+        f = [f'{t} s0 FILL 1 10 126 52', f'{t} s0 FILL 0 0 127 8', f'{t} s0 5 0 _=8014EAE9:{path}']
+        for k, (name, folder) in enumerate(rows):
+            y = 11 + 7 * k
+            lit = '!' if k == sel else ''
+            if folder:
+                f.append(f'{t} s0 BOX 9 {y} 10 {y} {ICON}')
+            f.append(f'{t} s0 SCROLL 0 {15 if folder else 5} {y} {lit}{LIST}{name}')
+        return f
+
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 86', '1000 s0 CLEAR', '1000 s1 3 2 _=801522A7:IMPORT SAMPLE / PROJECT',
+          '1000 s0 17 22 !=8016F55B:SAMPLE', '1000 s0 17 30 =8016F505:PROJECT',
+          '1000 s0 17 38 =8016F505:PROJECT(SX)', '1000 s0 17 46 =8016F505:CANCEL']
+    d += ['3000 KEY DOWN 31', '3000 s0 FILL 0 9 127 63', '3000 s0 8 58 !=80161895:DEST:PRESS PAD',
+          '3070 KEY UP 31']
+    d += frame(3000, top, 0, 'SDCARD:/')
+    d += ['5000 KEY DOWN 31', '5070 KEY UP 31'] + frame(5000, inner, 0, 'SDCARD:/Splice_Pack')
+    d += ['6000 KNOB 0 1'] + frame(6000, inner, 1, 'SDCARD:/Splice_Pack')
+    d += ['7000 KNOB 0 -1'] + frame(7000, inner, 0, 'SDCARD:/Splice_Pack')
+    d += ['8000 KEY DOWN 31', '8070 KEY UP 31'] + frame(8000, top, 0, 'SDCARD:/')
+    d.append('9500 VALUE')
+    write('importfolder', d, ['top screen', 'SAMPLE', 'Splice_Pack | destination: PRESS PAD',
+                              'parent folder', 'snare_01.wav', 'parent folder', 'Splice_Pack'])
+
 # REMAIN with a sample's name too long for its line: FUN_8008C4A0 draws it
 # from x 56, not right-aligned, a character further every draw and whole
 # again once the rest fits, the line wiped and drawn every 50 ms. The line
@@ -1360,3 +1396,4 @@ remain()
 project()
 importlist()
 remainname()
+importfolder()
