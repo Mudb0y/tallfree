@@ -130,6 +130,7 @@ extern volatile int32_t sim_step_count, sim_step_slots, sim_step_last;
 extern volatile uint16_t sim_step_bits[];
 extern volatile int32_t sim_padnow;
 extern volatile int32_t sim_bank;
+extern volatile uint32_t sim_scroll_owner;
 #define PICK_STORE      ((uint32_t)(uintptr_t)sim_store)
 #define BANK_NOW        sim_bank
 #define PAD_STORE       ((uint32_t)(uintptr_t)sim_padstore)
@@ -480,13 +481,66 @@ static void push(const struct draw *d)
     target_wake();
 }
 
+/* Two lists scroll a name too long for its column by drawing it again with
+   its first characters dropped, until what is left fits, and then whole
+   again. The file lists import and export choose from, FUN_80154DC0, draw
+   the focused row from a copy of what their slot 0x10C, FUN_801554E0, gives
+   it, a character further every ten draws; the list keeps the whole name at
+   +0x35C and is in r5 as it calls FUN_800D80E0. REMAIN's NAME, FUN_8008C4A0,
+   draws its own copy a character further every draw, the count at +0x1A8C
+   of the page, which is in r5 likewise. FUN_800D80E0 pushes r4 to r7 under
+   its return, so the caller's r5 is two words above the stacked length. */
+#define SCROLL_LIST     0x80155187u
+#define SCROLL_REMAIN   0x8008C701u
+#ifndef SIM
+#define SCROLL_OWNER(f) ((f)[8 + 2])
+#else
+#define SCROLL_OWNER(f) sim_scroll_owner
+#endif
+
+/* The whole of a scrolling name, given the part of it drawn, STR, *LEN
+   long, or NULL; *LEN becomes its length. The reader takes the name for
+   the same text however far it has scrolled. */
+static const char *scroll_whole(const uint32_t *f, uint32_t site, const char *str, int *len)
+{
+    uint32_t owner;
+    const char *whole;
+    int32_t k;
+    int n;
+
+    if (site != SCROLL_LIST && site != SCROLL_REMAIN)
+        return NULL;
+    owner = SCROLL_OWNER(f);
+#ifndef SIM
+    if (owner < 0x80000000u || owner >= 0x83A00000u || (owner & 3u))
+        return NULL;
+#else
+    if (owner == 0)
+        return NULL;
+#endif
+    if (site == SCROLL_LIST) {
+        whole = (const char *)(owner + 0x35Cu);
+    } else {
+        k = *(volatile int32_t *)(owner + 0x1A8Cu);
+        if (k < 0 || k > 63)
+            return NULL;
+        whole = str - k;
+    }
+    for (n = 0; n < 256 && whole[n]; n++)
+        ;
+    if (n == 256 || n < *len || strncmp(whole + n - *len, str, (size_t)*len) != 0)
+        return NULL;
+    *len = n;
+    return whole;
+}
+
 /* f holds r0 to r5, r12 and lr as the caller left them, then the caller's
    stack from the stacked length up. Slot 0x18 is the surface's background
    colour, the getter DrawString itself asks. */
 __attribute__((used)) static void text_record(const uint32_t *f)
 {
     struct draw d;
-    const char *str = (const char *)f[3];
+    const char *str = (const char *)f[3], *whole;
     int len = (int)f[8], n;
     uint32_t surf = f[0];
 
@@ -503,6 +557,8 @@ __attribute__((used)) static void text_record(const uint32_t *f)
 #else
     d.site = sim_site;
 #endif
+    if (len > 0 && (whole = scroll_whole(f, d.site, str, &len)) != NULL)
+        str = whole;
     d.mark = ((int32_t (*)(uint32_t))(*(const uint32_t *const *)surf)[SLOT_MARK / 4])(surf);
     /* Slot 0x10, the text colour, a plain getter in all seven classes. */
     d.ink = ((int32_t (*)(uint32_t))(*(const uint32_t *const *)surf)[SLOT_INK / 4])(surf);

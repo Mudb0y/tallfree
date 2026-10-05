@@ -21,6 +21,10 @@
      MS [sN] ICON X Y SEL NAME an icon menu's icon, selected if SEL is 1
      MS [sN] ROW Y SEL         a settings row whose text is at Y, selected if 1
      MS [sN] TAB CUR A,B,...   a tab strip drawn, tab CUR of those current
+     MS [sN] SCROLL K X Y TEXT a name scrolling in a list, drawn from its
+                               Kth character, flags as for a draw; the list
+                               keeps it whole, and the page K, as the import
+                               list and REMAIN do
      MS PAGE N                 page factory N called: a page being built
      MS KEY DOWN|UP HEX        a key sent to the page last built, 84 at first
      MS KNOB N STEP            knob N turned by STEP, to that page
@@ -85,6 +89,11 @@ static uint32_t step_due_ms;
 #define PSTORE(off) (*(int32_t *)((char *)sim_patstore + (off)))
 static int sim_shift;
 static uint32_t page_object[0x1AA0 / 4];
+/* What a scrolling name's drawing code keeps in r5: the import list, with
+   the whole name at +0x35C, or the REMAIN page, with how far it has
+   scrolled at +0x1A8C. */
+static uint32_t scroll_owner[0x1A90 / 4];
+volatile uint32_t sim_scroll_owner;
 static int page_now = 84;
 #define PAGE_MODE (*(int32_t *)((char *)page_object + 0x1A90))
 
@@ -285,7 +294,7 @@ static char *slurp(const char *name)
 }
 
 enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
-       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC };
+       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC, E_SCROLL };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -338,6 +347,14 @@ static void load_events(void)
             ev[nev].kind = E_TAB;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
             while (*p == ' ')
+                p++;
+            ev[nev].text = p;
+        } else if (strncmp(p, "SCROLL", 6) == 0) {
+            ev[nev].kind = E_SCROLL;
+            ev[nev].x1 = (int)strtol(p + 6, &p, 10);
+            ev[nev].x = (int)strtol(p, &p, 10);
+            ev[nev].y = (int)strtol(p, &p, 10);
+            if (*p == ' ')
                 p++;
             ev[nev].text = p;
         } else if (strncmp(p, "PAGE", 4) == 0) {
@@ -648,6 +665,13 @@ static void fire(int i)
                 t += 9;
             } else
                 break;
+        }
+        if (ev[i].kind == E_SCROLL) {
+            char *whole = (char *)scroll_owner + 0x35C;
+            snprintf(whole, 256, "%s", t);
+            scroll_owner[0x1A8C / 4] = (uint32_t)ev[i].x1;
+            sim_scroll_owner = (uint32_t)(uintptr_t)scroll_owner;
+            t = whole + ev[i].x1;
         }
         ((int (*)(void *, int, int, const char *, int))vt[0x12C / 4])(
             s, ev[i].x, ev[i].y, t, (int)strlen(t));

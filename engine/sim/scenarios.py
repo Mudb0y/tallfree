@@ -1220,6 +1220,96 @@ def project():
                          'select PROJECT (internal), current: 02 (internal)',
                          'Working | Load Project 01', 'top screen'])
 
+# IMPORT SAMPLE's file list, page 86, as runs/60 drew it after its menu: a
+# row every 7 pixels from y 11, files at x 5, the focused one on white, the
+# path at the top and DEST:PRESS PAD at the bottom, redrawn every 50 ms. A
+# name too long for its column scrolls as FUN_801554E0 scrolls it: the
+# focused row drawn a character further every ten draws and whole again
+# once the rest fits, carrying on from where it was when the list comes
+# back to the same row. The whole name is said on arriving and on coming
+# back to it, and nothing as it scrolls.
+def importlist():
+    LIST = '=80155187:'
+    files = ['file_name_example_140bpm_gmaj_whow.wav', 'kick.wav', 'snare_01.wav']
+    state = {'row': -1, 'count': 0}
+
+    def fits(name):
+        return 5 * len(name) < 0x73
+
+    def shown(row):
+        name = files[row]
+        if fits(name):
+            return 0
+        state['count'] = state['count'] + 1 if state['row'] == row else 0
+        state['row'] = row
+        if fits(name[state['count'] // 10:]):
+            state['count'] = 0
+        return state['count'] // 10
+
+    def frame(t, sel):
+        f = [f'{t} s0 FILL 1 10 126 52']
+        for k, name in enumerate(files):
+            f.append(f'{t} s0 SCROLL {shown(k) if k == sel else 0} 5 {11 + 7 * k} '
+                     f'{"!" if k == sel else ""}{LIST}{name}')
+        return f
+
+    def menu(t):
+        return [f'{t} PAGE 86', f'{t} s0 CLEAR', f'{t} s1 3 2 _=801522A7:IMPORT SAMPLE / PROJECT',
+                f'{t} s0 17 22 !=8016F55B:SAMPLE', f'{t} s0 17 30 =8016F505:PROJECT',
+                f'{t} s0 17 38 =8016F505:PROJECT(SX)', f'{t} s0 17 46 =8016F505:CANCEL']
+
+    def arrive(t):
+        return [f'{t} KEY DOWN 31', f'{t} s0 FILL 0 9 127 63', f'{t} s0 5 0 _=8014EAE9:SDCARD:/',
+                f'{t} s0 8 58 !=80161895:DEST:PRESS PAD', f'{t + 70} KEY UP 31']
+
+    d = main_screen(0, 0, 'A-13') + menu(1000) + arrive(3000)
+    sel = 0
+    for t in range(3000, 20000, 50):
+        if t == 9000:
+            d.append('9000 KNOB 0 1')
+            sel = 1
+        if t == 10000:
+            d.append('10000 KNOB 0 -1')
+            sel = 0
+        if 14000 <= t < 15000:
+            if t == 14000:
+                d += ['14000 KEY DOWN 22'] + menu(14000) + ['14100 KEY UP 22']
+            continue
+        if t == 15000:
+            d += arrive(15000)
+        d += frame(t, sel)
+    d.append('20000 VALUE')
+    write('importlist', d, ['top screen', 'SAMPLE',
+                            'file_name_example_140bpm_gmaj_whow.wav | destination: PRESS PAD',
+                            'kick.wav', 'file_name_example_140bpm_gmaj_whow.wav', 'SAMPLE',
+                            'file_name_example_140bpm_gmaj_whow.wav | destination: PRESS PAD'])
+
+# REMAIN with a sample's name too long for its line: FUN_8008C4A0 draws it
+# from x 56, not right-aligned, a character further every draw and whole
+# again once the rest fits, the line wiped and drawn every 50 ms. The line
+# says the whole name, once.
+def remainname():
+    L, NAME = '=8008C665:', '=8008C701:'
+    name = 'file_name_example_140bpm_gmaj_whow'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    k = 0
+    for t in range(2000, 7000, 50):
+        d += [f'{t} s1 FILL 0 27 127 35', f'{t} s1 1 27 _{L} NAME',
+              f'{t} s1 SCROLL {k} 56 27 _{NAME}{name}']
+        k = k + 1 if 5 * len(name[k:]) > 0x79 - 0x3C else 0
+    d += ['7000 KEY UP 24', '7000 PAGE 84'] + main_screen(7000, 0, 'A-13')
+    d += ['8500 VALUE']
+    write('remainname', d, ['top screen',
+                            'STORAGE AVAILABLE 14.36GB | PROJECT 1 PROJECT_01 | '
+                            'NAME file_name_example_140bpm_gmaj_whow | Color White | '
+                            'Remaining Time -00:05 | STEREO/MONO STEREO'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -1268,3 +1358,5 @@ trrec()
 chain()
 remain()
 project()
+importlist()
+remainname()
