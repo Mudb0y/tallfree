@@ -94,7 +94,7 @@ static void fault_recover(void)
         text[n++] = '\r';
         text[n++] = '\n';
     }
-    if (card_log)
+    if (card_log && log_card())
         write_text("A:/TALLFREE/FAULT.TXT", text, n);
     engine_exit(99);
 }

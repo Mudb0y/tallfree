@@ -37,11 +37,20 @@
      MS PKEEP 0|1              COPY choosing the samples to keep, or not
      MS TRREC NOTE             TR-REC inputting NOTE, 47 for A 1, or 0 for
                                not in TR-REC; its pads set steps 60 ms on
+     MS CARD OUT|IN|OTHER|CUT  the card slot: the run's card taken out, put
+                               back, another card in, one with no
+                               TALLFREE.DEBUG, whose files land as
+                               sim_other_*, or the run's card coming out
+                               halfway through the next write to it
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
-   batch a line, phrases separated by " | "; the run ends by saying whether
-   they matched. */
+   batch a line, phrases separated by " | ", and checks on the files the
+   run leaves: "@has FILE TEXT" and "@lacks FILE TEXT" say whether FILE
+   holds TEXT, and "@absent FILE" that it was never written; and
+   "@own TEXT" that the engine said TEXT of its own, apart from the
+   screen's batches, once. The run ends by saying whether they all
+   matched. */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -95,6 +104,9 @@ static uint32_t page_object[0x1AA0 / 4];
    scrolled at +0x1A8C. */
 static uint32_t scroll_owner[0x1A90 / 4];
 volatile uint32_t sim_scroll_owner;
+/* The card slot, and a write to the card to be cut short by its coming out. */
+enum { CARD_NONE, CARD_RUN, CARD_OTHER };
+static int sim_card = CARD_RUN, sim_cut;
 static int page_now = 84;
 #define PAGE_MODE (*(int32_t *)((char *)page_object + 0x1A90))
 
@@ -295,7 +307,7 @@ static char *slurp(const char *name)
 }
 
 enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
-       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC, E_SCROLL };
+       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC, E_SCROLL, E_CARD };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -358,6 +370,11 @@ static void load_events(void)
             if (*p == ' ')
                 p++;
             ev[nev].text = p;
+        } else if (strncmp(p, "CARD ", 5) == 0) {
+            ev[nev].kind = E_CARD;
+            ev[nev].x = strncmp(p + 5, "OUT", 3) == 0 ? CARD_NONE
+                      : strncmp(p + 5, "IN", 2) == 0 ? CARD_RUN
+                      : strncmp(p + 5, "OTHER", 5) == 0 ? CARD_OTHER : -1;
         } else if (strncmp(p, "PAGE", 4) == 0) {
             ev[nev].kind = E_PAGE;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
@@ -430,6 +447,51 @@ void sim_batch(const char *phrases, int count)
     memcpy(said[nsaid++], line, n + 1);
 }
 
+/* "@has FILE TEXT", "@lacks FILE TEXT" or "@absent FILE": whether it fails. */
+static int check_file(const char *line)
+{
+    char name[64], *t;
+    const char *text = "";
+    int n = 0, want, bad;
+
+    if (sscanf(line, "@%*s %63s %n", name, &n) < 1)
+        return 1;
+    if (n > 0)
+        text = line + n;
+    t = slurp(name);
+    if (strncmp(line, "@absent ", 8) == 0)
+        bad = t != NULL;
+    else {
+        want = strncmp(line, "@has ", 5) == 0;
+        bad = (t != NULL && strstr(t, text) != NULL) != want;
+    }
+    if (bad)
+        printf("EXPECTED %s\n", line);
+    free(t);
+    return bad;
+}
+
+/* What the engine said of its own, "ready" and the like. */
+static char *own[32];
+static int nown;
+
+void sim_own(const char *text)
+{
+    if (nown < 32)
+        own[nown++] = strdup(text);
+}
+
+static int check_own(const char *text)
+{
+    int i, n = 0;
+
+    for (i = 0; i < nown; i++)
+        n += strcmp(own[i], text) == 0;
+    if (n != 1)
+        printf("EXPECTED @own %s, said %d times\n", text, n);
+    return n != 1;
+}
+
 static void check_expected(void)
 {
     char *t = slurp("sim_expect.txt"), *line, *end;
@@ -445,6 +507,14 @@ static void check_expected(void)
             end = line + strlen(line);
         if (*line == 0 || *line == '#')
             continue;
+        if (strncmp(line, "@own ", 5) == 0) {
+            bad |= check_own(line + 5);
+            continue;
+        }
+        if (*line == '@') {
+            bad |= check_file(line);
+            continue;
+        }
         if (k >= nsaid) {
             printf("EXPECTED batch %d: %s\n     said nothing more\n", k + 1, line);
             bad = 1;
@@ -616,6 +686,15 @@ static void fire(int i)
     case E_PKEEP:
         sim_keep = ev[i].x;
         break;
+    case E_CARD:
+        if (ev[i].x < 0)
+            sim_cut = 1;
+        else
+            sim_card = ev[i].x;
+        printf("sim %lu ms: card %s\n", (unsigned long)now_ms,
+               ev[i].x < 0 ? "to come out in the next write" : ev[i].x == CARD_NONE ? "out"
+               : ev[i].x == CARD_RUN ? "in, the run's" : "in, another");
+        break;
     case E_TRREC:
         sim_seq_state = (uint32_t)(uintptr_t)sim_seq;
         sim_seq[0] = ev[i].x ? 6 : 1;
@@ -729,39 +808,75 @@ void target_output(int word) { (void)word; }
 int engine_task_id(void) { return 1; }
 int kernel_task_self(void) { return 1; }
 
-void write_file(const char *path, const void *buf, size_t len)
+int card_inserted(void)
+{
+    return sim_card != CARD_NONE;
+}
+
+/* Where a file lands beside the run: the eMMC's and the run's card's as
+   sim_NAME, another card's as sim_other_NAME; none with the slot empty. */
+static int sim_file(const char *path, char *name, size_t cap)
+{
+    const char *base = strrchr(path, '/');
+
+    base = base ? base + 1 : path;
+    if (strncmp(path, "A:", 2) != 0 || sim_card == CARD_RUN)
+        snprintf(name, cap, "sim_%s", base);
+    else if (sim_card == CARD_OTHER)
+        snprintf(name, cap, "sim_other_%s", base);
+    else
+        return 0;
+    return 1;
+}
+
+int write_file(const char *path, const void *buf, size_t len)
 {
     char name[64];
-    const char *base = strrchr(path, '/');
     int fd;
 
-    snprintf(name, sizeof name, "sim_%s", base ? base + 1 : path);
-    fd = sh_open(name, 4 | 1);
-    if (fd < 0)
-        return;
+    if (!sim_file(path, name, sizeof name) || (fd = sh_open(name, 4 | 1)) < 0)
+        return 0;
+    if (sim_cut && strncmp(path, "A:", 2) == 0) {
+        sh_write(fd, buf, (int)len / 2);
+        sh_close(fd);
+        sim_cut = 0;
+        sim_card = CARD_NONE;
+        printf("sim %lu ms: card out halfway through %s\n", (unsigned long)now_ms, path);
+        return -1;
+    }
     sh_write(fd, buf, (int)len);
     sh_close(fd);
+    return 1;
 }
 
 int file_exists(const char *path)
 {
     char name[64];
-    const char *base = strrchr(path, '/');
     int fd;
 
-    snprintf(name, sizeof name, "sim_%s", base ? base + 1 : path);
-    fd = sh_open(name, 0);
-    if (fd < 0)
+    if (!sim_file(path, name, sizeof name) || (fd = sh_open(name, 0)) < 0)
         return 0;
     sh_close(fd);
     return 1;
 }
 
+/* TALLFREE.DEBUG is sim_say.txt, on the run's card only. */
 const char *read_text(const char *path)
 {
+    static char text[4096];
+    char *t;
+
     if (strstr(path, "TALLFREE.CFG") != NULL)
-        return slurp("sim_TALLFREE.CFG");
-    return slurp("sim_say.txt");
+        t = slurp("sim_TALLFREE.CFG");
+    else if (sim_card == CARD_RUN)
+        t = slurp("sim_say.txt");
+    else
+        t = NULL;
+    if (t == NULL)
+        return NULL;
+    snprintf(text, sizeof text, "%s", t);
+    free(t);
+    return text;
 }
 
 void target_done(int rc)

@@ -1,0 +1,6 @@
+top screen
+B
+C
+D
+@own log card needs checking
+@lacks sim_DRAWS000.TXT |D-1|

@@ -3698,21 +3698,25 @@ void screen_report(void)
 }
 
 /* The log so far, then every item on record with how often it was drawn,
-   as a part of the draw log. Past 48 KB the next part begins, leaving 48 KB
-   of room for what is logged while speech keeps the card from being
-   written. */
+   as a part of the draw log. Past 48 KB the next part begins, once the
+   part is on the card, leaving 48 KB of room for what is logged while
+   speech, or the card being out, keeps it from being written. */
 #define LOG_PART (48u * 1024u)
+
+void screen_log_note(const char *what)
+{
+    log_line("# %s, at %lu ticks\n", what, (unsigned long)device_ticks());
+}
 
 int screen_log_write(void)
 {
     static size_t written;
     static int part, emptied;
-    size_t n = log_len;
+    size_t n = log_len, upto = n;
     int i, k;
 
     if (log_len == 0 || log_len == written)
         return 0;
-    written = log_len;
     k = snprintf(draw_log + n, LOG_CAP - n,
                  "# items: surface x y draws colour task caller site erased |text|\n");
     if (k > 0)
@@ -3729,7 +3733,9 @@ int screen_log_write(void)
         if (k > 0)
             n += (size_t)k;
     }
-    log_part_write("DRAWS", part, &emptied, draw_log, n);
+    if (!log_part_write("DRAWS", part, &emptied, draw_log, n))
+        return 0;
+    written = upto;
     if (log_len >= LOG_PART) {
         part++;
         log_len = 0;

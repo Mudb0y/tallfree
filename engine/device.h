@@ -22,8 +22,11 @@ void target_probe_slots(void);
 void target_probe_rx(void);
 void target_output(int word);
 int  engine_task_id(void);
-void write_file(const char *path, const void *buf, size_t len);
+/* 1 written whole, 0 not opened, -1 opened and then cut short */
+int  write_file(const char *path, const void *buf, size_t len);
 int  file_exists(const char *path);
+/* Roland's own flag, set while an SD card is in */
+int  card_inserted(void);
 const char *read_text(const char *path);
 void audio_push(const int16_t *s, size_t n);
 size_t audio_space(void);
@@ -34,7 +37,8 @@ uint32_t audio_making(int making);
 int  audio_hooked(void);
 
 /* service.c */
-void log_part_write(const char *stem, int part, int *emptied, const void *buf, size_t len);
+int  log_part_write(const char *stem, int part, int *emptied, const void *buf, size_t len);
+int  log_card(void);
 
 /* screen.c */
 enum { SCREEN_OFF, SCREEN_CHANGED, SCREEN_ALL };
@@ -44,6 +48,7 @@ int  screen_install(int mode, int settle_ms);
 void screen_remove(void);
 int  screen_poll(char *phrases, size_t cap, int *count);
 int  screen_log_write(void);
+void screen_log_note(const char *what);
 void screen_report(void);
 
 /* menu.c */

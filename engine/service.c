@@ -40,28 +40,78 @@ static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, rxprobe, d
     volume = 50;
 int card_log;
 
+/* The card can be swapped while the instrument runs, for samples on
+   another, so the log goes only to the card it began on, known by its
+   TALLFREE.DEBUG as read at power-on, and only while Roland's flag says a
+   card is in. A write cut short by the card coming out may leave the card's
+   FAT inconsistent, which hangs the unit's file system on the next write,
+   so after one nothing more is written to any card this session, and that
+   card is said to need checking when it comes back. */
+#define DEBUG_FILE "A:/TALLFREE/TALLFREE.DEBUG"
+static uint32_t card_hash, card_in_at;
+static int card_was_in = 1, card_seen = 1, card_settling, card_spoiled, card_spoken;
+
+static uint32_t text_hash(const char *t)
+{
+    uint32_t h = 2166136261u;
+
+    while (*t)
+        h = (h ^ (uint8_t)*t++) * 16777619u;
+    return h;
+}
+
+static int card_is_ours(void)
+{
+    const char *t;
+
+    if (!card_inserted() || card_settling)
+        return 0;
+    t = read_text(DEBUG_FILE);
+    return t != NULL && text_hash(t) == card_hash;
+}
+
+int log_card(void)
+{
+    return !card_spoiled && card_is_ours();
+}
+
+static int card_write(const char *path, const void *buf, size_t len)
+{
+    int r = write_file(path, buf, len);
+
+    if (r < 0 || (r > 0 && !card_inserted())) {
+        card_spoiled = 1;
+        return 0;
+    }
+    return r > 0;
+}
+
 /* A log goes to the card in parts, A:/TALLFREE/STEM000.TXT on, so that it
    runs as long as the instrument does: the part being written is rewritten
    whole as it grows, and left once full. The first write of a session
    empties the parts after the first that a longer session left. Only the
    file calls the firmware itself makes: create-and-truncate, write, close,
-   and open to read. */
-void log_part_write(const char *stem, int part, int *emptied, const void *buf, size_t len)
+   and open to read. Whether it was written, so that a part is not left
+   while the card is out. */
+int log_part_write(const char *stem, int part, int *emptied, const void *buf, size_t len)
 {
     char path[40];
     int k;
 
+    if (!log_card())
+        return 0;
     if (!*emptied) {
         *emptied = 1;
         for (k = part + 1; k < 1000; k++) {
             snprintf(path, sizeof path, "A:/TALLFREE/%s%03d.TXT", stem, k);
             if (!file_exists(path))
                 break;
-            write_file(path, "", 0);
+            if (!card_write(path, "", 0))
+                return 0;
         }
     }
     snprintf(path, sizeof path, "A:/TALLFREE/%s%03d.TXT", stem, part);
-    write_file(path, buf, len);
+    return card_write(path, buf, len);
 }
 
 #define SCRIPT 64
@@ -145,8 +195,15 @@ static void batch_set(const char *phrases, int count)
     last_submit = device_ticks();
 }
 
+#ifdef SIM
+void sim_own(const char *text);
+#endif
+
 static void batch_one(const char *text)
 {
+#ifdef SIM
+    sim_own(text);
+#endif
     batch_set(text, 1);
 }
 
@@ -288,6 +345,42 @@ static void phrase_done(void)
     audio_hold(0);
 }
 
+/* Polled from the main loop: the card going out and coming in, noted with
+   the time. A card just in is left alone for two seconds, for the file
+   system to take it up. */
+static void card_watch(void)
+{
+    int in = card_inserted();
+
+    if (in != card_was_in) {
+        card_was_in = in;
+        card_settling = in;
+        card_in_at = device_ticks();
+        screen_log_note(in ? "a card in" : "the card out");
+    }
+    if (card_settling && device_ticks() - card_in_at >= 1500u)
+        card_settling = 0;
+}
+
+/* Before the logs go out: which card is in, noted when that changes, and a
+   card that a cut write may have spoiled said to need checking once it is
+   back. */
+static void card_look(void)
+{
+    int now;
+
+    if (card_settling)
+        return;
+    now = !card_inserted() ? 0 : card_is_ours() ? 1 : 2;
+    if (now != card_seen && now != 0)
+        screen_log_note(now == 1 ? "the log's card back" : "another card, nothing written to it");
+    card_seen = now;
+    if (now == 1 && card_spoiled && !card_spoken) {
+        card_spoken = 1;
+        batch_one("log card needs checking");
+    }
+}
+
 /* Once the script has been said: the log so far to the card, in case the
    screen hook turns out to hang the instrument, and then the hook. */
 static void start_screen(void)
@@ -313,6 +406,7 @@ int target_main(void)
     int installed = 0;
 
     if (text != NULL) {
+        card_hash = text_hash(text);
         strncpy(config, text, sizeof config - 1);
         configure(config);
     }
@@ -335,6 +429,8 @@ int target_main(void)
 
     for (;;) {
         service_poll();
+        if (card_log)
+            card_watch();
         if (synth_active) {
             if (!speech_busy())
                 phrase_done();
@@ -360,6 +456,7 @@ int target_main(void)
            being said, so a hang still leaves most of it behind. */
         if (card_log && screen_live && idle() && device_ticks() - last_flush >= 7500u) {
             last_flush = device_ticks();
+            card_look();
             if (screen_log_write())
                 target_checkpoint();
         }

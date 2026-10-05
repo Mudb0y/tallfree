@@ -1,0 +1,11 @@
+top screen
+B
+C
+D
+@has sim_DRAWS000.TXT # the card out, at
+@has sim_DRAWS000.TXT # another card, nothing written to it, at
+@has sim_DRAWS000.TXT # the log's card back, at
+@has sim_DRAWS000.TXT |B-1|
+@has sim_DRAWS000.TXT |C-1|
+@has sim_DRAWS000.TXT |D-1|
+@absent sim_other_DRAWS000.TXT

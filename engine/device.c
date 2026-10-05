@@ -43,20 +43,33 @@ void sys_log_reset(void);
 void diag_install(void);
 void diag_remove(void);
 
-void write_file(const char *path, const void *buf, size_t len)
+int write_file(const char *path, const void *buf, size_t len)
 {
-    int h = F_OPEN(path, 0x601);
+    int h = F_OPEN(path, 0x601), whole = 1;
 
     if (h < 0)
-        return;
+        return 0;
     while (len > 0) {
         int chunk = len > 0x10000 ? 0x10000 : (int)len;
-        if (F_WRITE(h, buf, chunk) <= 0)
+        if (F_WRITE(h, buf, chunk) != chunk) {
+            whole = 0;
             break;
+        }
         buf = (const char *)buf + chunk;
         len -= (size_t)chunk;
     }
-    F_CLOSE(h);
+    if (F_CLOSE(h) < 0)
+        whole = 0;
+    return whole ? 1 : -1;
+}
+
+/* The byte Roland's own code reads to know a card is in: the status line
+   at 0x80069B64 prints it as "SDCard : Ins." or "Ejc.", the update check
+   tests it before opening anything on A:, and the factory card test waits
+   on it while the card is pulled and put back. */
+int card_inserted(void)
+{
+    return *(volatile uint8_t *)0x8059187Au != 0;
 }
 
 int file_exists(const char *path)
@@ -379,10 +392,14 @@ void target_probe_slots(void)
 }
 
 /* Each set for 1.5 s, then the RMS of both halves of each receive word under
-   each, in 16-bit units, to A:/TALLFREE/RXPROBE.TXT. */
+   each, in 16-bit units, to A:/TALLFREE/RXPROBE.TXT. The report is on the
+   heap, which the probe has to itself: the engine's static memory is held
+   to what leaves the speech its 1280 KB. */
+#define RXP_TEXT 4096u
+
 void target_probe_rx(void)
 {
-    static char text[4096];
+    char *text;
     uint32_t k, w, n = 0;
 
     for (k = 0; k < 1024; k++)
@@ -400,21 +417,27 @@ void target_probe_rx(void)
             target_sleep(20);
     }
     g_probe = 0;
-    n += (uint32_t)snprintf(text + n, sizeof text - n,
+    text = malloc(RXP_TEXT);
+    if (text == NULL) {
+        printf("rxprobe: no memory for the report\n");
+        return;
+    }
+    n += (uint32_t)snprintf(text + n, RXP_TEXT - n,
                             "# 1 kHz at 2^14 into each set; RMS of each receive word's high"
                             " and low 16 bits\n# set: w0 hi lo | w1 hi lo | ... | w7 hi lo\n");
-    for (k = 0; k < RXP_SETS && n < sizeof text - 256; k++) {
-        n += (uint32_t)snprintf(text + n, sizeof text - n, "%-20s", rxp_sets[k].name);
+    for (k = 0; k < RXP_SETS && n < RXP_TEXT - 256; k++) {
+        n += (uint32_t)snprintf(text + n, RXP_TEXT - n, "%-20s", rxp_sets[k].name);
         for (w = 0; w < 8u; w++) {
             uint32_t c = rxp_n[k] ? rxp_n[k] : 1u;
-            n += (uint32_t)snprintf(text + n, sizeof text - n, " %5lu %5lu",
+            n += (uint32_t)snprintf(text + n, RXP_TEXT - n, " %5lu %5lu",
                                     (unsigned long)sqrtf((float)(rxp_hi[k][w] / c)),
                                     (unsigned long)sqrtf((float)(rxp_lo[k][w] / c)));
         }
-        n += (uint32_t)snprintf(text + n, sizeof text - n, "\n");
+        n += (uint32_t)snprintf(text + n, RXP_TEXT - n, "\n");
     }
     printf("%s", text);
     write_file("A:/TALLFREE/RXPROBE.TXT", text, n);
+    free(text);
 }
 
 /* The engine copies itself to the eMMC, so the boot loader finds it there
@@ -570,8 +593,7 @@ void target_checkpoint(void)
     printf("kernel code crc %08lx at launch, %08lx now, %s\n", (unsigned long)g_kernel_crc,
            (unsigned long)crc, crc == g_kernel_crc ? "unchanged" : "CHANGED");
     log = sys_log(&len);
-    log_part_write("LOG", part, &emptied, log, len);
-    if (len >= LOG_PART) {
+    if (log_part_write("LOG", part, &emptied, log, len) && len >= LOG_PART) {
         sys_log_reset();
         part++;
     }

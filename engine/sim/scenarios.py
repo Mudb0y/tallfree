@@ -1346,6 +1346,54 @@ def remainname():
                             'NAME file_name_example_140bpm_gmaj_whow | Color White | '
                             'Remaining Time -00:05 | STEREO/MONO STEREO'])
 
+# The card swapped for another while the log is on, as for samples on a
+# second card: the run's card taken out, a bank changed, another card in,
+# a bank changed, the run's card back, a bank changed, and the other card
+# in again for the end; ten seconds or more each way, so a write is tried
+# with the card out and with the other in, and the last write, as the
+# engine finishes, with the other in. Nothing goes to the other card, and
+# what came while the run's card was out reaches it once it is back.
+def cardswap():
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 CARD OUT', '4000 BANK 1', f'4000 s0 34 2 !{PAD}B-1',
+          '14000 CARD OTHER', '16000 BANK 2', f'16000 s0 34 2 !{PAD}C-1',
+          '28000 CARD OUT', '29000 CARD IN', '32000 BANK 3', f'32000 s0 34 2 !{PAD}D-1',
+          '42000 CARD OTHER', '45000 VALUE']
+    write('cardswap', d, ['top screen', 'B', 'C', 'D',
+                          '@has sim_DRAWS000.TXT # the card out, at',
+                          '@has sim_DRAWS000.TXT # another card, nothing written to it, at',
+                          "@has sim_DRAWS000.TXT # the log's card back, at",
+                          '@has sim_DRAWS000.TXT |B-1|', '@has sim_DRAWS000.TXT |C-1|',
+                          '@has sim_DRAWS000.TXT |D-1|', '@absent sim_other_DRAWS000.TXT'],
+          say='#mode changed\n#log on\n')
+
+# The run's card out for long enough that the draw log passes a part, 48
+# KB, the pads played meanwhile, which are logged and not said: the part
+# is kept until the card is back, written whole, and only then does the
+# next begin.
+def cardlong():
+    d = main_screen(0, 0, 'A-13') + ['2000 CARD OUT']
+    for k, t in enumerate(range(3000, 55000, 50)):
+        d.append(f'{t} s0 34 2 !{PAD}A-{k % 16 + 1}')
+    d += ['56000 CARD IN', '62000 BANK 1', f'62000 s0 34 2 !{PAD}B-1', '72000 VALUE']
+    write('cardlong', d, ['top screen', 'B',
+                          '@has sim_DRAWS000.TXT # the card out, at',
+                          "@has sim_DRAWS000.TXT # the log's card back, at",
+                          '@has sim_DRAWS001.TXT , 0 lines dropped so far',
+                          '@has sim_DRAWS001.TXT |B-1|', '@lacks sim_DRAWS000.TXT |B-1|'],
+          say='#mode changed\n#log on\n')
+
+# A write to the run's card cut short by its coming out: nothing more is
+# written to any card, and the card, once back, is said to need checking.
+def cardcut():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1500 BANK 1', f'1500 s0 34 2 !{PAD}B-1', '12000 CARD CUT',
+          '13000 BANK 2', f'13000 s0 34 2 !{PAD}C-1', '25000 CARD IN',
+          '33000 BANK 3', f'33000 s0 34 2 !{PAD}D-1', '45000 VALUE']
+    write('cardcut', d, ['top screen', 'B', 'C', 'D', '@own log card needs checking',
+                         '@lacks sim_DRAWS000.TXT |D-1|'],
+          say='#mode changed\n#log on\n')
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -1397,3 +1445,6 @@ project()
 importlist()
 remainname()
 importfolder()
+cardswap()
+cardlong()
+cardcut()

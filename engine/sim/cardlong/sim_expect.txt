@@ -1,0 +1,7 @@
+top screen
+B
+@has sim_DRAWS000.TXT # the card out, at
+@has sim_DRAWS000.TXT # the log's card back, at
+@has sim_DRAWS001.TXT , 0 lines dropped so far
+@has sim_DRAWS001.TXT |B-1|
+@lacks sim_DRAWS000.TXT |B-1|
