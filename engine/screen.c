@@ -3434,9 +3434,9 @@ static int screen_changed(void)
 
 /* The file lists play the sample the cursor lands on, so a quick scroll
    through samples is for hearing them, not their names: on a sample, the
-   name waits until the cursor has rested half a second, and what was being
+   name waits until the cursor has rested two seconds, and what was being
    said stops as it lands. A folder is said as soon as the list settles. */
-#define SAMPLE_REST MS_TO_TICKS(500)
+#define SAMPLE_REST MS_TO_TICKS(2000)
 
 /* The file list's focused row, if it is a sample; the latest drawn, as the
    old row and the new are both lit for a moment while the focus moves. */

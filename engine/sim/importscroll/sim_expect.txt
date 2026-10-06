@@ -3,7 +3,8 @@ SAMPLE
 Drums | destination: PRESS PAD
 parent folder
 (stop)
-hit_03.wav
+063_SOULSURPLUS_elevador_percussion_drum_loop_bossa_nova_jazz_m
+(stop)
 Loops
 (stop)
 tail.wav

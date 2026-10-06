@@ -1264,21 +1264,21 @@ def importlist():
 
     d = main_screen(0, 0, 'A-13') + menu(1000) + arrive(3000)
     sel = 0
-    for t in range(3000, 20000, 50):
+    for t in range(3000, 22000, 50):
         if t == 9000:
             d.append('9000 KNOB 0 1')
             sel = 1
-        if t == 10000:
-            d.append('10000 KNOB 0 -1')
+        if t == 12000:
+            d.append('12000 KNOB 0 -1')
             sel = 0
-        if 14000 <= t < 15000:
-            if t == 14000:
-                d += ['14000 KEY DOWN 22'] + menu(14000) + ['14100 KEY UP 22']
+        if 16000 <= t < 17000:
+            if t == 16000:
+                d += ['16000 KEY DOWN 22'] + menu(16000) + ['16100 KEY UP 22']
             continue
-        if t == 15000:
-            d += arrive(15000)
+        if t == 17000:
+            d += arrive(17000)
         d += frame(t, sel)
-    d.append('20000 VALUE')
+    d.append('22000 VALUE')
     write('importlist', d, ['top screen', 'SAMPLE', '(stop)',
                             'file_name_example_140bpm_gmaj_whow.wav | destination: PRESS PAD',
                             '(stop)', 'kick.wav', '(stop)', 'file_name_example_140bpm_gmaj_whow.wav',
@@ -1315,19 +1315,20 @@ def importfolder():
     d += frame(3000, top, 0, 'SDCARD:/')
     d += ['5000 KEY DOWN 31', '5070 KEY UP 31'] + frame(5000, inner, 0, 'SDCARD:/Splice_Pack')
     d += ['6000 KNOB 0 1'] + frame(6000, inner, 1, 'SDCARD:/Splice_Pack')
-    d += ['7000 KNOB 0 -1'] + frame(7000, inner, 0, 'SDCARD:/Splice_Pack')
-    d += ['8000 KEY DOWN 31', '8070 KEY UP 31'] + frame(8000, top, 0, 'SDCARD:/')
-    d.append('9500 VALUE')
+    d += ['9000 KNOB 0 -1'] + frame(9000, inner, 0, 'SDCARD:/Splice_Pack')
+    d += ['10000 KEY DOWN 31', '10070 KEY UP 31'] + frame(10000, top, 0, 'SDCARD:/')
+    d.append('11500 VALUE')
     write('importfolder', d, ['top screen', 'SAMPLE', 'Splice_Pack | destination: PRESS PAD',
                               'parent folder', '(stop)', 'snare_01.wav', 'parent folder',
                               'Splice_Pack'])
 
 # A folder of samples scrolled through quickly, to hear them: the list plays
 # each sample the focus lands on, so a sample's name waits for the focus to
-# rest half a second, and what was being said stops as it lands on one; a
+# rest two seconds, and what was being said stops as it lands on one; a
 # folder is said at once. Moves 250 ms apart for a second and a half say
-# nothing, the second's limit on waiting not applying to samples, nor to a
-# sample whose name is longer than the reader keeps, which loses its .wav.
+# nothing, the second's limit on waiting not applying to samples, and nor
+# does a pause of a second; a sample whose name is longer than the reader
+# keeps, losing its .wav, is still a sample.
 def importscroll():
     LIST, ICON = '=80155187:', '=801551CF'
     top = [('Drums', True), ('kick.wav', False)]
@@ -1356,13 +1357,14 @@ def importscroll():
     d += ['5000 KEY DOWN 31', '5070 KEY UP 31'] + frame(5000, inner, 0, path)
     sel = 0
     for t, step in [(6000, 1), (6250, 1), (6500, 1), (6750, -1), (7000, -1), (7250, 1), (7500, 1),
-                    (9000, 1), (9200, 1)]:
+                    (8500, -1), (11500, 1), (11700, 1), (11900, 1)]:
         sel += step
         d += [f'{t} KNOB 0 {step}'] + frame(t, inner, sel, path)
-    d.append('11000 VALUE')
+    d.append('15000 VALUE')
     write('importscroll', d, ['top screen', 'SAMPLE', 'Drums | destination: PRESS PAD',
-                              'parent folder', '(stop)', 'hit_03.wav', 'Loops', '(stop)',
-                              'tail.wav'])
+                              'parent folder', '(stop)',
+                              '063_SOULSURPLUS_elevador_percussion_drum_loop_bossa_nova_jazz_m',
+                              '(stop)', 'Loops', '(stop)', 'tail.wav'])
 
 # REMAIN with a sample's name too long for its line: FUN_8008C4A0 draws it
 # from x 56, not right-aligned, a character further every draw and whole
