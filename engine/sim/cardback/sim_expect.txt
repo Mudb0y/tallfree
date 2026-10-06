@@ -1,0 +1,6 @@
+top screen
+B
+Operation Completed! The samples are now on the pads of bank C
+@owns ready | logging to SD card, log 1 | SD card out, logging to internal storage | log card in, moving 1 log file from internal storage | moved 1 log file to SD card | speech off
+@order sim_LOG001_DRAWS000.TXT |B-1| >> pads of bank C|
+@absent sim_emmc_LOG001_DRAWS000.TXT

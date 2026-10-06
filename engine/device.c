@@ -31,6 +31,16 @@ typedef int (*close_fn)(int h);
 #define F_WRITE ((write_fn)0x800DD9B9u)
 #define F_CLOSE ((close_fn)0x800DEBD9u)
 
+/* Roland's own wrappers round the file system, each 0 when done and -1 when
+   not: deleting a file, making and removing a folder, and a path's record,
+   whose byte 0x1D holds its attributes. */
+typedef int (*path_fn)(const char *path);
+typedef int (*stat_fn)(const char *path, void *info);
+#define F_REMOVE ((path_fn)0x80021711u)
+#define F_MKDIR  ((path_fn)0x80011B01u)
+#define F_RMDIR  ((path_fn)0x80034B0Du)
+#define F_STAT   ((stat_fn)0x80034A7Du)
+
 #define VEC_DMA3 ((volatile uint32_t *)0x0000004Cu)
 #define EDMA_INT (*(volatile uint32_t *)0x400E8024u)
 
@@ -43,9 +53,9 @@ void sys_log_reset(void);
 void diag_install(void);
 void diag_remove(void);
 
-int write_file(const char *path, const void *buf, size_t len)
+static int put_file(const char *path, int mode, const void *buf, size_t len)
 {
-    int h = F_OPEN(path, 0x601), whole = 1;
+    int h = F_OPEN(path, mode), whole = 1;
 
     if (h < 0)
         return 0;
@@ -61,6 +71,63 @@ int write_file(const char *path, const void *buf, size_t len)
     if (F_CLOSE(h) < 0)
         whole = 0;
     return whole ? 1 : -1;
+}
+
+int write_file(const char *path, const void *buf, size_t len)
+{
+    return put_file(path, 0x601, buf, len);
+}
+
+/* Roland's "ab": onto the end, the file made if it is not there. */
+int append_file(const char *path, const void *buf, size_t len)
+{
+    return put_file(path, 0x209, buf, len);
+}
+
+int append_copy(const char *from, const char *to, void *buf, size_t cap)
+{
+    int src = F_OPEN(from, 0), dst, n, r = 1;
+
+    if (src < 0)
+        return 0;
+    dst = F_OPEN(to, 0x209);
+    if (dst < 0) {
+        F_CLOSE(src);
+        return -1;
+    }
+    while ((n = F_READ(src, buf, (int)cap)) > 0)
+        if (F_WRITE(dst, buf, n) != n) {
+            r = -1;
+            break;
+        }
+    if (n < 0)
+        r = 0;
+    F_CLOSE(src);
+    if (F_CLOSE(dst) < 0)
+        r = -1;
+    return r;
+}
+
+int remove_file(const char *path)
+{
+    return F_REMOVE(path) == 0;
+}
+
+int make_folder(const char *path)
+{
+    return F_MKDIR(path) == 0;
+}
+
+int remove_folder(const char *path)
+{
+    return F_RMDIR(path) == 0;
+}
+
+int folder_exists(const char *path)
+{
+    uint8_t info[32];
+
+    return F_STAT(path, info) == 0 && (info[0x1D] & 0x10) != 0;
 }
 
 /* The byte Roland's own code reads to know a card is in: the status line
@@ -575,13 +642,16 @@ int engine_task_id(void)
     return g_task;
 }
 
-/* The log so far to the card, in parts of 32 KB. Safe from the engine's
-   task at any point: the file calls take the file system's own lock. */
+/* What the log has gained since the last time, onto its part, in parts of
+   32 KB, leaving only what is not yet written in the buffer. Safe from the
+   engine's task at any point: the file calls take the file system's own
+   lock. */
 #define LOG_PART (32u * 1024u)
 
 void target_checkpoint(void)
 {
-    static int part, emptied;
+    static int part;
+    static size_t part_len;
     size_t len;
     const char *log;
     uint32_t crc = kernel_code_crc();
@@ -593,9 +663,13 @@ void target_checkpoint(void)
     printf("kernel code crc %08lx at launch, %08lx now, %s\n", (unsigned long)g_kernel_crc,
            (unsigned long)crc, crc == g_kernel_crc ? "unchanged" : "CHANGED");
     log = sys_log(&len);
-    if (log_part_write("LOG", part, &emptied, log, len) && len >= LOG_PART) {
+    if (len > 0 && log_append(LOG_SYSTEM, part, log, len)) {
         sys_log_reset();
-        part++;
+        part_len += len;
+        if (part_len >= LOG_PART) {
+            part_len = 0;
+            part++;
+        }
     }
 }
 
@@ -605,7 +679,7 @@ void target_done(int rc)
     target_sleep(50);
     printf("engine finished, code %d\n", rc);
     if (card_log) {
-        screen_log_write();
+        screen_log_write(1);
         target_checkpoint();
     }
 }

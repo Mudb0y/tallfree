@@ -217,15 +217,17 @@ inside it, OpenEVV's cooperative scheduler still runs synthesis. **`make
 sims` runs the service and the hook under QEMU** against scenarios in
 `engine/sim/*/`, written by `sim/scenarios.py` from what the unit's logs
 recorded, each with the batches it must say; run it before every card test.
-With `#log on` in `TALLFREE.DEBUG`, each run leaves `LOG000.TXT` on (where
-the engine was loaded from, phrase timings, kernel-code checksum),
-`DRAWS000.TXT` on (every change the hook saw), and `FAULT.TXT` if the fault
-catcher fired, checkpointed before the hook goes in and every ten seconds
-after; without it nothing goes to the card. The two logs go out in numbered
-parts of 32 and 48 KB, so a session of any length is logged; the card is
-written only between phrases, so what comes during a minute or more of
-unbroken speech is dropped and counted. The first write of a run empties
-the parts a longer run left after its own.
+With `#log on` in `TALLFREE.DEBUG`, each run logs into a folder of its own,
+`A:/TALLFREE/LOG001` on: `LOG000.TXT` on (where the engine was loaded from,
+phrase timings, kernel-code checksum), `DRAWS000.TXT` on (every change the
+hook saw), and `A:/TALLFREE/FAULT.TXT` if the fault catcher fired; without
+it nothing is written. The logs are added to, never rewritten, before the
+hook goes in and every ten seconds after, in numbered parts of 32 and 48
+KB, and only between phrases, so what comes during a minute or more of
+unbroken speech is dropped and counted. While the log's card is out, or
+another is in, the same files go to the internal storage,
+`B:/TALLFREE/LOG001` on, and are moved onto the card's when it is back, or
+at the next start; the engine says each of these steps aloud.
 
 **Hook text by vtable swap.** Every string on the normal screens ends in
 `FUN_800EE530(this, x, y, str, len)`, the surface's DrawString at vtable slot

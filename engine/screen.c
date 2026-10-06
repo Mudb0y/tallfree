@@ -1215,12 +1215,14 @@ static int pads_play(void)
    count of each item's redraws, so a screen that redraws continually costs
    a line per item.
    Text leaving the screen is logged when it is taken off the model, not at
-   each clear: some screens clear and redraw twenty-five times a second. */
-#define LOG_CAP  (128u * 1024u)
+   each clear: some screens clear and redraw twenty-five times a second.
+   Only what is not yet written is kept, 64 KB of it, a minute of browsing
+   files, with 32 KB past it for the counts. */
+#define LOG_CAP  (96u * 1024u)
 #define SUMMARY  (32u * 1024u)
 static char draw_log[LOG_CAP];
 static size_t log_len;
-static uint32_t log_dropped;
+static uint32_t log_dropped, page_repeats;
 
 static void log_line(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
@@ -1725,7 +1727,21 @@ static int take(const struct draw *d)
             || (d->x == 5 && d->y1 == 3);
     }
     if (d->kind == EV_PAGE) {
-        log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
+        /* Some pages are sent the same messages many times a second, the
+           file lists 8 and 4 every 53 ms, half of what browsing would log:
+           one the page had under 100 ms before is counted, not logged. */
+        static uint32_t msg_at[32];
+        static int32_t msg_page = -1;
+        if (d->mark != msg_page) {
+            memset(msg_at, 0, sizeof msg_at);
+            msg_page = d->mark;
+        }
+        if (d->x > 1 && d->x < 32 && msg_at[d->x] != 0 && d->tick - msg_at[d->x] < 75u)
+            page_repeats++;
+        else
+            log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
+        if (d->x >= 0 && d->x < 32)
+            msg_at[d->x] = d->tick;
         if (d->x != 1)
             return 0;
         if ((int)d->mark != page_now)
@@ -3796,15 +3812,15 @@ int screen_poll(char *phrases, size_t cap, int *count)
 
 void screen_report(void)
 {
-    printf("screen: %lu draws seen, %lu lost, %lu batches, %lu items evicted, %lu log lines dropped\n",
+    printf("screen: %lu draws seen, %lu lost, %lu batches, %lu items evicted, %lu log lines dropped, "
+           "%lu page messages counted\n",
            (unsigned long)draw_seen, (unsigned long)draw_lost, (unsigned long)batches,
-           (unsigned long)evicted, (unsigned long)log_dropped);
+           (unsigned long)evicted, (unsigned long)log_dropped, (unsigned long)page_repeats);
 }
 
-/* The log so far, then every item on record with how often it was drawn,
-   as a part of the draw log. Past 48 KB the next part begins, once the
-   part is on the card, leaving 48 KB of room for what is logged while
-   speech, or the card being out, keeps it from being written. */
+/* What the draw log has gained since the last time, onto its part. Past 48
+   KB the part ends with every item on record and how often it was drawn,
+   and the next begins. */
 #define LOG_PART (48u * 1024u)
 
 void screen_log_note(const char *what)
@@ -3812,20 +3828,35 @@ void screen_log_note(const char *what)
     log_line("# %s, at %lu ticks\n", what, (unsigned long)device_ticks());
 }
 
-int screen_log_write(void)
+uint32_t screen_log_dropped(void)
 {
-    static size_t written;
-    static int part, emptied;
-    size_t n = log_len, upto = n;
-    int i, k;
+    return log_dropped;
+}
 
-    if (log_len == 0 || log_len == written)
+/* The room past the log, for copying files through while no part is being
+   written. */
+void *screen_log_spare(size_t *len)
+{
+    *len = SUMMARY;
+    return draw_log + LOG_CAP - SUMMARY;
+}
+
+int screen_log_write(int last)
+{
+    static size_t part_len;
+    static int part;
+    size_t n = log_len;
+    int i, k, ends = last || part_len + log_len >= LOG_PART;
+
+    if (log_len == 0 && !last)
         return 0;
-    k = snprintf(draw_log + n, LOG_CAP - n,
-                 "# items: surface x y draws colour task caller site erased |text|\n");
-    if (k > 0)
-        n += (size_t)k;
-    for (i = 0; i < ITEMS && n + 128 < LOG_CAP; i++) {
+    if (ends) {
+        k = snprintf(draw_log + n, LOG_CAP - n,
+                     "# items: surface x y draws colour task caller site erased |text|\n");
+        if (k > 0)
+            n += (size_t)k;
+    }
+    for (i = 0; ends && i < ITEMS && n + 128 < LOG_CAP; i++) {
         const struct item *it = &items[i];
         if (!it->used)
             continue;
@@ -3837,15 +3868,16 @@ int screen_log_write(void)
         if (k > 0)
             n += (size_t)k;
     }
-    if (!log_part_write("DRAWS", part, &emptied, draw_log, n))
+    if (!log_append(LOG_DRAWS, part, draw_log, n))
         return 0;
-    written = upto;
-    if (log_len >= LOG_PART) {
+    part_len += log_len;
+    log_len = 0;
+    if (ends) {
         part++;
-        log_len = 0;
-        written = 0;
-        log_line("# part %d, from %lu ticks, %lu lines dropped so far\n", part,
-                 (unsigned long)device_ticks(), (unsigned long)log_dropped);
+        part_len = 0;
+        log_line("# part %d, from %lu ticks, %lu lines dropped, %lu page messages counted so far\n",
+                 part, (unsigned long)device_ticks(), (unsigned long)log_dropped,
+                 (unsigned long)page_repeats);
     }
     return 1;
 }

@@ -2,5 +2,6 @@ top screen
 B
 C
 D
-@own log card needs checking
-@lacks sim_DRAWS000.TXT |D-1|
+@owns ready | logging to SD card, log 1 | SD card out, logging to internal storage | log card needs checking | speech off
+@lacks sim_LOG001_DRAWS000.TXT |D-1|
+@has sim_emmc_LOG001_DRAWS000.TXT |D-1|

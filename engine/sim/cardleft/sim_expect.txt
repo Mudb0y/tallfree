@@ -1,0 +1,15 @@
+top screen
+B
+@owns ready | logging to SD card, log 4 | moving 3 log files of log 1 from internal storage | moved 3 log files to SD card | moving 1 log file of log 3 from internal storage | moved 1 log file to SD card | speech off
+@has sim_LOG001_DRAWS003.TXT on the card three|leftover three|
+@has sim_LOG001_DRAWS004.TXT leftover four|
+@has sim_LOG001_LOG003.TXT system three|
+@absent sim_emmc_LOG001_DRAWS003.TXT
+@absent sim_emmc_LOG001_DRAWS004.TXT
+@absent sim_emmc_LOG001_LOG003.TXT
+@has sim_LOG003_DRAWS000.TXT leftover of log 3|
+@absent sim_emmc_LOG003_DRAWS000.TXT
+@has sim_LOG004_DRAWS000.TXT |B-1|
+@has sim_LOG004_DRAWS000.TXT page 86 message 1
+@once sim_LOG004_DRAWS000.TXT page 86 message 3
+@has sim_LOG004_DRAWS000.TXT # items:

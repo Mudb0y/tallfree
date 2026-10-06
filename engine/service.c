@@ -11,7 +11,7 @@
      #dict on    the engine's abbreviation dictionary, off by default: with
                  it, SD-CARD is "South Dakota card"
      #log on     the log, the draw log and any fault's record to the card,
-                 off by default
+                 in a folder of their own each start, off by default
      #wait N     the next line is said N ms after the one before it started,
                  cutting that one off; without it, a line waits for the one
                  before to finish
@@ -29,6 +29,7 @@
    once, and the rest of the phrase being synthesised is thrown away as it
    arrives, since the engine cannot abandon an utterance it has begun. */
 
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,12 +42,12 @@ static int mode = SCREEN_CHANGED, settle_ms = 40, frame = 512, slots, rxprobe, d
 int card_log;
 
 /* The card can be swapped while the instrument runs, for samples on
-   another, so the log goes only to the card it began on, known by its
-   TALLFREE.DEBUG as read at power-on, and only while Roland's flag says a
-   card is in. A write cut short by the card coming out may leave the card's
-   FAT inconsistent, which hangs the unit's file system on the next write,
-   so after one nothing more is written to any card this session, and that
-   card is said to need checking when it comes back. */
+   another, so the log's card is known by its TALLFREE.DEBUG as read at
+   power-on, and written to only while Roland's flag says a card is in. A
+   write cut short by the card coming out may leave the card's FAT
+   inconsistent, which hangs the unit's file system on the next write, so
+   after one nothing more is written to that card this session, and it is
+   said to need checking. */
 #define DEBUG_FILE "A:/TALLFREE/TALLFREE.DEBUG"
 static uint32_t card_hash, card_in_at;
 static int card_was_in = 1, card_seen = 1, card_settling, card_spoiled, card_spoken;
@@ -75,43 +76,257 @@ int log_card(void)
     return !card_spoiled && card_is_ours();
 }
 
-static int card_write(const char *path, const void *buf, size_t len)
-{
-    int r = write_file(path, buf, len);
+/* What the engine says of its own about the logs, once nothing else is
+   being said; a newer one takes the place of one not yet said. */
+static char own_say[96];
+static int own_due;
 
-    if (r < 0 || (r > 0 && !card_inserted())) {
-        card_spoiled = 1;
-        return 0;
-    }
-    return r > 0;
+static void announce(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+static void announce(const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(own_say, sizeof own_say, fmt, ap);
+    va_end(ap);
+    own_due = 1;
 }
 
-/* A log goes to the card in parts, A:/TALLFREE/STEM000.TXT on, so that it
-   runs as long as the instrument does: the part being written is rewritten
-   whole as it grows, and left once full. The first write of a session
-   empties the parts after the first that a longer session left. Only the
-   file calls the firmware itself makes: create-and-truncate, write, close,
-   and open to read. Whether it was written, so that a part is not left
-   while the card is out. */
-int log_part_write(const char *stem, int part, int *emptied, const void *buf, size_t len)
+static const char *files_word(int n)
+{
+    return n == 1 ? "file" : "files";
+}
+
+static void spoil(void)
+{
+    card_spoiled = 1;
+    if (card_inserted() && !card_spoken) {
+        card_spoken = 1;
+        announce("log card needs checking");
+    }
+}
+
+/* Each start with "#log on" logs into a folder of its own on the card,
+   A:/TALLFREE/LOG001 on, so that no session is lost to the next. While the
+   log's card is out, or another is in, the logs go to the same names on the
+   internal storage, B:/TALLFREE/LOG001 on, and are moved to the card once
+   it is back: each file added onto the end of the card's of that name, then
+   deleted. Files are only ever added to: Roland's close puts the FAT on the
+   medium before the file's entry, and a rewrite cut off between the two
+   leaves the entry pointing at clusters the FAT has freed, where an addition
+   cut off there leaves only clusters no file owns. */
+static const char *const log_stem[LOGS] = { "LOG", "DRAWS" };
+static int session, emmc_bad;
+
+static void log_path(char *path, char drive, int folder, int log, int part)
+{
+    snprintf(path, 40, "%c:/TALLFREE/LOG%03d/%s%03d.TXT", drive, folder, log_stem[log], part);
+}
+
+/* A folder on the internal storage to be moved to the card: of each log,
+   the parts from next to last, which run on without a gap; how many files
+   are left, and of those moved so far, how many could not be deleted. */
+#define MOVES 4
+static struct move {
+    int folder, next[LOGS], last[LOGS], files, copied, kept, told, made;
+} moves[MOVES];
+static int nmoves;
+
+static struct move *move_of(int folder)
+{
+    struct move *m;
+    int i;
+
+    for (i = 0; i < nmoves; i++)
+        if (moves[i].folder == folder)
+            return &moves[i];
+    if (nmoves == MOVES)
+        return NULL;
+    m = &moves[nmoves++];
+    memset(m, 0, sizeof *m);
+    m->folder = folder;
+    for (i = 0; i < LOGS; i++) {
+        m->next[i] = 1000;
+        m->last[i] = -1;
+    }
+    return m;
+}
+
+/* Whether this session has files on the internal storage: until they are
+   moved, its logs go on there too, so that a part's pieces reach the card
+   in order. */
+static int spilling(void)
+{
+    int i;
+
+    for (i = 0; i < nmoves; i++)
+        if (moves[i].folder == session)
+            return 1;
+    return 0;
+}
+
+static void spilled(int log, int part)
+{
+    struct move *m = move_of(session);
+
+    if (m == NULL)
+        return;
+    if (m->next[log] > m->last[log]) {
+        m->next[log] = m->last[log] = part;
+        m->files++;
+    } else if (part > m->last[log]) {
+        m->files += part - m->last[log];
+        m->last[log] = part;
+    }
+}
+
+int log_append(int log, int part, const void *buf, size_t len)
 {
     char path[40];
-    int k;
+    int r;
 
-    if (!log_card())
+    if (session <= 0)
         return 0;
-    if (!*emptied) {
-        *emptied = 1;
-        for (k = part + 1; k < 1000; k++) {
-            snprintf(path, sizeof path, "A:/TALLFREE/%s%03d.TXT", stem, k);
-            if (!file_exists(path))
-                break;
-            if (!card_write(path, "", 0))
-                return 0;
+    if (card_seen == 1 && !spilling() && log_card()) {
+        log_path(path, 'A', session, log, part);
+        r = append_file(path, buf, len);
+        if (r < 0 || (r > 0 && !card_inserted())) {
+            spoil();
+            return 0;
+        }
+        return r > 0;
+    }
+    if (emmc_bad)
+        return 0;
+    snprintf(path, sizeof path, "B:/TALLFREE/LOG%03d", session);
+    if (!folder_exists(path)) {
+        make_folder("B:/TALLFREE");
+        make_folder(path);
+    }
+    log_path(path, 'B', session, log, part);
+    if (append_file(path, buf, len) <= 0) {
+        emmc_bad = 1;
+        announce("internal storage log failed");
+        return 0;
+    }
+    spilled(log, part);
+    return 1;
+}
+
+/* One step of moving the first folder on the internal storage to the card,
+   while nothing is being said: saying what is to be moved, one file, or,
+   with none left, the folder deleted and what was done said. */
+static void move_step(void)
+{
+    struct move *m = &moves[0];
+    char from[40], to[40];
+    size_t cap;
+    void *buf = screen_log_spare(&cap);
+    int log, r;
+
+    if (!m->told) {
+        m->told = 1;
+        if (m->folder == session)
+            announce("log card in, moving %d log %s from internal storage", m->files,
+                     files_word(m->files));
+        else
+            announce("moving %d log %s of log %d from internal storage", m->files,
+                     files_word(m->files), m->folder);
+        return;
+    }
+    for (log = 0; log < LOGS && m->next[log] > m->last[log]; log++)
+        ;
+    if (log == LOGS) {
+        snprintf(from, sizeof from, "B:/TALLFREE/LOG%03d", m->folder);
+        remove_folder(from);
+        remove_folder("B:/TALLFREE");
+        if (m->kept == 0)
+            announce("moved %d log %s to SD card", m->copied, files_word(m->copied));
+        else if (m->kept == m->copied)
+            announce("copied %d log %s to SD card, but could not delete them from internal storage",
+                     m->copied, files_word(m->copied));
+        else
+            announce("copied %d log files to SD card, but could not delete %d of them from "
+                     "internal storage", m->copied, m->kept);
+        memmove(moves, moves + 1, (size_t)--nmoves * sizeof moves[0]);
+        return;
+    }
+    if (!m->made) {
+        m->made = 1;
+        snprintf(to, sizeof to, "A:/TALLFREE/LOG%03d", m->folder);
+        make_folder(to);
+    }
+    log_path(from, 'B', m->folder, log, m->next[log]);
+    log_path(to, 'A', m->folder, log, m->next[log]);
+    r = append_copy(from, to, buf, cap);
+    if (r < 0 || !card_inserted()) {
+        spoil();
+        return;
+    }
+    if (r > 0) {
+        m->copied++;
+        if (!remove_file(from))
+            m->kept++;
+    }
+    m->next[log]++;
+    m->files--;
+}
+
+/* At the start of logging: what earlier sessions left on the internal
+   storage, leaving room among the moves for this session's own, then this
+   session's folder on the card, numbered past every folder there and every
+   one left. */
+static void log_begin(void)
+{
+    char path[40];
+    int n, log, part, found, i;
+    struct move *m;
+
+    session = -1;
+    if (!log_card()) {
+        card_log = 0;
+        announce("not logging");
+        return;
+    }
+    for (n = folder_exists("B:/TALLFREE") ? 1 : 1000; n < 1000 && nmoves < MOVES - 1; n++) {
+        snprintf(path, sizeof path, "B:/TALLFREE/LOG%03d", n);
+        if (!folder_exists(path) || (m = move_of(n)) == NULL)
+            continue;
+        for (log = 0; log < LOGS; log++)
+            for (part = 0, found = 0; part < 1000; part++) {
+                log_path(path, 'B', n, log, part);
+                if (!file_exists(path)) {
+                    if (found)
+                        break;
+                    continue;
+                }
+                if (!found)
+                    m->next[log] = part;
+                found = 1;
+                m->last[log] = part;
+                m->files++;
+            }
+        if (m->files == 0) {
+            nmoves--;
+            snprintf(path, sizeof path, "B:/TALLFREE/LOG%03d", n);
+            remove_folder(path);
         }
     }
-    snprintf(path, sizeof path, "A:/TALLFREE/%s%03d.TXT", stem, part);
-    return card_write(path, buf, len);
+    for (n = 1; n < 1000 && session < 0; n++) {
+        for (i = 0; i < nmoves && moves[i].folder != n; i++)
+            ;
+        snprintf(path, sizeof path, "A:/TALLFREE/LOG%03d", n);
+        if (i == nmoves && make_folder(path))
+            session = n;
+    }
+    if (session < 0) {
+        card_log = 0;
+        announce("log card needs checking");
+        return;
+    }
+    target_checkpoint();
+    announce("logging to SD card, log %d", session);
 }
 
 #define SCRIPT 64
@@ -350,46 +565,50 @@ static void phrase_done(void)
    system to take it up. */
 static void card_watch(void)
 {
-    int in = card_inserted();
+    int in = card_inserted(), i;
 
     if (in != card_was_in) {
         card_was_in = in;
         card_settling = in;
         card_in_at = device_ticks();
+        card_seen = 0;
         screen_log_note(in ? "a card in" : "the card out");
+        if (!in) {
+            for (i = 0; i < nmoves; i++)
+                moves[i].told = 0;
+            announce(emmc_bad ? "SD card out" : "SD card out, logging to internal storage");
+        }
     }
     if (card_settling && device_ticks() - card_in_at >= 1500u)
         card_settling = 0;
 }
 
-/* Before the logs go out: which card is in, noted when that changes, and a
-   card that a cut write may have spoiled said to need checking once it is
-   back. */
+/* Once a card just in has settled, and nothing is being said: whose it is. */
 static void card_look(void)
 {
-    int now;
-
-    if (card_settling)
+    if (card_seen != 0 || !card_was_in || card_settling)
         return;
-    now = !card_inserted() ? 0 : card_is_ours() ? 1 : 2;
-    if (now != card_seen && now != 0)
-        screen_log_note(now == 1 ? "the log's card back" : "another card, nothing written to it");
-    card_seen = now;
-    if (now == 1 && card_spoiled && !card_spoken) {
+    card_seen = card_is_ours() ? 1 : 2;
+    if (card_seen == 2) {
+        screen_log_note("another card");
+        announce(emmc_bad ? "another SD card" : "another SD card, logging to internal storage");
+        return;
+    }
+    screen_log_note("the log's card back");
+    if (card_spoiled && !card_spoken) {
         card_spoken = 1;
-        batch_one("log card needs checking");
+        announce("log card needs checking");
+    } else if (!card_spoiled && !spilling()) {
+        announce("log card in, logging to SD card");
     }
 }
 
-/* Once the script has been said: the log so far to the card, in case the
-   screen hook turns out to hang the instrument, and then the hook. */
+/* Once the script has been said, and the log begun: the hook. */
 static void start_screen(void)
 {
     screen_started = 1;
     if (final_out >= 0)
         target_output(final_out);
-    if (card_log)
-        target_checkpoint();
     if (mode == SCREEN_OFF)
         return;
     if (screen_install(mode, settle_ms) == 0)
@@ -402,8 +621,8 @@ int target_main(void)
 {
     const char *text = read_text("A:/TALLFREE/TALLFREE.DEBUG");
     static char config[4096];
-    uint32_t last_flush = 0, started = device_ticks();
-    int installed = 0;
+    uint32_t last_flush = 0, started = device_ticks(), dropped_seen = 0;
+    int installed = 0, dropping = 0;
 
     if (text != NULL) {
         card_hash = text_hash(text);
@@ -443,8 +662,15 @@ int target_main(void)
         if (unloading) {
             if (audio_pending() == 0 || device_ticks() - last_submit > 5u * 750u)
                 break;
+        } else if (own_due && idle()) {
+            own_due = 0;
+            batch_one(own_say);
+            continue;
         } else if (!screen_started && script_next >= nscript && idle()) {
-            start_screen();
+            if (card_log && session == 0)
+                log_begin();
+            else
+                start_screen();
             continue;
         }
         /* Five seconds in, with the start-up quiet, once. */
@@ -452,13 +678,22 @@ int target_main(void)
             installed = 1;
             engine_install();
         }
-        /* The draw log goes to the card every ten seconds while nothing is
-           being said, so a hang still leaves most of it behind. */
-        if (card_log && screen_live && idle() && device_ticks() - last_flush >= 7500u) {
-            last_flush = device_ticks();
+        if (card_log && session > 0 && screen_started && idle()) {
             card_look();
-            if (screen_log_write())
+            if (nmoves > 0 && card_seen == 1 && !card_spoiled)
+                move_step();
+        }
+        /* The logs are written every ten seconds while nothing is being
+           said, so a hang still leaves most of them behind. */
+        if (card_log && screen_live && idle() && device_ticks() - last_flush >= 7500u) {
+            uint32_t dropped = screen_log_dropped();
+            last_flush = device_ticks();
+            if (screen_log_write(0))
                 target_checkpoint();
+            if (dropped != dropped_seen && !dropping)
+                announce("log lines dropped");
+            dropping = dropped != dropped_seen;
+            dropped_seen = dropped;
         }
         target_sleep(10);
     }

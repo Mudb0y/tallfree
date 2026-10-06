@@ -1,7 +1,11 @@
 top screen
 B
-@has sim_DRAWS000.TXT # the card out, at
-@has sim_DRAWS000.TXT # the log's card back, at
-@has sim_DRAWS001.TXT , 0 lines dropped so far
-@has sim_DRAWS001.TXT |B-1|
-@lacks sim_DRAWS000.TXT |B-1|
+@owns ready | logging to SD card, log 1 | SD card out, logging to internal storage | log card in, moving 2 log files from internal storage | moved 2 log files to SD card | speech off
+@has sim_LOG001_DRAWS000.TXT # the card out, at
+@has sim_LOG001_DRAWS000.TXT # items:
+@has sim_LOG001_DRAWS001.TXT # part 1, from
+@order sim_LOG001_DRAWS001.TXT # part 1, from >> # the log's card back, at
+@has sim_LOG001_DRAWS001.TXT |B-1|
+@lacks sim_LOG001_DRAWS000.TXT |B-1|
+@absent sim_emmc_LOG001_DRAWS000.TXT
+@absent sim_emmc_LOG001_DRAWS001.TXT

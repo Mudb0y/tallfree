@@ -1441,47 +1441,128 @@ def remainname():
 # a bank changed, the run's card back, a bank changed, and the other card
 # in again for the end; ten seconds or more each way, so a write is tried
 # with the card out and with the other in, and the last write, as the
-# engine finishes, with the other in. Nothing goes to the other card, and
-# what came while the run's card was out reaches it once it is back.
+# engine finishes, with the other in. Nothing goes to the other card: what
+# comes while the run's card is away goes to the internal storage, is moved
+# to the card once it is back, and is said to be; the last stays there.
 def cardswap():
     d = main_screen(0, 0, 'A-13')
     d += ['2000 CARD OUT', '4000 BANK 1', f'4000 s0 34 2 !{PAD}B-1',
           '14000 CARD OTHER', '16000 BANK 2', f'16000 s0 34 2 !{PAD}C-1',
           '28000 CARD OUT', '29000 CARD IN', '32000 BANK 3', f'32000 s0 34 2 !{PAD}D-1',
-          '42000 CARD OTHER', '45000 VALUE']
+          '41000 CARD OUT', '42000 CARD OTHER', '47000 VALUE']
     write('cardswap', d, ['top screen', 'B', 'C', 'D',
-                          '@has sim_DRAWS000.TXT # the card out, at',
-                          '@has sim_DRAWS000.TXT # another card, nothing written to it, at',
-                          "@has sim_DRAWS000.TXT # the log's card back, at",
-                          '@has sim_DRAWS000.TXT |B-1|', '@has sim_DRAWS000.TXT |C-1|',
-                          '@has sim_DRAWS000.TXT |D-1|', '@absent sim_other_DRAWS000.TXT'],
+                          '@owns ready | logging to SD card, log 1 | '
+                          'SD card out, logging to internal storage | '
+                          'another SD card, logging to internal storage | '
+                          'SD card out, logging to internal storage | '
+                          'log card in, moving 1 log file from internal storage | '
+                          'moved 1 log file to SD card | '
+                          'SD card out, logging to internal storage | '
+                          'another SD card, logging to internal storage | speech off',
+                          '@has sim_LOG001_DRAWS000.TXT # the card out, at',
+                          '@has sim_LOG001_DRAWS000.TXT # another card, at',
+                          "@has sim_LOG001_DRAWS000.TXT # the log's card back, at",
+                          '@has sim_LOG001_DRAWS000.TXT |B-1|', '@has sim_LOG001_DRAWS000.TXT |C-1|',
+                          '@has sim_LOG001_DRAWS000.TXT |D-1|',
+                          '@order sim_LOG001_DRAWS000.TXT |C-1| >> # the card out, at 2',
+                          "@order sim_LOG001_DRAWS000.TXT # another card, at >> # the log's card back",
+                          '@lacks sim_LOG001_DRAWS000.TXT # items:',
+                          '@has sim_emmc_LOG001_DRAWS000.TXT # items:',
+                          '@absent sim_other_LOG001_DRAWS000.TXT'],
           say='#mode changed\n#log on\n')
 
 # The run's card out for long enough that the draw log passes a part, 48
-# KB, the pads played meanwhile, which are logged and not said: the part
-# is kept until the card is back, written whole, and only then does the
-# next begin.
+# KB, the pads played meanwhile, which are logged and not said: both parts
+# go to the internal storage as they grow, and both are moved to the card
+# once it is back, before anything more is written there.
 def cardlong():
     d = main_screen(0, 0, 'A-13') + ['2000 CARD OUT']
     for k, t in enumerate(range(3000, 55000, 50)):
         d.append(f'{t} s0 34 2 !{PAD}A-{k % 16 + 1}')
     d += ['56000 CARD IN', '62000 BANK 1', f'62000 s0 34 2 !{PAD}B-1', '72000 VALUE']
     write('cardlong', d, ['top screen', 'B',
-                          '@has sim_DRAWS000.TXT # the card out, at',
-                          "@has sim_DRAWS000.TXT # the log's card back, at",
-                          '@has sim_DRAWS001.TXT , 0 lines dropped so far',
-                          '@has sim_DRAWS001.TXT |B-1|', '@lacks sim_DRAWS000.TXT |B-1|'],
+                          '@owns ready | logging to SD card, log 1 | '
+                          'SD card out, logging to internal storage | '
+                          'log card in, moving 2 log files from internal storage | '
+                          'moved 2 log files to SD card | speech off',
+                          '@has sim_LOG001_DRAWS000.TXT # the card out, at',
+                          '@has sim_LOG001_DRAWS000.TXT # items:',
+                          '@has sim_LOG001_DRAWS001.TXT # part 1, from',
+                          "@order sim_LOG001_DRAWS001.TXT # part 1, from >> # the log's card back, at",
+                          '@has sim_LOG001_DRAWS001.TXT |B-1|', '@lacks sim_LOG001_DRAWS000.TXT |B-1|',
+                          '@absent sim_emmc_LOG001_DRAWS000.TXT',
+                          '@absent sim_emmc_LOG001_DRAWS001.TXT'],
           say='#mode changed\n#log on\n')
 
 # A write to the run's card cut short by its coming out: nothing more is
-# written to any card, and the card, once back, is said to need checking.
+# written to that card, what follows goes to the internal storage and
+# stays there, and the card, once back, is said to need checking.
 def cardcut():
     d = main_screen(0, 0, 'A-13')
     d += ['1500 BANK 1', f'1500 s0 34 2 !{PAD}B-1', '12000 CARD CUT',
           '13000 BANK 2', f'13000 s0 34 2 !{PAD}C-1', '25000 CARD IN',
           '33000 BANK 3', f'33000 s0 34 2 !{PAD}D-1', '45000 VALUE']
-    write('cardcut', d, ['top screen', 'B', 'C', 'D', '@own log card needs checking',
-                         '@lacks sim_DRAWS000.TXT |D-1|'],
+    write('cardcut', d, ['top screen', 'B', 'C', 'D',
+                         '@owns ready | logging to SD card, log 1 | '
+                         'SD card out, logging to internal storage | '
+                         'log card needs checking | speech off',
+                         '@lacks sim_LOG001_DRAWS000.TXT |D-1|',
+                         '@has sim_emmc_LOG001_DRAWS000.TXT |D-1|'],
+          say='#mode changed\n#log on\n')
+
+# The run's card back, and known to be, just as a write falls due, a long
+# message being said across both, with what came while the card was out
+# still on the internal storage: that write goes there too, and is moved
+# after the rest, so the card's part keeps its order.
+def cardback():
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 CARD OUT', '4000 BANK 1', f'4000 s0 34 2 !{PAD}B-1',
+          '14900 CARD IN', '15800 s3 18 20 ~=8001F4BD:Operation\\nCompleted! '
+          'The samples are now on the pads of bank C', '30000 VALUE']
+    write('cardback', d, ['top screen', 'B',
+                          'Operation Completed! The samples are now on the pads of bank C',
+                          '@owns ready | logging to SD card, log 1 | '
+                          'SD card out, logging to internal storage | '
+                          'log card in, moving 1 log file from internal storage | '
+                          'moved 1 log file to SD card | speech off',
+                          '@order sim_LOG001_DRAWS000.TXT |B-1| >> pads of bank C|',
+                          '@absent sim_emmc_LOG001_DRAWS000.TXT'],
+          say='#mode changed\n#log on\n')
+
+# A start after sessions that ended with the log's card away: their files
+# on the internal storage are moved to their folders on the card first, the
+# part the card already holds added to in order, and the new session takes
+# the next number neither the card nor the internal storage holds, here 4,
+# 3 being free on the card but left on the internal storage. And the file
+# list's steady messages, counted rather than logged each time.
+def cardleft():
+    d = ['@0 SEED B:/TALLFREE/LOG001/DRAWS003.TXT leftover three|',
+         '@0 SEED B:/TALLFREE/LOG001/DRAWS004.TXT leftover four|',
+         '@0 SEED B:/TALLFREE/LOG001/LOG003.TXT system three|',
+         '@0 SEED B:/TALLFREE/LOG003/DRAWS000.TXT leftover of log 3|',
+         '@0 SEED A:/TALLFREE/LOG001/DRAWS003.TXT on the card three|',
+         '@0 SEED A:/TALLFREE/LOG002/LOG000.TXT an earlier session|']
+    d += main_screen(0, 0, 'A-13')
+    d += ['3000 PAGE 86'] + [f'{t} PAGE 86' for t in range(3040, 3400, 40)] + ['3500 PAGE 84']
+    d += ['6000 BANK 1', f'6000 s0 34 2 !{PAD}B-1', '20000 VALUE']
+    write('cardleft', d, ['top screen', 'B',
+                          '@owns ready | logging to SD card, log 4 | '
+                          'moving 3 log files of log 1 from internal storage | '
+                          'moved 3 log files to SD card | '
+                          'moving 1 log file of log 3 from internal storage | '
+                          'moved 1 log file to SD card | speech off',
+                          '@has sim_LOG001_DRAWS003.TXT on the card three|leftover three|',
+                          '@has sim_LOG001_DRAWS004.TXT leftover four|',
+                          '@has sim_LOG001_LOG003.TXT system three|',
+                          '@absent sim_emmc_LOG001_DRAWS003.TXT',
+                          '@absent sim_emmc_LOG001_DRAWS004.TXT',
+                          '@absent sim_emmc_LOG001_LOG003.TXT',
+                          '@has sim_LOG003_DRAWS000.TXT leftover of log 3|',
+                          '@absent sim_emmc_LOG003_DRAWS000.TXT',
+                          '@has sim_LOG004_DRAWS000.TXT |B-1|',
+                          '@has sim_LOG004_DRAWS000.TXT page 86 message 1',
+                          '@once sim_LOG004_DRAWS000.TXT page 86 message 3',
+                          '@has sim_LOG004_DRAWS000.TXT # items:'],
           say='#mode changed\n#log on\n')
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -1540,3 +1621,5 @@ importprogress()
 cardswap()
 cardlong()
 cardcut()
+cardback()
+cardleft()

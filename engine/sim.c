@@ -42,16 +42,21 @@
                                TALLFREE.DEBUG, whose files land as
                                sim_other_*, or the run's card coming out
                                halfway through the next write to it
+     MS SEED PATH TEXT         the file PATH there already, holding TEXT,
+                               its folders with it, as an earlier run left
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
    batch a line, phrases separated by " | ", "(stop)" for speech stopped
    with nothing in its place, and checks on the files the
    run leaves: "@has FILE TEXT" and "@lacks FILE TEXT" say whether FILE
-   holds TEXT, and "@absent FILE" that it was never written; and
-   "@own TEXT" that the engine said TEXT of its own, apart from the
-   screen's batches, once. The run ends by saying whether they all
-   matched. */
+   holds TEXT, "@once FILE TEXT" that it holds it once, "@order FILE TEXT
+   >> LATER" that LATER first comes after TEXT first does, and "@absent
+   FILE" that it is not
+   there; "@own TEXT" that
+   the engine said TEXT of its own, apart from the screen's batches, once;
+   and "@owns A | B | ..." all it said of its own, in order. The run ends
+   by saying whether they all matched. */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -65,6 +70,7 @@ int  sh_write(int fd, const void *buf, int len);
 int  sh_close(int fd);
 int  sh_read(int fd, void *buf, int len);
 int  sh_flen(int fd);
+int  sh_remove(const char *path);
 
 #define TITLE_SITE 0x80081011u
 
@@ -308,7 +314,7 @@ static char *slurp(const char *name)
 }
 
 enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
-       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC, E_SCROLL, E_CARD };
+       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC, E_SCROLL, E_CARD, E_SEED };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -376,6 +382,14 @@ static void load_events(void)
             ev[nev].x = strncmp(p + 5, "OUT", 3) == 0 ? CARD_NONE
                       : strncmp(p + 5, "IN", 2) == 0 ? CARD_RUN
                       : strncmp(p + 5, "OTHER", 5) == 0 ? CARD_OTHER : -1;
+        } else if (strncmp(p, "SEED ", 5) == 0) {
+            ev[nev].kind = E_SEED;
+            ev[nev].text = p + 5;
+            for (; *p; p++)
+                if (p[0] == '\\' && p[1] == 'n') {
+                    p[0] = '\n';
+                    memmove(p + 1, p + 2, strlen(p + 2) + 1);
+                }
         } else if (strncmp(p, "PAGE", 4) == 0) {
             ev[nev].kind = E_PAGE;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
@@ -426,6 +440,8 @@ static void load_events(void)
     }
 }
 
+static uint32_t now_ms;
+
 /* What the reader said, batch by batch, and what it should have. */
 #define BATCHES 256
 static char *said[BATCHES];
@@ -454,11 +470,12 @@ void sim_stop(void)
         said[nsaid++] = strdup("(stop)");
 }
 
-/* "@has FILE TEXT", "@lacks FILE TEXT" or "@absent FILE": whether it fails. */
+/* "@has FILE TEXT", "@lacks FILE TEXT", "@once FILE TEXT", "@order FILE
+   TEXT >> LATER" or "@absent FILE": whether it fails. */
 static int check_file(const char *line)
 {
-    char name[64], *t;
-    const char *text = "";
+    char name[64], *t, *at;
+    const char *text = "", *later;
     int n = 0, want, bad;
 
     if (sscanf(line, "@%*s %63s %n", name, &n) < 1)
@@ -468,7 +485,15 @@ static int check_file(const char *line)
     t = slurp(name);
     if (strncmp(line, "@absent ", 8) == 0)
         bad = t != NULL;
-    else {
+    else if (strncmp(line, "@once ", 6) == 0)
+        bad = t == NULL || (at = strstr(t, text)) == NULL || strstr(at + 1, text) != NULL;
+    else if (strncmp(line, "@order ", 7) == 0 && (later = strstr(text, " >> ")) != NULL) {
+        char first[256];
+        size_t k = (size_t)(later - text) < sizeof first ? (size_t)(later - text) : sizeof first - 1;
+        memcpy(first, text, k);
+        first[k] = 0;
+        bad = t == NULL || (at = strstr(t, first)) == NULL || strstr(t, later + 4) < at;
+    } else {
         want = strncmp(line, "@has ", 5) == 0;
         bad = (t != NULL && strstr(t, text) != NULL) != want;
     }
@@ -484,8 +509,24 @@ static int nown;
 
 void sim_own(const char *text)
 {
+    printf("sim %lu ms: said of its own: %s\n", (unsigned long)now_ms, text);
     if (nown < 32)
         own[nown++] = strdup(text);
+}
+
+static int check_owns(const char *want)
+{
+    char all[1024];
+    size_t n = 0;
+    int i;
+
+    all[0] = 0;
+    for (i = 0; i < nown; i++)
+        n += (size_t)snprintf(all + n, sizeof all - n, "%s%s", i ? " | " : "", own[i]);
+    if (strcmp(all, want) == 0)
+        return 0;
+    printf("EXPECTED @owns %s\n     said: %s\n", want, all);
+    return 1;
 }
 
 static int check_own(const char *text)
@@ -516,6 +557,10 @@ static void check_expected(void)
             continue;
         if (strncmp(line, "@own ", 5) == 0) {
             bad |= check_own(line + 5);
+            continue;
+        }
+        if (strncmp(line, "@owns ", 6) == 0) {
+            bad |= check_owns(line + 6);
             continue;
         }
         if (*line == '@') {
@@ -615,6 +660,8 @@ static void play_one_ms(void)
         play_acc = 0;
 }
 
+static void seed(const char *line);
+
 static void fire(int i)
 {
     void *s = &surfaces[ev[i].surf];
@@ -701,6 +748,9 @@ static void fire(int i)
         printf("sim %lu ms: card %s\n", (unsigned long)now_ms,
                ev[i].x < 0 ? "to come out in the next write" : ev[i].x == CARD_NONE ? "out"
                : ev[i].x == CARD_RUN ? "in, the run's" : "in, another");
+        break;
+    case E_SEED:
+        seed(ev[i].text);
         break;
     case E_TRREC:
         sim_seq_state = (uint32_t)(uintptr_t)sim_seq;
@@ -820,29 +870,118 @@ int card_inserted(void)
     return sim_card != CARD_NONE;
 }
 
-/* Where a file lands beside the run: the eMMC's and the run's card's as
-   sim_NAME, another card's as sim_other_NAME; none with the slot empty. */
+/* Where a file lands beside the run: the internal storage's root as
+   sim_NAME and its TALLFREE folder as sim_emmc_*, the run's card's TALLFREE
+   folder as sim_* and another card's as sim_other_*, folders below joined
+   by _; none with the slot empty. */
 static int sim_file(const char *path, char *name, size_t cap)
 {
-    const char *base = strrchr(path, '/');
+    const char *rest = path + 3, *pre;
+    size_t k;
 
-    base = base ? base + 1 : path;
-    if (strncmp(path, "A:", 2) != 0 || sim_card == CARD_RUN)
-        snprintf(name, cap, "sim_%s", base);
+    if (strncmp(path, "B:", 2) == 0)
+        pre = strncmp(rest, "TALLFREE", 8) == 0 && (rest[8] == '/' || rest[8] == 0) ? "sim_emmc_"
+            : "sim_";
+    else if (sim_card == CARD_RUN)
+        pre = "sim_";
     else if (sim_card == CARD_OTHER)
-        snprintf(name, cap, "sim_other_%s", base);
+        pre = "sim_other_";
     else
         return 0;
+    if (strncmp(rest, "TALLFREE/", 9) == 0)
+        rest += 9;
+    else if (strcmp(rest, "TALLFREE") == 0)
+        rest += 8;
+    snprintf(name, cap, "%s%s", pre, rest);
+    for (k = strlen(pre); name[k]; k++)
+        if (name[k] == '/')
+            name[k] = '_';
     return 1;
 }
 
-int write_file(const char *path, const void *buf, size_t len)
+/* The folders and files there are, by those names, so that a folder can be
+   told to exist and to be empty; each card's TALLFREE folder always is. */
+#define PATHS 256
+static char *folders[PATHS], *files[PATHS];
+static int nfolders, nfiles;
+
+static int listed(char **list, int n, const char *name)
+{
+    int i;
+
+    for (i = 0; i < n; i++)
+        if (strcmp(list[i], name) == 0)
+            return i;
+    return -1;
+}
+
+static void list_add(char **list, int *n, const char *name)
+{
+    if (listed(list, *n, name) < 0 && *n < PATHS)
+        list[(*n)++] = strdup(name);
+}
+
+static void list_drop(char **list, int *n, const char *name)
+{
+    int i = listed(list, *n, name);
+
+    if (i >= 0) {
+        free(list[i]);
+        list[i] = list[--*n];
+    }
+}
+
+static int is_folder(const char *path)
 {
     char name[64];
+
+    if (strlen(path) == 2)
+        return strncmp(path, "B:", 2) == 0 || sim_card != CARD_NONE;
+    if (!sim_file(path, name, sizeof name))
+        return 0;
+    return (strncmp(path, "A:", 2) == 0 && strcmp(path + 2, "/TALLFREE") == 0)
+        || listed(folders, nfolders, name) >= 0;
+}
+
+/* Whether the folder PATH is in is there. */
+static int parent_there(const char *path)
+{
+    char parent[64];
+    const char *slash = strrchr(path, '/');
+    size_t n = slash ? (size_t)(slash - path) : 0;
+
+    if (n == 0 || n >= sizeof parent)
+        return 0;
+    memcpy(parent, path, n);
+    parent[n] = 0;
+    return is_folder(parent);
+}
+
+static int under(const char *folder, const char *name)
+{
+    size_t n = strlen(folder);
+
+    return strncmp(name, folder, n) == 0 && name[n] != 0 && (folder[n - 1] == '_' || name[n] == '_');
+}
+
+/* Written whole, or added to: QEMU's semihosting opens "ab" at the start
+   of the file, so what is there is read and put back first. */
+static int put_file(const char *path, int add, const void *buf, size_t len)
+{
+    char name[64], *old;
     int fd;
 
-    if (!sim_file(path, name, sizeof name) || (fd = sh_open(name, 4 | 1)) < 0)
+    if (!sim_file(path, name, sizeof name) || !parent_there(path))
         return 0;
+    old = add ? slurp(name) : NULL;
+    if ((fd = sh_open(name, 4 | 1)) < 0) {
+        free(old);
+        return 0;
+    }
+    if (old != NULL)
+        sh_write(fd, old, (int)strlen(old));
+    free(old);
+    list_add(files, &nfiles, name);
     if (sim_cut && strncmp(path, "A:", 2) == 0) {
         sh_write(fd, buf, (int)len / 2);
         sh_close(fd);
@@ -853,7 +992,78 @@ int write_file(const char *path, const void *buf, size_t len)
     }
     sh_write(fd, buf, (int)len);
     sh_close(fd);
+    printf("sim %lu ms: %lu bytes %s %s\n", (unsigned long)now_ms, (unsigned long)len,
+           add ? "added to" : "written to", path);
     return 1;
+}
+
+int write_file(const char *path, const void *buf, size_t len)
+{
+    return put_file(path, 0, buf, len);
+}
+
+int append_file(const char *path, const void *buf, size_t len)
+{
+    return put_file(path, 1, buf, len);
+}
+
+int append_copy(const char *from, const char *to, void *buf, size_t cap)
+{
+    char name[64];
+    int fd, n, r = 1;
+
+    if (!sim_file(from, name, sizeof name) || (fd = sh_open(name, 1)) < 0)
+        return 0;
+    while ((n = sh_read(fd, buf, (int)cap)) > 0)
+        if (put_file(to, 1, buf, (size_t)n) <= 0) {
+            r = -1;
+            break;
+        }
+    sh_close(fd);
+    return r;
+}
+
+int remove_file(const char *path)
+{
+    char name[64];
+
+    if (!sim_file(path, name, sizeof name) || listed(files, nfiles, name) < 0
+        || sh_remove(name) != 0)
+        return 0;
+    list_drop(files, &nfiles, name);
+    return 1;
+}
+
+int make_folder(const char *path)
+{
+    char name[64];
+
+    if (!sim_file(path, name, sizeof name) || is_folder(path) || !parent_there(path))
+        return 0;
+    list_add(folders, &nfolders, name);
+    return 1;
+}
+
+int remove_folder(const char *path)
+{
+    char name[64];
+    int i;
+
+    if (!sim_file(path, name, sizeof name) || listed(folders, nfolders, name) < 0)
+        return 0;
+    for (i = 0; i < nfiles; i++)
+        if (under(name, files[i]))
+            return 0;
+    for (i = 0; i < nfolders; i++)
+        if (under(name, folders[i]))
+            return 0;
+    list_drop(folders, &nfolders, name);
+    return 1;
+}
+
+int folder_exists(const char *path)
+{
+    return is_folder(path);
 }
 
 int file_exists(const char *path)
@@ -865,6 +1075,27 @@ int file_exists(const char *path)
         return 0;
     sh_close(fd);
     return 1;
+}
+
+/* "PATH TEXT": the file, and each folder on the way to it. */
+static void seed(const char *line)
+{
+    char path[64];
+    const char *sp = strchr(line, ' ');
+    size_t n = sp ? (size_t)(sp - line) : strlen(line), k;
+
+    if (n >= sizeof path)
+        return;
+    memcpy(path, line, n);
+    path[n] = 0;
+    for (k = 3; k < n; k++)
+        if (path[k] == '/') {
+            path[k] = 0;
+            make_folder(path);
+            path[k] = '/';
+        }
+    put_file(path, 0, sp ? sp + 1 : "", sp ? strlen(sp + 1) : 0);
+    printf("sim %lu ms: %s there already\n", (unsigned long)now_ms, path);
 }
 
 /* TALLFREE.DEBUG is sim_say.txt, on the run's card only. */
@@ -890,7 +1121,7 @@ void target_done(int rc)
 {
     screen_remove();
     printf("engine finished, code %d\n", rc);
-    screen_log_write();
+    screen_log_write(1);
 }
 
 void target_enter(void)

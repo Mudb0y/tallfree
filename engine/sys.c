@@ -75,6 +75,12 @@ int sh_flen(int fd)
     return semihost(0x0C, a);
 }
 
+int sh_remove(const char *path)
+{
+    uint32_t a[2] = { (uint32_t)path, (uint32_t)strlen(path) };
+    return semihost(0x0E, a);
+}
+
 __attribute__((noreturn)) void sh_exit(int code)
 {
     uint32_t a[2] = { 0x20026u, (uint32_t)code };

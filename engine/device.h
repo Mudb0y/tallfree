@@ -10,8 +10,8 @@ uint32_t device_ticks(void);                 /* audio interrupts, 750 a second *
 void target_sleep(int ms);
 void target_wake(void);
 void target_checkpoint(void);
-/* Whether the log, the draw log and a fault's record go to the card: only
-   when TALLFREE.DEBUG asks, "#log on", since a stranger's card may be one whose
+/* Whether the log, the draw log and a fault's record are kept: only when
+   TALLFREE.DEBUG asks, "#log on", since a stranger's card may be one whose
    FAT the unit's file system hangs on. */
 extern int card_log;
 /* Where image 31's boot loader found the engine, and why it did not use the
@@ -24,6 +24,15 @@ void target_output(int word);
 int  engine_task_id(void);
 /* 1 written whole, 0 not opened, -1 opened and then cut short */
 int  write_file(const char *path, const void *buf, size_t len);
+int  append_file(const char *path, const void *buf, size_t len);
+/* One file onto the end of another through buf: 1 all of it, 0 the first
+   not opened or not read whole, -1 the second not opened or not written */
+int  append_copy(const char *from, const char *to, void *buf, size_t cap);
+/* 1 done, 0 not */
+int  remove_file(const char *path);
+int  make_folder(const char *path);
+int  remove_folder(const char *path);
+int  folder_exists(const char *path);
 int  file_exists(const char *path);
 /* Roland's own flag, set while an SD card is in */
 int  card_inserted(void);
@@ -37,7 +46,8 @@ uint32_t audio_making(int making);
 int  audio_hooked(void);
 
 /* service.c */
-int  log_part_write(const char *stem, int part, int *emptied, const void *buf, size_t len);
+enum { LOG_SYSTEM, LOG_DRAWS, LOGS };
+int  log_append(int log, int part, const void *buf, size_t len);
 int  log_card(void);
 
 /* screen.c */
@@ -47,8 +57,10 @@ int  unload_requested(void);
 int  screen_install(int mode, int settle_ms);
 void screen_remove(void);
 int  screen_poll(char *phrases, size_t cap, int *count);
-int  screen_log_write(void);
+int  screen_log_write(int last);
 void screen_log_note(const char *what);
+uint32_t screen_log_dropped(void);
+void *screen_log_spare(size_t *len);
 void screen_report(void);
 
 /* menu.c */
