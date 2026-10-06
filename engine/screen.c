@@ -2321,18 +2321,35 @@ static int say3(const char *a, const char *b, const char *c)
 /* The file lists' line naming where a sample will go, DEST:PRESS PAD, is
    said when it appears and when it changes. Going into a folder and
    scrolling a page redraw it with the list, which reads as a new screen;
-   leaving the list for the import menu clears what was said. */
+   leaving the list for the import menu clears what was said. The same line
+   shows an import's progress, WAIT: IMPORTING 70%, its numbers in an order
+   that tells nothing, so it is said once, without them. */
 #define DEST_LINE 0x80161895u
 static char dest_said[ITEM_TEXT];
 
 static int say(const struct item *it)
 {
-    if (it->site == DEST_LINE) {
-        if (strcmp(it->text, dest_said) == 0)
-            return 0;
-        memcpy(dest_said, it->text, ITEM_TEXT);
+    char t[ITEM_TEXT];
+    size_t n;
+
+    if (it->site != DEST_LINE)
+        return say3(full_text(it), NULL, NULL);
+    memcpy(t, it->text, ITEM_TEXT);
+    n = strlen(t);
+    while (n > 0 && t[n - 1] == ' ')
+        n--;
+    if (n > 0 && t[n - 1] == '%') {
+        n--;
+        while (n > 0 && t[n - 1] >= '0' && t[n - 1] <= '9')
+            n--;
+        while (n > 0 && t[n - 1] == ' ')
+            n--;
     }
-    return say3(full_text(it), NULL, NULL);
+    t[n] = 0;
+    if (strcmp(t, dest_said) == 0)
+        return 0;
+    memcpy(dest_said, t, ITEM_TEXT);
+    return say3(t, NULL, NULL);
 }
 
 /* A title of one word the batch has already said, as the big S E L under

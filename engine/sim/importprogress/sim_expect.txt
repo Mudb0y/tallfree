@@ -1,0 +1,8 @@
+top screen
+SAMPLE
+(stop)
+kick.wav | destination: PRESS PAD
+destination: PAD B14
+Import sample | WAIT: IMPORTING
+Operation Completed!
+destination: PRESS PAD

@@ -1370,6 +1370,46 @@ def importscroll():
                               '063_SOULSURPLUS_elevador_percussion_drum_loop_bossa_nova_jazz_m',
                               '(stop)', 'Loops', '(stop)', 'tail.wav', '(stop)', 'tail_2.wav'])
 
+# A sample imported to a pad, as runs/74 drew it: a pad pressed sets the
+# destination line, VALUE brings the Import SMPL pop-up, and the destination
+# line shows the progress, 100, 70, 40 and 90 per cent, before Operation
+# Completed! and the line back at PRESS PAD. The progress is said once,
+# without its number.
+def importprogress():
+    LIST, MSG = '=80155187:', '=8001F4BD:'
+    files = ['kick.wav', 'snare.wav']
+    dest = {'text': 'DEST:PRESS PAD'}
+
+    def frame(t):
+        f = [f'{t} s0 FILL 1 10 126 52']
+        for k, name in enumerate(files):
+            f.append(f'{t} s0 SCROLL 0 5 {11 + 7 * k} {"!" if k == 0 else ""}{LIST}{name}')
+        return f + [f'{t} s0 8 58 !=80161895:{dest["text"]}']
+
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 86', '1000 s0 CLEAR', '1000 s1 3 2 _=801522A7:IMPORT SAMPLE / PROJECT',
+          '1000 s0 17 22 !=8016F55B:SAMPLE', '1000 s0 17 30 =8016F505:PROJECT',
+          '1000 s0 17 38 =8016F505:PROJECT(SX)', '1000 s0 17 46 =8016F505:CANCEL']
+    d += ['3000 KEY DOWN 31', '3000 s0 FILL 0 9 127 63', '3070 KEY UP 31']
+    steps = {6000: 'DEST:PAD B14', 9000: 'WAIT: IMPORTING 100%', 9300: 'WAIT: IMPORTING 70%',
+             9450: 'WAIT: IMPORTING 40%', 9650: 'WAIT: IMPORTING 90%', 10300: 'DEST:PRESS PAD'}
+    for t in range(3000, 13000, 50):
+        if t in steps:
+            dest['text'] = steps[t]
+        if t == 9000:
+            d += ['9000 KEY DOWN 31', '9000 s2 BOX 1 1 90 14', '9000 s2 10 4 ~=8006BECD:Import SMPL',
+                  '9010 KEY UP 31']
+        if t == 9800:
+            d += ['9800 s2 CLEAR', f'9800 s3 18 20 ~{MSG}Operation\\nCompleted!',
+                  '9800 s3 18 40 ~=8001F6B5:']
+        if t == 10300:
+            d += ['10300 s3 CLEAR']
+        d += frame(t)
+    d.append('13000 VALUE')
+    write('importprogress', d, ['top screen', 'SAMPLE', '(stop)', 'kick.wav | destination: PRESS PAD',
+                                'destination: PAD B14', 'Import sample | WAIT: IMPORTING',
+                                'Operation Completed!', 'destination: PRESS PAD'])
+
 # REMAIN with a sample's name too long for its line: FUN_8008C4A0 draws it
 # from x 56, not right-aligned, a character further every draw and whole
 # again once the rest fits, the line wiped and drawn every 50 ms. The line
@@ -1496,6 +1536,7 @@ importlist()
 remainname()
 importfolder()
 importscroll()
+importprogress()
 cardswap()
 cardlong()
 cardcut()
