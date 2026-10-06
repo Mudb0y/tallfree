@@ -1,0 +1,21 @@
+top screen
+REC | Select PAD for RECORDING
+RECORD SETTING
+INPUT effects Setting | effects Type: Bypass
+Bypass
+Auto Pitch
+Vocoder
+effects Type: Vocoder
+NOTE 1 | FORMANT 0 | TONE 0
+SCALE C Maj | CHORD Oct | BALANCE 0-100
+SCALE D Maj
+E Maj
+NOTE 1 | FORMANT 0 | TONE 0
+effects Type: Vocoder
+Vocoder
+Compressor
+effects Type: Compressor
+SUSTAIN 50 | ATTACK 50 | RATIO 50
+LEVEL 90
+RECORD SETTING
+ROUTING ExtIn

@@ -131,7 +131,7 @@ extern volatile int32_t sim_step_count, sim_step_slots, sim_step_last;
 extern volatile uint16_t sim_step_bits[];
 extern volatile int32_t sim_padnow;
 extern volatile int32_t sim_bank;
-extern volatile uint32_t sim_scroll_owner;
+extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
 #define PICK_STORE      ((uint32_t)(uintptr_t)sim_store)
 #define BANK_NOW        sim_bank
 #define PAD_STORE       ((uint32_t)(uintptr_t)sim_padstore)
@@ -282,7 +282,7 @@ static unsigned step_mask(int note)
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
        ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
        ROLE_CELL, ROLE_QUIET, ROLE_STATE, ROLE_COPY_FROM, ROLE_COPY_TO, ROLE_NOTICE, ROLE_ANSWER,
-       ROLE_MESSAGE };
+       ROLE_MESSAGE, ROLE_EFX };
 #define CHAIN_TITLE     0x80141D3Fu
 #define CHAIN_SLOT      0x8008D11Bu
 #define CHAIN_SLOT_LIT  0x8008D19Bu
@@ -292,6 +292,16 @@ enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE
 #define TRREC_PATTERN   0x8016C6C5u            /* TR-REC's Ptn:G1 */
 #define BIG_TEXT        0x800EE779u            /* the big font's drawer, for
                                                   every screen */
+/* INPUT FX Setting, which VALUE opens over RECORD SETTING in sample mode,
+   an XITEM_EFXEDIT drawn by FUN_80147F30, marks its cursor by underlining
+   it, which is no text: EFX Type, or one of the two rows of three
+   parameters the CTRL knobs set, at +0x1B3C, 0 to 2; and VALUE pressed on
+   EFX Type puts its value, in the big font, on white to choose an effect,
+   +0x1B37. */
+#define EFX_TYPE_LABEL  0x80147EBFu
+#define EFX_TITLE       0x80147EDBu
+#define EFX_NAME        0x80148119u            /* the parameters' names, FUN_80147F40 */
+#define EFX_VALUE       0x801481F5u            /* and their values */
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -384,6 +394,14 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
                                                GRID 16, on white */
     { 0x80145629u, ROLE_UNLIT },            /* the pad settings' tempo mode, MANU */
     { 0x800F769Fu, ROLE_HINT },             /* and VALUE under BPM SET, the knob for it */
+    { 0x80088BFBu, ROLE_HINT },             /* and INPUT FX, what VALUE opens from
+                                               RECORD SETTING in sample mode */
+    /* INPUT FX Setting's own: its heading, EFX Type:, and its parameters'
+       names, on white, and values, which its cursor is read with. */
+    { EFX_TITLE, ROLE_TITLE },
+    { EFX_TYPE_LABEL, ROLE_EFX },
+    { EFX_NAME, ROLE_EFX },
+    { EFX_VALUE, ROLE_EFX },
     /* The markers along a waveform, which he places by ear: sample edit's
        start, end, loop and cursor, and auto mark's marks, the selected one
        on white. */
@@ -431,7 +449,7 @@ struct draw {
     uint32_t tick, surf, lr, site;
     int32_t  mark, ink;
     int16_t  x, y, x1, y1;
-    uint8_t  kind, task, len, sample;
+    uint8_t  kind, task, len, sample, efx_row, efx_edit;
     char     text[DRAW_TEXT];
 };
 
@@ -559,6 +577,38 @@ static const char *scroll_whole(const uint32_t *f, uint32_t site, const char *st
     return whole;
 }
 
+/* INPUT FX Setting's cursor and whether an effect is being chosen, from
+   the item as it draws "EFX Type:", which keeps itself in r4 while
+   FUN_800D80E0, pushing r4 to r7 under its return, draws it. */
+#ifndef SIM
+#define EFX_OWNER(f)    ((f)[8 + 1])
+#else
+#define EFX_OWNER(f)    sim_efx_owner
+#endif
+
+static void efx_state(const uint32_t *f, struct draw *d)
+{
+    uint32_t owner;
+    int32_t row;
+
+    d->efx_row = d->efx_edit = 0;
+    if (d->site != EFX_TYPE_LABEL)
+        return;
+    owner = EFX_OWNER(f);
+#ifndef SIM
+    if (owner < 0x80000000u || owner >= 0x83A00000u || (owner & 3u))
+        return;
+#else
+    if (owner == 0)
+        return;
+#endif
+    row = *(volatile int32_t *)(owner + 0x1B3Cu);
+    if (row < 0 || row > 2)
+        return;
+    d->efx_row = (uint8_t)(row + 1);
+    d->efx_edit = *(volatile uint8_t *)(owner + 0x1B37u) != 0;
+}
+
 /* f holds r0 to r5, r12 and lr as the caller left them, then the caller's
    stack from the stacked length up. Slot 0x18 is the surface's background
    colour, the getter DrawString itself asks. */
@@ -598,6 +648,7 @@ __attribute__((used)) static void text_record(const uint32_t *f)
     /* From the whole name, as a name longer than the text kept loses its
        ending. */
     d.sample = d.site == SCROLL_LIST && sample_name(whole != NULL ? whole : d.text);
+    efx_state(f, &d);
     push(&d);
 }
 
@@ -826,6 +877,7 @@ static int keep_for_menu(int type, int code, int step)
 #define PAGE_PATTERN 60
 #define PAGE_CHAIN 57
 #define PAGE_RECORD_SETTING 62
+#define PAGE_REC_INPUT 63                   /* sample mode's RECORD SETTING */
 #define PAGE_MICROSCOPE 80
 #define PAGE_REMAIN 49
 #define PAGE_PROJECT 59
@@ -1089,6 +1141,13 @@ static const struct item *last_label;
 static int pending, wiped, page_pending, muted;
 static struct { int16_t action, step; } menu_q[16];
 static int menu_n;
+/* INPUT FX Setting's cursor and whether an effect is being chosen, as last
+   drawn and as last said; whether it is showing, now and at the last batch:
+   RECORD SETTING drawn back over it leaves its strings in the model. */
+static int efx_row = -1, efx_edit, efx_said_row = -1, efx_said_edit, efx_showing,
+    efx_was_showing;
+static uint32_t efx_surf;
+static const struct item *efx_named;
 /* Pads pressed where a screen asks for pads, waiting to be said once the
    page has made its choice, and when the last was pressed. A TR-REC step
    waits for the sequencer: resolved when it has changed, or given up. */
@@ -1420,7 +1479,7 @@ static int is_status(const struct item *it)
 static int is_lit(const struct item *it)
 {
     return (it->mark == WHITE && it->y >= 10 && !it->title && it->role != ROLE_UNLIT
-            && it->role != ROLE_HINT && it->role != ROLE_KNOB)
+            && it->role != ROLE_HINT && it->role != ROLE_KNOB && it->role != ROLE_EFX)
         || it->icon_sel || it->row_sel || it->framed;
 }
 
@@ -1477,6 +1536,21 @@ static void erase(uint32_t surf, int x0, int y0, int x1, int y1, int whole, uint
         }
     }
     (void)n;
+}
+
+/* INPUT FX Setting or the RECORD SETTING under it drawn over the other,
+   which neither wipes: the other's strings are gone. */
+static void efx_switch(uint32_t surf, int to_efx, uint32_t tick)
+{
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        int efx = it->role == ROLE_EFX || it->site == EFX_TITLE
+            || (it->site == BIG_TEXT && it->y == 14);
+        if (it->used && !it->erased && it->surf == surf && (to_efx ? it->role == ROLE_KNOB : efx))
+            it->erased = tick ? tick : 1;
+    }
 }
 
 /* Folds one event into the model and answers whether it is a change worth
@@ -1611,7 +1685,7 @@ static int same_but_star(const char *a, const char *b)
 static int take(const struct draw *d)
 {
     struct item *it;
-    int was_lit, now_lit, text_changed, framed, counts = 0;
+    int was_lit, now_lit, text_changed, framed, counts = 0, efx_moved = 0;
 
     if (d->kind == EV_CLEAR) {
         erase(d->surf, 0, 0, 0, 0, 1, d->tick);
@@ -1749,6 +1823,7 @@ static int take(const struct draw *d)
         page_now = (int)d->mark;
         page_pending = 1;
         page_seq = draw_seq;
+        efx_showing = 0;
         return 1;
     }
     if (d->kind == EV_TAB) {
@@ -1847,6 +1922,22 @@ static int take(const struct draw *d)
     if (page_now == PAGE_PATTERN && d->site == BIG_TEXT && it->role == ROLE_NONE)
         it->role = d->y >= 50 ? ROLE_IGNORE : padlike(d->text) ? ROLE_QUIET : ROLE_NONE;
     it->title = it->role == ROLE_TITLE;
+    if (d->site == EFX_TYPE_LABEL) {
+        if (!efx_showing || efx_surf != d->surf)
+            efx_switch(d->surf, 1, d->tick);
+        efx_surf = d->surf;
+        efx_showing = 1;
+        if (d->efx_row != 0 && (d->efx_row - 1 != efx_row || d->efx_edit != efx_edit)) {
+            efx_row = d->efx_row - 1;
+            efx_edit = d->efx_edit;
+            efx_moved = 1;
+            log_line("%lu effects cursor %d%s\n", (unsigned long)d->tick, efx_row,
+                     efx_edit ? ", choosing" : "");
+        }
+    } else if (d->surf == efx_surf && it->role == ROLE_KNOB && efx_showing) {
+        efx_switch(d->surf, 0, d->tick);
+        efx_showing = 0;
+    }
     text_changed = strcmp(it->text, d->text) != 0;
     it->sample = d->sample;
     /* The chain's heading gaining (*) once the chain is changed is not
@@ -1927,8 +2018,9 @@ static int take(const struct draw *d)
         counts = 1;
     }
     /* A page just built draws itself unchanged on a layer it left before:
-       everything it draws counts, so the batch waits for the whole of it. */
-    if (page_pending)
+       everything it draws counts, so the batch waits for the whole of it.
+       INPUT FX Setting's cursor moving changes no string. */
+    if (page_pending || efx_moved)
         counts = 1;
     if (screen_mode == SCREEN_ALL) {
         int k = (int)(it - items);
@@ -2962,6 +3054,9 @@ static const struct { int page; const char *name; int alone; } page_names[] = {
        only when they are new: RECORD SETTING is built again as REMAIN
        changes its MODE. */
     { PAGE_RECORD_SETTING, "RECORD SETTING", 0 }, { PAGE_MICROSCOPE, "Microscope", 0 },
+    /* Sample mode's, which the manual calls the input setting screen, and
+       whose knobs' values are heard as they are turned. */
+    { PAGE_REC_INPUT, "RECORD SETTING", 1 },
 };
 
 /* TR-REC, on the pattern screen, shown by its line Ptn:G1; and whether it
@@ -2998,6 +3093,107 @@ static void say_rows(struct item **order)
     }
 }
 
+/* INPUT FX Setting's strings: EFX Type's value beside its name, in the
+   big font; a parameter's name or value by its row, 1 or 2, and column, 0
+   to 2, the newest drawn there. */
+static struct item *efx_type(void)
+{
+    struct item *label = NULL, *v = NULL;
+    int i;
+
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].site == EFX_TYPE_LABEL && items[i].surf == efx_surf)
+            label = &items[i];
+    for (i = 0; label != NULL && i < ITEMS; i++) {
+        struct item *it = &items[i];
+        if (live(it) && it->surf == efx_surf && it->site == BIG_TEXT && it->y == label->y
+            && it->x > label->x + 30 && (v == NULL || (int32_t)(it->last_drawn - v->last_drawn) > 0))
+            v = it;
+    }
+    return v;
+}
+
+static struct item *efx_cell(uint32_t site, int row, int col)
+{
+    struct item *found = NULL;
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        if (live(it) && it->surf == efx_surf && it->site == site && (it->y - 24) / 20 + 1 == row
+            && (it->x - 4) / 40 == col
+            && (found == NULL || (int32_t)(it->last_drawn - found->last_drawn) > 0))
+            found = it;
+    }
+    return found;
+}
+
+/* Where its cursor is: EFX Type with the effect, or a row's parameters,
+   each name with its value. */
+static void efx_focus(void)
+{
+    struct item *v;
+    int col;
+
+    efx_said_row = efx_row;
+    efx_said_edit = efx_edit;
+    efx_named = NULL;
+    if (efx_row <= 0) {
+        v = efx_type();
+        say3("EFX Type:", v != NULL ? v->text : NULL, NULL);
+        return;
+    }
+    for (col = 0; col < 3; col++) {
+        const struct item *name = efx_cell(EFX_NAME, efx_row, col);
+        if (name == NULL)
+            continue;
+        v = efx_cell(EFX_VALUE, efx_row, col);
+        say3(name->text, v != NULL ? v->text : NULL, NULL);
+    }
+}
+
+/* What changed on it: the cursor, said as above, except that VALUE pressed
+   to choose an effect says the effect alone; an effect chosen, by its name
+   alone, not its parameters' with it; a parameter its CTRL knob sets, its
+   name with its first change, as any knob's. Its strings are dealt with
+   here and nowhere else. */
+static void efx_same(void)
+{
+    struct item *type = efx_type();
+    int i;
+
+    if (efx_row != efx_said_row || efx_edit != efx_said_edit) {
+        if (efx_edit && !efx_said_edit && type != NULL) {
+            say3(type->text, NULL, NULL);
+            efx_said_row = efx_row;
+            efx_said_edit = efx_edit;
+        } else {
+            efx_focus();
+        }
+    } else if (efx_edit) {
+        if (type != NULL && type->changed == 1)
+            say3(type->text, NULL, NULL);
+    } else {
+        for (i = 0; i < ITEMS; i++) {
+            struct item *v = &items[i];
+            const struct item *name;
+            if (!live(v) || v->surf != efx_surf || v->site != EFX_VALUE || v->changed != 1)
+                continue;
+            name = efx_cell(EFX_NAME, (v->y - 24) / 20 + 1, (v->x - 4) / 40);
+            if (name == NULL)
+                continue;
+            if (name != efx_named)
+                say3(name->text, v->text, NULL);
+            else
+                say3(v->text, NULL, NULL);
+            efx_named = name;
+        }
+    }
+    for (i = 0; i < ITEMS; i++)
+        if (items[i].role == ROLE_EFX || &items[i] == type)
+            items[i].changed = 0;
+}
+
 /* What to say about a new screen. A dialog that has just opened is all
    there is: its text, then its own focused button. Otherwise the title, the
    tab a tabbed page is on when it has changed, then the focus: the focused
@@ -3027,10 +3223,25 @@ static void new_screen(struct item **order)
         say_rows(order);
         return;
     }
+    /* A new effect on INPUT FX Setting changes its parameters' names all
+       at once, which is no new screen. */
+    if (efx_showing && efx_was_showing) {
+        efx_same();
+        return;
+    }
     n = in_order(order, ITEMS, want_title);
     for (i = 0; i < n; i++)
         if (!title_said(order[i]))
             say(order[i]);
+    if (efx_showing) {
+        efx_focus();
+        return;
+    }
+    /* Back from INPUT FX Setting to the RECORD SETTING it was opened from. */
+    if (n == 0 && efx_was_showing && page_now == PAGE_REC_INPUT) {
+        say3("RECORD SETTING", NULL, NULL);
+        return;
+    }
     /* The pattern screen with no big title names itself by its state in
        the status bar, STOP-PTN C1, COUNT IN, COPY, EXCHANGE; TR-REC, whose
        status bar is empty, by its mode, as Roland names it. */
@@ -3245,6 +3456,8 @@ static void same_screen(struct item **order)
     int n, i, k, m, pad_hit = 0, answers = 0;
     uint32_t popup_surf = 0, main_surf = 0;
 
+    if (efx_showing)
+        efx_same();
     /* A choice newly made says what the screen now shows for it, changed or
        not: the BPM screen's tempo, when PROJECT gives way to the bank. */
     for (i = 0; i < ITEMS; i++)
@@ -3759,6 +3972,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
             if (items[i].changed == 2 || !live(&items[i]))
                 items[i].changed = 0;
     }
+    efx_was_showing = efx_showing;
     effect_shown = 0;
     for (i = 0; i < ITEMS && !effect_shown; i++)
         effect_shown = live(&items[i])

@@ -44,6 +44,10 @@
                                halfway through the next write to it
      MS SEED PATH TEXT         the file PATH there already, holding TEXT,
                                its folders with it, as an earlier run left
+     MS EFX ROW CHOOSING       INPUT FX Setting's cursor on EFX Type, 0, or a
+                               row of parameters, 1 or 2, and whether an
+                               effect is being chosen, read as it next draws
+                               EFX Type:
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
@@ -111,6 +115,10 @@ static uint32_t page_object[0x1AA0 / 4];
    scrolled at +0x1A8C. */
 static uint32_t scroll_owner[0x1A90 / 4];
 volatile uint32_t sim_scroll_owner;
+/* INPUT FX Setting, the item that keeps its cursor at +0x1B3C and whether
+   an effect is being chosen at +0x1B37. */
+static uint32_t efx_object[0x1B40 / 4];
+volatile uint32_t sim_efx_owner;
 /* The card slot, and a write to the card to be cut short by its coming out. */
 enum { CARD_NONE, CARD_RUN, CARD_OTHER };
 static int sim_card = CARD_RUN, sim_cut;
@@ -314,7 +322,8 @@ static char *slurp(const char *name)
 }
 
 enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
-       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC, E_SCROLL, E_CARD, E_SEED };
+       E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC, E_SCROLL, E_CARD, E_SEED,
+       E_EFX };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -382,6 +391,10 @@ static void load_events(void)
             ev[nev].x = strncmp(p + 5, "OUT", 3) == 0 ? CARD_NONE
                       : strncmp(p + 5, "IN", 2) == 0 ? CARD_RUN
                       : strncmp(p + 5, "OTHER", 5) == 0 ? CARD_OTHER : -1;
+        } else if (strncmp(p, "EFX ", 4) == 0) {
+            ev[nev].kind = E_EFX;
+            ev[nev].x = (int)strtol(p + 4, &p, 10);
+            ev[nev].y = (int)strtol(p, &p, 10);
         } else if (strncmp(p, "SEED ", 5) == 0) {
             ev[nev].kind = E_SEED;
             ev[nev].text = p + 5;
@@ -751,6 +764,11 @@ static void fire(int i)
         break;
     case E_SEED:
         seed(ev[i].text);
+        break;
+    case E_EFX:
+        *(int32_t *)((char *)efx_object + 0x1B3C) = ev[i].x;
+        *((char *)efx_object + 0x1B37) = (char)ev[i].y;
+        sim_efx_owner = (uint32_t)(uintptr_t)efx_object;
         break;
     case E_TRREC:
         sim_seq_state = (uint32_t)(uintptr_t)sim_seq;

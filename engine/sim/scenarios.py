@@ -1565,6 +1565,78 @@ def cardleft():
                           '@has sim_LOG004_DRAWS000.TXT # items:'],
           say='#mode changed\n#log on\n')
 
+# Sample mode's RECORD SETTING and the INPUT FX Setting VALUE opens over
+# it, as runs/77-recsettings drew them: RECORD SETTING is named arriving
+# and coming back, never by its INPUT FX legend, and VALUE turned there,
+# which moves nothing, says nothing. INPUT FX Setting's cursor, an
+# underline, is said where it lands: EFX Type with the effect, or a row's
+# parameters with their values. VALUE pressed to choose says the effect,
+# turning says each effect alone, and pressing again to set it says EFX
+# Type with it. A CTRL knob says its parameter. Neither view's strings are
+# wiped when the other is drawn, as on the unit.
+def recinput():
+    NAME, LOW, TEMPO = '=801709AB:', '=801709EF:', '=80170A15:'
+    TYPE, HEAD, PNAME, PVALUE = '=80147EBF:', '=80147EDB:', '=80148119:', '=801481F5:'
+    def setting(t):
+        return [f'{t} s1 7 5 _{NAME}REC BPM', f'{t} s1 15 35 _{LOW}BPM',
+                f'{t} s1 9 20 _{TEMPO}90.0', f'{t} s1 51 5 _{NAME}ROUTING',
+                f'{t} s1 56 20 _{TEMPO}Mix', f'{t} s1 96 5 _{NAME}LEVEL',
+                f'{t} s1 96 20 _{TEMPO}127']
+    def efx(t, row, choosing, effect, params=()):
+        params = list(params) + [(' ', '---')] * (6 - len(params))
+        d = [f'{t} EFX {row} {choosing}']
+        for k, (name, value) in enumerate(params):
+            x0, y0 = k % 3 * 40 + 4, k // 3 * 20 + 24
+            d += [f'{t} s1 {x0 + (40 - 4 * len(name)) // 2} {y0 + 2} !{PNAME}{name}',
+                  f'{t} s1 {x0 + (40 - 4 * len(value)) // 2} {y0 + 11} _{PVALUE}{value}']
+        d += [f'{t} s1 {117 - 4 * len(effect)} 14 {"!" if choosing else "_"}=800EE779:{effect}',
+              f'{t} s1 4 14 _{TYPE}EFX Type:', f'{t} s1 4 4 _{HEAD}INPUT FX Setting']
+        return d
+    vocoder = [('NOTE', '1'), ('FORMANT', '0'), ('TONE', '0'), ('SCALE', 'C Maj'),
+               ('CHORD', 'Oct'), ('BALANCE', '0-100')]
+    pitch = [('PITCH', '-100'), ('FORMANT', '-100'), ('BALANCE', '0-100'),
+             ('AT PITCH', '50'), ('KEY', 'CHROMA'), ('ROBOT', 'OFF')]
+    comp = [('SUSTAIN', '50'), ('ATTACK', '50'), ('RATIO', '50'), ('LEVEL', '90')]
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 1b', '1000 PAGE 68', '1000 s0 CLEAR', '1000 s0 8 2 !BPM  90',
+          '1000 s0 89 2 !LEVEL:127', '1000 s0 44 2 !M:oo', '1000 s1 21 16 _R E C',
+          '1000 s1 121 14 _L', '1000 s1 125 14 _R', '1000 s1 118 24 _0', '1000 s1 114 40 _-6',
+          '1000 s1 114 59 _dB', '1006 s3 BOX 1 1 105 23',
+          f'1006 s3 9 4 ~{TOAST}Select PAD\\nfor RECORDING', '1100 KEY UP 1b']
+    d += ['3000 KEY DOWN 16', '3000 PAGE 63', '3000 s1 CLEAR',
+          '3000 s2 7 45 !=80088B6D:SHIFT:FINE', '3000 s2 88 53 !=80088BFB:INPUT FX']
+    d += setting(3000) + ['3100 KEY UP 16']
+    d += ['4500 KNOB 0 1', '4550 KNOB 0 2', '4600 KNOB 0 -3']
+    d += ['5500 KEY DOWN 31'] + efx(5510, 0, 0, 'Bypass') + ['5600 KEY UP 31']
+    d += ['7000 KEY DOWN 31'] + efx(7010, 0, 1, 'Bypass') + ['7100 KEY UP 31']
+    d += ['8500 KNOB 0 1'] + efx(8510, 0, 1, 'Auto Pitch', pitch)
+    d += ['9000 KNOB 0 1'] + efx(9010, 0, 1, 'Vocoder', vocoder)
+    d += ['10500 KEY DOWN 31'] + efx(10510, 0, 0, 'Vocoder', vocoder) + ['10600 KEY UP 31']
+    d += ['12000 KNOB 0 1'] + efx(12010, 1, 0, 'Vocoder', vocoder)
+    d += ['13500 KNOB 0 1'] + efx(13510, 2, 0, 'Vocoder', vocoder)
+    vocoder_d = vocoder[:3] + [('SCALE', 'D Maj')] + vocoder[4:]
+    vocoder_e = vocoder[:3] + [('SCALE', 'E Maj')] + vocoder[4:]
+    d += ['15000 CTRL 1 70'] + efx(15010, 2, 0, 'Vocoder', vocoder_d)
+    d += ['15300 CTRL 1 80'] + efx(15310, 2, 0, 'Vocoder', vocoder_e)
+    d += ['17000 KNOB 0 -1'] + efx(17010, 1, 0, 'Vocoder', vocoder_e)
+    d += ['18500 KNOB 0 -1'] + efx(18510, 0, 0, 'Vocoder', vocoder_e)
+    # A shorter effect, whose empty cells must not read the last one's names.
+    d += ['20000 KEY DOWN 31'] + efx(20010, 0, 1, 'Vocoder', vocoder_e) + ['20100 KEY UP 31']
+    d += ['21500 KNOB 0 1'] + efx(21510, 0, 1, 'Compressor', comp)
+    d += ['23000 KEY DOWN 31'] + efx(23010, 0, 0, 'Compressor', comp) + ['23100 KEY UP 31']
+    d += ['24500 KNOB 0 1'] + efx(24510, 1, 0, 'Compressor', comp)
+    d += ['26000 KNOB 0 1'] + efx(26010, 2, 0, 'Compressor', comp)
+    d += ['28000 KEY DOWN 22'] + setting(28000) + ['28100 KEY UP 22']
+    d += ['30000 CTRL 2 100', f'30010 s1 56 20 _{TEMPO}ExtIn', '32000 VALUE']
+    write('recinput', d, ['top screen', 'REC | Select PAD for RECORDING', 'RECORD SETTING',
+                          'INPUT effects Setting | effects Type: Bypass', 'Bypass',
+                          'Auto Pitch', 'Vocoder', 'effects Type: Vocoder',
+                          'NOTE 1 | FORMANT 0 | TONE 0', 'SCALE C Maj | CHORD Oct | BALANCE 0-100',
+                          'SCALE D Maj', 'E Maj', 'NOTE 1 | FORMANT 0 | TONE 0',
+                          'effects Type: Vocoder', 'Vocoder', 'Compressor',
+                          'effects Type: Compressor', 'SUSTAIN 50 | ATTACK 50 | RATIO 50',
+                          'LEVEL 90', 'RECORD SETTING', 'ROUTING ExtIn'])
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()
 params()
@@ -1623,3 +1695,4 @@ cardlong()
 cardcut()
 cardback()
 cardleft()
+recinput()
