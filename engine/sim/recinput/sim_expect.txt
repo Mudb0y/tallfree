@@ -2,6 +2,10 @@ top screen
 REC | Select PAD for RECORDING
 RECORD SETTING
 INPUT effects Setting | effects Type: Bypass
+blank
+blank
+blank
+effects Type: Bypass
 Bypass
 Auto Pitch
 Vocoder

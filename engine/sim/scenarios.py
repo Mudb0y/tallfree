@@ -1566,11 +1566,12 @@ def cardleft():
           say='#mode changed\n#log on\n')
 
 # Sample mode's RECORD SETTING and the INPUT FX Setting VALUE opens over
-# it, as runs/77-recsettings drew them: RECORD SETTING is named arriving
+# it, as runs/77-recsettings and 78 drew them: RECORD SETTING is named arriving
 # and coming back, never by its INPUT FX legend, and VALUE turned there,
 # which moves nothing, says nothing. INPUT FX Setting's cursor, an
 # underline, is said where it lands: EFX Type with the effect, or a row's
-# parameters with their values. VALUE pressed to choose says the effect,
+# parameters with their values, or "blank" for a row with none, as
+# Bypass's both are. VALUE pressed to choose says the effect,
 # turning says each effect alone, and pressing again to set it says EFX
 # Type with it. A CTRL knob says its parameter. Neither view's strings are
 # wiped when the other is drawn, as on the unit. EXIT then goes back to
@@ -1609,6 +1610,9 @@ def recinput():
     d += setting(3000) + ['3100 KEY UP 16']
     d += ['4500 KNOB 0 1', '4550 KNOB 0 2', '4600 KNOB 0 -3']
     d += ['5500 KEY DOWN 31'] + efx(5510, 0, 0, 'Bypass') + ['5600 KEY UP 31']
+    # Bypass's rows, which have no parameters.
+    for t, row in ((5800, 1), (6100, 2), (6400, 1), (6700, 0)):
+        d += [f'{t} KNOB 0 {1 if row > 1 or t < 6400 else -1}'] + efx(t + 10, row, 0, 'Bypass')
     d += ['7000 KEY DOWN 31'] + efx(7010, 0, 1, 'Bypass') + ['7100 KEY UP 31']
     d += ['8500 KNOB 0 1'] + efx(8510, 0, 1, 'Auto Pitch', pitch)
     d += ['9000 KNOB 0 1'] + efx(9010, 0, 1, 'Vocoder', vocoder)
@@ -1635,7 +1639,8 @@ def recinput():
          ((121, 14, 'L'), (125, 14, 'R'), (118, 24, '0'), (114, 40, '-6'), (114, 59, 'dB'))] + \
         ['31100 KEY UP 22', '33000 VALUE']
     write('recinput', d, ['top screen', 'REC | Select PAD for RECORDING', 'RECORD SETTING',
-                          'INPUT effects Setting | effects Type: Bypass', 'Bypass',
+                          'INPUT effects Setting | effects Type: Bypass', 'blank', 'blank',
+                          'blank', 'effects Type: Bypass', 'Bypass',
                           'Auto Pitch', 'Vocoder', 'effects Type: Vocoder',
                           'NOTE 1 | FORMANT 0 | TONE 0', 'SCALE C Maj | CHORD Oct | BALANCE 0-100',
                           'SCALE D Maj', 'E Maj', 'NOTE 1 | FORMANT 0 | TONE 0',

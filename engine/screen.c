@@ -3135,11 +3135,12 @@ static struct item *efx_cell(uint32_t site, int row, int col)
 }
 
 /* Where its cursor is: EFX Type with the effect, or a row's parameters,
-   each name with its value. */
+   each name with its value; a row with none, as Bypass's both are, is
+   "blank", as Orca says an empty line. */
 static void efx_focus(void)
 {
     struct item *v;
-    int col;
+    int col, said = 0;
 
     efx_said_row = efx_row;
     efx_said_edit = efx_edit;
@@ -3155,7 +3156,10 @@ static void efx_focus(void)
             continue;
         v = efx_cell(EFX_VALUE, efx_row, col);
         say3(name->text, v != NULL ? v->text : NULL, NULL);
+        said = 1;
     }
+    if (!said)
+        say3("blank", NULL, NULL);
 }
 
 /* What changed on it: the cursor, said as above, except that VALUE pressed
