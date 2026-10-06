@@ -1326,12 +1326,14 @@ def importfolder():
 # each sample the focus lands on, so a sample's name waits for the focus to
 # rest half a second, and what was being said stops as it lands on one; a
 # folder is said at once. Moves 250 ms apart for a second and a half say
-# nothing, the second's limit on waiting not applying to samples.
+# nothing, the second's limit on waiting not applying to samples, nor to a
+# sample whose name is longer than the reader keeps, which loses its .wav.
 def importscroll():
     LIST, ICON = '=80155187:', '=801551CF'
     top = [('Drums', True), ('kick.wav', False)]
-    inner = [('..', True), ('hit_01.wav', False), ('hit_02.wav', False), ('hit_03.wav', False),
-             ('Loops', True), ('tail.wav', False)]
+    inner = [('..', True), ('hit_01.wav', False),
+             ('063_SOULSURPLUS_elevador_percussion_drum_loop_bossa_nova_jazz_main.wav', False),
+             ('hit_03.wav', False), ('Loops', True), ('tail.wav', False)]
 
     def frame(t, rows, sel, path):
         f = [f'{t} s0 FILL 1 10 126 52', f'{t} s0 FILL 0 0 127 8', f'{t} s0 5 0 _=8014EAE9:{path}']

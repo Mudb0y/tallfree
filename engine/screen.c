@@ -431,7 +431,7 @@ struct draw {
     uint32_t tick, surf, lr, site;
     int32_t  mark, ink;
     int16_t  x, y, x1, y1;
-    uint8_t  kind, task, len;
+    uint8_t  kind, task, len, sample;
     char     text[DRAW_TEXT];
 };
 
@@ -480,6 +480,25 @@ static void push(const struct draw *d)
     }
     __asm__ volatile("msr primask, %0" :: "r"(primask) : "memory");
     target_wake();
+}
+
+/* The kinds of file the firmware takes as samples, by a name's ending. */
+static int sample_name(const char *t)
+{
+    static const char *const ext[] = { ".wav", ".aif", ".aiff", ".mp3" };
+    size_t n = strlen(t), k, j;
+    unsigned i;
+
+    for (i = 0; i < sizeof ext / sizeof ext[0]; i++) {
+        k = strlen(ext[i]);
+        if (n <= k)
+            continue;
+        for (j = 0; j < k && (t[n - k + j] | 0x20) == ext[i][j]; j++)
+            ;
+        if (j == k)
+            return 1;
+    }
+    return 0;
 }
 
 /* Two lists scroll a name too long for its column by drawing it again with
@@ -546,7 +565,7 @@ static const char *scroll_whole(const uint32_t *f, uint32_t site, const char *st
 __attribute__((used)) static void text_record(const uint32_t *f)
 {
     struct draw d;
-    const char *str = (const char *)f[3], *whole;
+    const char *str = (const char *)f[3], *whole = NULL;
     int len = (int)f[8], n;
     uint32_t surf = f[0];
 
@@ -576,6 +595,9 @@ __attribute__((used)) static void text_record(const uint32_t *f)
     for (n = 0; n < len && n < DRAW_TEXT - 1 && str[n]; n++)
         d.text[n] = str[n];
     d.text[n] = 0;
+    /* From the whole name, as a name longer than the text kept loses its
+       ending. */
+    d.sample = d.site == SCROLL_LIST && sample_name(whole != NULL ? whole : d.text);
     push(&d);
 }
 
@@ -1055,7 +1077,7 @@ struct item {
     int32_t  mark, ink;
     int16_t  x, y;
     uint8_t  used, changed, rapid, task, title, fresh, role, icon_sel, row_sel, framed, own,
-             prompted, by_pad;
+             prompted, by_pad, sample;
     char     prev0;                          /* the text's first letter before */
     char     text[ITEM_TEXT];
 };
@@ -1810,6 +1832,7 @@ static int take(const struct draw *d)
         it->role = d->y >= 50 ? ROLE_IGNORE : padlike(d->text) ? ROLE_QUIET : ROLE_NONE;
     it->title = it->role == ROLE_TITLE;
     text_changed = strcmp(it->text, d->text) != 0;
+    it->sample = d->sample;
     /* The chain's heading gaining (*) once the chain is changed is not
        news. */
     if (text_changed && d->site == CHAIN_TITLE && same_but_star(it->text, d->text)) {
@@ -3412,27 +3435,8 @@ static int screen_changed(void)
 /* The file lists play the sample the cursor lands on, so a quick scroll
    through samples is for hearing them, not their names: on a sample, the
    name waits until the cursor has rested half a second, and what was being
-   said stops as it lands. A folder is said as soon as the list settles. The
-   kinds of file the firmware takes as samples. */
+   said stops as it lands. A folder is said as soon as the list settles. */
 #define SAMPLE_REST MS_TO_TICKS(500)
-
-static int sample_name(const char *t)
-{
-    static const char *const ext[] = { ".wav", ".aif", ".aiff", ".mp3" };
-    size_t n = strlen(t), k, j;
-    unsigned i;
-
-    for (i = 0; i < sizeof ext / sizeof ext[0]; i++) {
-        k = strlen(ext[i]);
-        if (n <= k)
-            continue;
-        for (j = 0; j < k && (t[n - k + j] | 0x20) == ext[i][j]; j++)
-            ;
-        if (j == k)
-            return 1;
-    }
-    return 0;
-}
 
 /* The file list's focused row, if it is a sample; the latest drawn, as the
    old row and the new are both lit for a moment while the focus moves. */
@@ -3447,7 +3451,7 @@ static const struct item *sample_focus(void)
             && (f == NULL || (int32_t)(it->drawn_seq - f->drawn_seq) > 0))
             f = it;
     }
-    return f != NULL && sample_name(f->text) ? f : NULL;
+    return f != NULL && f->sample ? f : NULL;
 }
 
 /* Drains what the hooks caught. Once there has been no change for the
