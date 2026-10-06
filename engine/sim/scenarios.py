@@ -1573,7 +1573,8 @@ def cardleft():
 # parameters with their values. VALUE pressed to choose says the effect,
 # turning says each effect alone, and pressing again to set it says EFX
 # Type with it. A CTRL knob says its parameter. Neither view's strings are
-# wiped when the other is drawn, as on the unit.
+# wiped when the other is drawn, as on the unit. EXIT then goes back to
+# the recording screen, which is its name, not its meter's scale.
 def recinput():
     NAME, LOW, TEMPO = '=801709AB:', '=801709EF:', '=80170A15:'
     TYPE, HEAD, PNAME, PVALUE = '=80147EBF:', '=80147EDB:', '=80148119:', '=801481F5:'
@@ -1627,7 +1628,12 @@ def recinput():
     d += ['24500 KNOB 0 1'] + efx(24510, 1, 0, 'Compressor', comp)
     d += ['26000 KNOB 0 1'] + efx(26010, 2, 0, 'Compressor', comp)
     d += ['28000 KEY DOWN 22'] + setting(28000) + ['28100 KEY UP 22']
-    d += ['30000 CTRL 2 100', f'30010 s1 56 20 _{TEMPO}ExtIn', '32000 VALUE']
+    d += ['30000 CTRL 2 100', f'30010 s1 56 20 _{TEMPO}ExtIn']
+    # EXIT back to the recording screen, its meter's scale drawn with it.
+    d += ['31000 KEY DOWN 22', '31000 PAGE 68', '31000 s1 21 16 _R E C'] + \
+        [f'31000 s1 {x} {y} _=800EE779:{t}' for x, y, t in
+         ((121, 14, 'L'), (125, 14, 'R'), (118, 24, '0'), (114, 40, '-6'), (114, 59, 'dB'))] + \
+        ['31100 KEY UP 22', '33000 VALUE']
     write('recinput', d, ['top screen', 'REC | Select PAD for RECORDING', 'RECORD SETTING',
                           'INPUT effects Setting | effects Type: Bypass', 'Bypass',
                           'Auto Pitch', 'Vocoder', 'effects Type: Vocoder',
@@ -1635,7 +1641,7 @@ def recinput():
                           'SCALE D Maj', 'E Maj', 'NOTE 1 | FORMANT 0 | TONE 0',
                           'effects Type: Vocoder', 'Vocoder', 'Compressor',
                           'effects Type: Compressor', 'SUSTAIN 50 | ATTACK 50 | RATIO 50',
-                          'LEVEL 90', 'RECORD SETTING', 'ROUTING ExtIn'])
+                          'LEVEL 90', 'RECORD SETTING', 'ROUTING ExtIn', 'REC'])
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 menu()

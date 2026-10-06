@@ -1633,6 +1633,12 @@ static uint8_t role_by_text(const struct draw *d)
 
     if (d->y <= 5 && (reads(t, "DC") || reads(t, "USB") || reads(t, "BAT") || reads(t, "???")))
         return ROLE_IGNORE;
+    /* The input meter's scale down the right edge of the recording screens,
+       L R, 0, -6, dB, which the recording screen drawn back from RECORD
+       SETTING read out as what it shows. */
+    if (d->site == BIG_TEXT && d->x >= 110 && d->y >= 10
+        && (reads(t, "L") || reads(t, "R") || reads(t, "0") || reads(t, "-6") || reads(t, "dB")))
+        return ROLE_IGNORE;
     /* A pattern's bar and beat as it plays, 1.1., 2.4.: a running
        position, never said. The pattern screen and the pattern chain draw
        it and the 2.4 in their corners without the last dot, and no other
