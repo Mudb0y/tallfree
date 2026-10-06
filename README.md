@@ -25,6 +25,10 @@ but you can always go back to Roland's firmware; see below.
   one, such as sampling, export or delete.
 - GATE, LOOP, REVERSE, BPM SYNC and EXT SOURCE say whether they're on or off,
   and turning an effect on says its name.
+- In the file lists, a sample's name is read once you've stayed on it for two
+  seconds, so you can scroll through a folder hearing the previews. Folders
+  are read straight away, and the entry that goes back up is "parent folder".
+- In TR-REC, each pad you press says the step it sets, such as "step 5 on".
 
 Speech plays through the main outputs over whatever the SP is playing, and it
 isn't recorded when you sample or resample.
