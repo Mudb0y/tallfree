@@ -1,0 +1,9 @@
+top screen
+SAMPLE
+Drums | destination: PRESS PAD
+parent folder
+(stop)
+hit_03.wav
+Loops
+(stop)
+tail.wav

@@ -122,6 +122,7 @@ void sim_clear(void);
 void sim_fill(void);
 void sim_frame(void);
 void sim_batch(const char *phrases, int count);
+void sim_stop(void);
 extern volatile uint32_t sim_icon_slots[2], sim_icon_ctx;
 extern volatile uint32_t sim_page_table[94], sim_row_word, sim_tab_word;
 extern volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
@@ -3408,13 +3409,59 @@ static int screen_changed(void)
     return wiped && fresh >= 3 && fresh * 2 >= alive;
 }
 
+/* The file lists play the sample the cursor lands on, so a quick scroll
+   through samples is for hearing them, not their names: on a sample, the
+   name waits until the cursor has rested half a second, and what was being
+   said stops as it lands. A folder is said as soon as the list settles. The
+   kinds of file the firmware takes as samples. */
+#define SAMPLE_REST MS_TO_TICKS(500)
+
+static int sample_name(const char *t)
+{
+    static const char *const ext[] = { ".wav", ".aif", ".aiff", ".mp3" };
+    size_t n = strlen(t), k, j;
+    unsigned i;
+
+    for (i = 0; i < sizeof ext / sizeof ext[0]; i++) {
+        k = strlen(ext[i]);
+        if (n <= k)
+            continue;
+        for (j = 0; j < k && (t[n - k + j] | 0x20) == ext[i][j]; j++)
+            ;
+        if (j == k)
+            return 1;
+    }
+    return 0;
+}
+
+/* The file list's focused row, if it is a sample; the latest drawn, as the
+   old row and the new are both lit for a moment while the focus moves. */
+static const struct item *sample_focus(void)
+{
+    const struct item *f = NULL;
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *it = &items[i];
+        if (live(it) && it->site == SCROLL_LIST && is_lit(it)
+            && (f == NULL || (int32_t)(it->drawn_seq - f->drawn_seq) > 0))
+            f = it;
+    }
+    return f != NULL && sample_name(f->text) ? f : NULL;
+}
+
 /* Drains what the hooks caught. Once there has been no change for the
    settle time, or changes have kept coming for a second, or a value that was
    changing quickly has held still, fills phrases with what to say and
-   answers 1. */
+   answers 1. Answers 1 with no phrases when what is being said should
+   stop. */
 int screen_poll(char *phrases, size_t cap, int *count)
 {
     static struct item *order[ITEMS];
+    static const struct item *rest_on;
+    static char rest_text[ITEM_TEXT];
+    static uint32_t rest_since, stopped_at = (uint32_t)-1;
+    const struct item *sample;
     uint32_t now = device_ticks();
     int i, due = 0, kind = 0, working = 0;
 
@@ -3510,7 +3557,27 @@ int screen_poll(char *phrases, size_t cap, int *count)
         tab_changed = 0;
         return 0;
     }
-    if (pending && (now - last_change >= settle_ticks || now - first_pending >= 750u))
+    sample = sample_focus();
+    if (sample != rest_on || (sample != NULL && strcmp(sample->text, rest_text) != 0)) {
+        rest_on = sample;
+        rest_since = now;
+        if (sample != NULL) {
+            memcpy(rest_text, sample->text, sizeof rest_text);
+            /* Once for each batch said: moving on from sample to sample has
+               nothing more to stop. */
+            if (stopped_at != batches) {
+                stopped_at = batches;
+                *count = 0;
+#ifdef SIM
+                sim_stop();
+#endif
+                log_line("%lu stop\n", (unsigned long)now);
+                return 1;
+            }
+        }
+    }
+    if (pending && (sample != NULL ? now - rest_since >= SAMPLE_REST
+                    : now - last_change >= settle_ticks || now - first_pending >= 750u))
         due = 1;
     if (due && state_seen && (int32_t)(now - state_hold) < 0)
         due = 0;

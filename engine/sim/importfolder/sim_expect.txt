@@ -2,6 +2,7 @@ top screen
 SAMPLE
 Splice_Pack | destination: PRESS PAD
 parent folder
+(stop)
 snare_01.wav
 parent folder
 Splice_Pack

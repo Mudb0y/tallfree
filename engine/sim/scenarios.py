@@ -1279,9 +1279,10 @@ def importlist():
             d += arrive(15000)
         d += frame(t, sel)
     d.append('20000 VALUE')
-    write('importlist', d, ['top screen', 'SAMPLE',
+    write('importlist', d, ['top screen', 'SAMPLE', '(stop)',
                             'file_name_example_140bpm_gmaj_whow.wav | destination: PRESS PAD',
-                            'kick.wav', 'file_name_example_140bpm_gmaj_whow.wav', 'SAMPLE',
+                            '(stop)', 'kick.wav', '(stop)', 'file_name_example_140bpm_gmaj_whow.wav',
+                            'SAMPLE', '(stop)',
                             'file_name_example_140bpm_gmaj_whow.wav | destination: PRESS PAD'])
 
 # Folders in IMPORT SAMPLE's file list: each drawn at x 15 behind its icon,
@@ -1318,7 +1319,48 @@ def importfolder():
     d += ['8000 KEY DOWN 31', '8070 KEY UP 31'] + frame(8000, top, 0, 'SDCARD:/')
     d.append('9500 VALUE')
     write('importfolder', d, ['top screen', 'SAMPLE', 'Splice_Pack | destination: PRESS PAD',
-                              'parent folder', 'snare_01.wav', 'parent folder', 'Splice_Pack'])
+                              'parent folder', '(stop)', 'snare_01.wav', 'parent folder',
+                              'Splice_Pack'])
+
+# A folder of samples scrolled through quickly, to hear them: the list plays
+# each sample the focus lands on, so a sample's name waits for the focus to
+# rest half a second, and what was being said stops as it lands on one; a
+# folder is said at once. Moves 250 ms apart for a second and a half say
+# nothing, the second's limit on waiting not applying to samples.
+def importscroll():
+    LIST, ICON = '=80155187:', '=801551CF'
+    top = [('Drums', True), ('kick.wav', False)]
+    inner = [('..', True), ('hit_01.wav', False), ('hit_02.wav', False), ('hit_03.wav', False),
+             ('Loops', True), ('tail.wav', False)]
+
+    def frame(t, rows, sel, path):
+        f = [f'{t} s0 FILL 1 10 126 52', f'{t} s0 FILL 0 0 127 8', f'{t} s0 5 0 _=8014EAE9:{path}']
+        for k, (name, folder) in enumerate(rows):
+            y = 11 + 7 * k
+            lit = '!' if k == sel else ''
+            if folder:
+                f.append(f'{t} s0 BOX 9 {y} 10 {y} {ICON}')
+            f.append(f'{t} s0 SCROLL 0 {15 if folder else 5} {y} {lit}{LIST}{name}')
+        return f
+
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 86', '1000 s0 CLEAR', '1000 s1 3 2 _=801522A7:IMPORT SAMPLE / PROJECT',
+          '1000 s0 17 22 !=8016F55B:SAMPLE', '1000 s0 17 30 =8016F505:PROJECT',
+          '1000 s0 17 38 =8016F505:PROJECT(SX)', '1000 s0 17 46 =8016F505:CANCEL']
+    d += ['3000 KEY DOWN 31', '3000 s0 FILL 0 9 127 63', '3000 s0 8 58 !=80161895:DEST:PRESS PAD',
+          '3070 KEY UP 31']
+    d += frame(3000, top, 0, 'SDCARD:/')
+    path = 'SDCARD:/Drums'
+    d += ['5000 KEY DOWN 31', '5070 KEY UP 31'] + frame(5000, inner, 0, path)
+    sel = 0
+    for t, step in [(6000, 1), (6250, 1), (6500, 1), (6750, -1), (7000, -1), (7250, 1), (7500, 1),
+                    (9000, 1), (9200, 1)]:
+        sel += step
+        d += [f'{t} KNOB 0 {step}'] + frame(t, inner, sel, path)
+    d.append('11000 VALUE')
+    write('importscroll', d, ['top screen', 'SAMPLE', 'Drums | destination: PRESS PAD',
+                              'parent folder', '(stop)', 'hit_03.wav', 'Loops', '(stop)',
+                              'tail.wav'])
 
 # REMAIN with a sample's name too long for its line: FUN_8008C4A0 draws it
 # from x 56, not right-aligned, a character further every draw and whole
@@ -1445,6 +1487,7 @@ project()
 importlist()
 remainname()
 importfolder()
+importscroll()
 cardswap()
 cardlong()
 cardcut()

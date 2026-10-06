@@ -45,7 +45,8 @@
      MS VALUE                  the run ends: speech off and unload
 
    sim_expect.txt, if present, holds what each spoken batch should be, one
-   batch a line, phrases separated by " | ", and checks on the files the
+   batch a line, phrases separated by " | ", "(stop)" for speech stopped
+   with nothing in its place, and checks on the files the
    run leaves: "@has FILE TEXT" and "@lacks FILE TEXT" say whether FILE
    holds TEXT, and "@absent FILE" that it was never written; and
    "@own TEXT" that the engine said TEXT of its own, apart from the
@@ -445,6 +446,12 @@ void sim_batch(const char *phrases, int count)
     }
     said[nsaid] = malloc(n + 1);
     memcpy(said[nsaid++], line, n + 1);
+}
+
+void sim_stop(void)
+{
+    if (nsaid < BATCHES)
+        said[nsaid++] = strdup("(stop)");
 }
 
 /* "@has FILE TEXT", "@lacks FILE TEXT" or "@absent FILE": whether it fails. */

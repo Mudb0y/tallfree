@@ -1,7 +1,11 @@
 top screen
 SAMPLE
+(stop)
 file_name_example_140bpm_gmaj_whow.wav | destination: PRESS PAD
+(stop)
 kick.wav
+(stop)
 file_name_example_140bpm_gmaj_whow.wav
 SAMPLE
+(stop)
 file_name_example_140bpm_gmaj_whow.wav | destination: PRESS PAD
