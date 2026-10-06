@@ -2318,8 +2318,20 @@ static int say3(const char *a, const char *b, const char *c)
     return 1;
 }
 
+/* The file lists' line naming where a sample will go, DEST:PRESS PAD, is
+   said when it appears and when it changes. Going into a folder and
+   scrolling a page redraw it with the list, which reads as a new screen;
+   leaving the list for the import menu clears what was said. */
+#define DEST_LINE 0x80161895u
+static char dest_said[ITEM_TEXT];
+
 static int say(const struct item *it)
 {
+    if (it->site == DEST_LINE) {
+        if (strcmp(it->text, dest_said) == 0)
+            return 0;
+        memcpy(dest_said, it->text, ITEM_TEXT);
+    }
     return say3(full_text(it), NULL, NULL);
 }
 
@@ -3615,6 +3627,10 @@ int screen_poll(char *phrases, size_t cap, int *count)
     b_used = 0;
     b_count = 0;
     b_now = now;
+    for (i = 0; i < ITEMS && !(live(&items[i]) && items[i].site == DEST_LINE); i++)
+        ;
+    if (i == ITEMS)
+        dest_said[0] = 0;
     /* An operation's message comes first, before the bank letter and the
        screen it leaves you on: "Operation Completed!, pattern". While it
        says Working, the screen behind it is changing and is not said: the

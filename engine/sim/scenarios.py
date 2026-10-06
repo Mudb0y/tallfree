@@ -1251,7 +1251,7 @@ def importlist():
         for k, name in enumerate(files):
             f.append(f'{t} s0 SCROLL {shown(k) if k == sel else 0} 5 {11 + 7 * k} '
                      f'{"!" if k == sel else ""}{LIST}{name}')
-        return f
+        return f + [f'{t} s0 8 58 !=80161895:DEST:PRESS PAD']
 
     def menu(t):
         return [f'{t} PAGE 86', f'{t} s0 CLEAR', f'{t} s1 3 2 _=801522A7:IMPORT SAMPLE / PROJECT',
@@ -1304,7 +1304,7 @@ def importfolder():
             if folder:
                 f.append(f'{t} s0 BOX 9 {y} 10 {y} {ICON}')
             f.append(f'{t} s0 SCROLL 0 {15 if folder else 5} {y} {lit}{LIST}{name}')
-        return f
+        return f + [f'{t} s0 8 58 !=80161895:DEST:PRESS PAD']
 
     d = main_screen(0, 0, 'A-13')
     d += ['1000 PAGE 86', '1000 s0 CLEAR', '1000 s1 3 2 _=801522A7:IMPORT SAMPLE / PROJECT',
@@ -1328,23 +1328,27 @@ def importfolder():
 # folder is said at once. Moves 250 ms apart for a second and a half say
 # nothing, the second's limit on waiting not applying to samples, and nor
 # does a pause of a second; a sample whose name is longer than the reader
-# keeps, losing its .wav, is still a sample.
+# keeps, losing its .wav, is still a sample. The destination line, redrawn
+# with the list, is said on arriving and not again going into the folder
+# or scrolling the list a page.
 def importscroll():
     LIST, ICON = '=80155187:', '=801551CF'
     top = [('Drums', True), ('kick.wav', False)]
     inner = [('..', True), ('hit_01.wav', False),
              ('063_SOULSURPLUS_elevador_percussion_drum_loop_bossa_nova_jazz_main.wav', False),
-             ('hit_03.wav', False), ('Loops', True), ('tail.wav', False)]
+             ('hit_03.wav', False), ('Loops', True), ('tail.wav', False), ('tail_2.wav', False),
+             ('tail_3.wav', False)]
 
     def frame(t, rows, sel, path):
+        top = max(0, sel - 5)
         f = [f'{t} s0 FILL 1 10 126 52', f'{t} s0 FILL 0 0 127 8', f'{t} s0 5 0 _=8014EAE9:{path}']
-        for k, (name, folder) in enumerate(rows):
+        for k, (name, folder) in enumerate(rows[top:top + 6]):
             y = 11 + 7 * k
-            lit = '!' if k == sel else ''
+            lit = '!' if top + k == sel else ''
             if folder:
                 f.append(f'{t} s0 BOX 9 {y} 10 {y} {ICON}')
             f.append(f'{t} s0 SCROLL 0 {15 if folder else 5} {y} {lit}{LIST}{name}')
-        return f
+        return f + [f'{t} s0 8 58 !=80161895:DEST:PRESS PAD']
 
     d = main_screen(0, 0, 'A-13')
     d += ['1000 PAGE 86', '1000 s0 CLEAR', '1000 s1 3 2 _=801522A7:IMPORT SAMPLE / PROJECT',
@@ -1357,14 +1361,14 @@ def importscroll():
     d += ['5000 KEY DOWN 31', '5070 KEY UP 31'] + frame(5000, inner, 0, path)
     sel = 0
     for t, step in [(6000, 1), (6250, 1), (6500, 1), (6750, -1), (7000, -1), (7250, 1), (7500, 1),
-                    (8500, -1), (11500, 1), (11700, 1), (11900, 1)]:
+                    (8500, -1), (11500, 1), (11700, 1), (11900, 1), (14500, 1)]:
         sel += step
         d += [f'{t} KNOB 0 {step}'] + frame(t, inner, sel, path)
-    d.append('15000 VALUE')
+    d.append('17500 VALUE')
     write('importscroll', d, ['top screen', 'SAMPLE', 'Drums | destination: PRESS PAD',
                               'parent folder', '(stop)',
                               '063_SOULSURPLUS_elevador_percussion_drum_loop_bossa_nova_jazz_m',
-                              '(stop)', 'Loops', '(stop)', 'tail.wav'])
+                              '(stop)', 'Loops', '(stop)', 'tail.wav', '(stop)', 'tail_2.wav'])
 
 # REMAIN with a sample's name too long for its line: FUN_8008C4A0 draws it
 # from x 56, not right-aligned, a character further every draw and whole

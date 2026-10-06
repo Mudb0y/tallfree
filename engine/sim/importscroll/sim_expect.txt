@@ -8,3 +8,5 @@ parent folder
 Loops
 (stop)
 tail.wav
+(stop)
+tail_2.wav
