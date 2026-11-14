@@ -912,6 +912,13 @@ static int keep_for_menu(int type, int code, int step)
 #define PAGE_MICROSCOPE 80
 #define PAGE_REMAIN 49
 #define PAGE_PROJECT 59
+/* Chromatic mode, SHIFT and pad 4: a grid of sixteen semitone offsets, -8
+   to 7, one under each pad, the one a pad is playing on white. The
+   offsets only mirror the pads, so its cells are never read, on arriving
+   or as each pad lights its cell and lets it go. */
+#define PAGE_CHROMATIC 8
+#define CHROM_CELL      0x8008D349u
+#define CHROM_CELL_LIT  0x8008D30Du
 #define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
 enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS, PICK_PATTERNS, PICK_KEEP,
        PICK_STEP };
@@ -1958,6 +1965,8 @@ static int take(const struct draw *d)
        changes. */
     if (page_now == PAGE_PATTERN && d->site == BIG_TEXT && it->role == ROLE_NONE)
         it->role = d->y >= 50 ? ROLE_IGNORE : padlike(d->text) ? ROLE_QUIET : ROLE_NONE;
+    if (page_now == PAGE_CHROMATIC && (d->site == CHROM_CELL || d->site == CHROM_CELL_LIT))
+        it->role = ROLE_IGNORE;
     it->title = it->role == ROLE_TITLE;
     if (d->site == EFX_TYPE_LABEL) {
         if (!efx_showing || efx_surf != d->surf)

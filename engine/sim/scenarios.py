@@ -1649,6 +1649,37 @@ def recinput():
                           'LEVEL 90', 'RECORD SETTING', 'ROUTING ExtIn', 'REC'])
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# Chromatic mode, page 8, as LOG001 drew it on 14 November 2026: SHIFT and
+# pad 4 from the main screen; the scale on the main screen's surface, and on
+# a surface of its own the title, a grid of the sixteen pads' semitone
+# offsets, -8 to 7, and the bank and pad it plays. Each pad lights its cell
+# on white and lets it go. Arriving says the title, the scale and the pad,
+# never the grid; playing says nothing; EXIT is the top screen again.
+CHROM_CELL, CHROM_LIT = '=8008D349:', '=8008D30D:'
+CHROM_CELLS = [(16, 21, '4'), (35, 21, '5'), (54, 21, '6'), (73, 21, '7'),
+               (16, 32, '0'), (35, 32, '1'), (54, 32, '2'), (73, 32, '3'),
+               (14, 43, '-4'), (33, 43, '-3'), (52, 43, '-2'), (71, 43, '-1'),
+               (14, 54, '-8'), (33, 54, '-7'), (52, 54, '-6'), (71, 54, '-5')]
+def chromatic():
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 4', '1200 PAGE 8',
+          '1200 s0 8 12 _=801733B3:SCALE:Chrom']
+    d += [f'1200 s1 {x} {y} {CHROM_CELL}{t}' for x, y, t in CHROM_CELLS]
+    d += ['1200 s1 13 2 _=801120A1:CHROMATIC MODE', '1200 s1 91 20 =801119F5:BANK-PAD',
+          '1200 s1 100 28 =80111A79:A - 1', '1350 KEY UP 03', '1400 KEY UP 2a']
+    # Pads 9, 5 and 1, the cells for -4, 0 and 4, then 1 and 2 overlapping.
+    for t, pad in [(3000, 9), (4000, 5), (5000, 1)]:
+        x, y, text = CHROM_CELLS[{9: 8, 5: 4, 1: 0}[pad]]
+        d += [f'{t} PAD {pad}', f'{t} s1 {x} {y} !{CHROM_LIT}{text}',
+              f'{t + 400} KEY UP {pad - 1:02x}', f'{t + 400} s1 {x} {y} {CHROM_CELL}{text}']
+    d += ['6000 PAD 1', '6000 s1 16 21 !=8008D30D:4', '6200 PAD 2', '6200 s1 35 21 !=8008D30D:5',
+          '6210 KEY UP 00', '6210 s1 16 21 =8008D349:4',
+          '6500 KEY UP 01', '6500 s1 35 21 =8008D349:5']
+    d += ['8000 KEY DOWN 22', '8000 PAGE 84', '8000 s1 CLEAR'] + main_screen(8000, 0, 'A-1')
+    d += ['8100 KEY UP 22', '9000 VALUE']
+    write('chromatic', d, ['top screen', 'CHROMATIC MODE | SCALE: chromatic | BANK-PAD A-1',
+                           'top screen'])
+
 menu()
 params()
 popup()
@@ -1707,3 +1738,4 @@ cardcut()
 cardback()
 cardleft()
 recinput()
+chromatic()
