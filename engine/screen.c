@@ -844,6 +844,10 @@ static int keep_for_menu(int type, int code, int step)
             shift_down = 1;
             return 0;
         }
+        /* EXIT pressed again before it came up, as a held key may repeat,
+           is the same press: kept, and the hold timed from the first. */
+        if (code == KEY_EXIT && exit_kept)
+            return 1;
         if (code == KEY_EXIT && keys_to_menu) {
             exit_kept = 1;
             keys_to_menu = 0;
