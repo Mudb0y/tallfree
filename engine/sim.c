@@ -31,6 +31,8 @@
      MS KNOB N STEP            knob N turned by STEP, to that page
      MS CTRL N POS             CTRL knob N moved to POS, 0 to 127, to that page
      MS PAD N                  pad N, 1 to 16, pressed, to the page last built
+     MS MSG N                  message type N sent to the page last built, as
+                               the interface sends 10 when a dialog closes
      MS MODE M                 the page last built is in mode M
      MS BANK B                 the current bank is B, 0 to 9
      MS PMODE M                the pattern store's mode is M, 8 for COPY
@@ -323,7 +325,7 @@ static char *slurp(const char *name)
 
 enum { E_TEXT, E_VALUE, E_CLEAR, E_FILL, E_ICON, E_ROW, E_PAGE, E_KEY, E_KNOB, E_CTRL, E_BOX,
        E_TAB, E_PAD, E_MODE, E_BANK, E_PMODE, E_PKEEP, E_TRREC, E_SCROLL, E_CARD, E_SEED,
-       E_EFX };
+       E_EFX, E_MSG };
 #define EVENTS 4096
 static struct {
     uint32_t ms;
@@ -403,6 +405,9 @@ static void load_events(void)
                     p[0] = '\n';
                     memmove(p + 1, p + 2, strlen(p + 2) + 1);
                 }
+        } else if (strncmp(p, "MSG ", 4) == 0) {
+            ev[nev].kind = E_MSG;
+            ev[nev].x = (int)strtol(p + 4, &p, 10);
         } else if (strncmp(p, "PAGE", 4) == 0) {
             ev[nev].kind = E_PAGE;
             ev[nev].x = (int)strtol(p + 4, &p, 10);
@@ -717,6 +722,11 @@ static void fire(int i)
     }
     case E_KEY: {
         int16_t m[3] = { (int16_t)ev[i].x, (int16_t)ev[i].y, 0 };
+        ((int (*)(void *))sim_page_table[page_now])(m);
+        break;
+    }
+    case E_MSG: {
+        int16_t m[3] = { (int16_t)ev[i].x, 0, 0 };
         ((int (*)(void *))sim_page_table[page_now])(m);
         break;
     }

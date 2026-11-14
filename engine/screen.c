@@ -1726,6 +1726,48 @@ static int same_but_star(const char *a, const char *b)
     return nb == na + 3 && strncmp(a, b, na) == 0 && strcmp(b + na, "(*)") == 0;
 }
 
+/* A dialog closing. The page is sent message 10 whenever one closes, by
+   OK or by CANCEL: once for each of the six dialogs closed in the log of
+   14 November 2026, INIT PARAM, Protect and START/END's DEL among them,
+   and never anywhere else. The dialog's layer is neither cleared nor
+   wiped, and its buttons are not pop-up text, so without this they would
+   stay on the model, and the next dialog shown on that layer, finding
+   them there, would not be new: Protect, opened where INIT PARAM had
+   been, said nothing at all. So the dialog goes from the model, its
+   message box lines, its buttons and what else it put on their layer, and
+   the next batch says where it has left you. */
+#define MSG_DIALOG_CLOSED 10
+#define DIALOG_BUTTON 0x800907B1u                /* a dialog's OK and CANCEL */
+static int dialog_closed;
+
+static void close_dialog(uint32_t tick)
+{
+    uint32_t surf[8];
+    int nsurf = 0, i, k, n = 0;
+
+    for (i = 0; i < ITEMS; i++)
+        if (items[i].used && items[i].site == DIALOG_BUTTON) {
+            for (k = 0; k < nsurf && surf[k] != items[i].surf; k++)
+                ;
+            if (k == nsurf && nsurf < (int)(sizeof surf / sizeof surf[0]))
+                surf[nsurf++] = items[i].surf;
+        }
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        int on_layer = 0;
+        if (!it->used)
+            continue;
+        for (k = 0; k < nsurf && !on_layer; k++)
+            on_layer = it->surf == surf[k] && it->mark == -1 && it->role != ROLE_TOAST;
+        if (it->role == ROLE_MESSAGE || it->site == DIALOG_BUTTON || on_layer) {
+            it->used = 0;
+            n++;
+        }
+    }
+    log_line("%lu dialog closed, %d items gone\n", (unsigned long)tick, n);
+    dialog_closed = 1;
+}
+
 static int take(const struct draw *d)
 {
     struct item *it;
@@ -1860,6 +1902,10 @@ static int take(const struct draw *d)
             log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
         if (d->x >= 0 && d->x < 32)
             msg_at[d->x] = d->tick;
+        if (d->x == MSG_DIALOG_CLOSED) {
+            close_dialog(d->tick);
+            return 1;
+        }
         if (d->x != 1)
             return 0;
         if ((int)d->mark != page_now)
@@ -3373,6 +3419,35 @@ static void new_screen(struct item **order)
     }
 }
 
+/* Where a dialog closing leaves you, though the screen under it draws
+   nothing new: the top screen by that name, a screen named by its button
+   by its name, as arriving there says them, else the screen's title and
+   its focus. The dialog itself is already off the model. */
+static int want_any_title(const struct item *it) { return is_title(it); }
+static int want_any_lit(const struct item *it) { return is_lit(it); }
+
+static void landed(struct item **order)
+{
+    int n, i;
+
+    if (page_now == 84) {
+        say3("top screen", NULL, NULL);
+        return;
+    }
+    for (i = 0; i < (int)(sizeof page_names / sizeof page_names[0]); i++)
+        if (page_names[i].page == page_now) {
+            say3(page_names[i].name, NULL, NULL);
+            if (page_names[i].alone)
+                return;
+        }
+    n = in_order(order, ITEMS, want_any_title);
+    for (i = 0; i < n; i++)
+        say(order[i]);
+    n = in_order(order, ITEMS, want_any_lit);
+    for (i = 0; i < n; i++)
+        say_focus(order[i]);
+}
+
 /* A pop-up layer that has only just been drawn: nothing on it older than
    this batch. */
 static int layer_is_new(uint32_t surf)
@@ -4003,6 +4078,11 @@ int screen_poll(char *phrases, size_t cap, int *count)
         nburst = 0;
         for (i = 0; i < ITEMS; i++)
             items[i].changed = 0;
+    } else if (dialog_closed && !page_pending && !tab_changed && !screen_changed()) {
+        /* A dialog has closed on the screen it was opened over. */
+        landed(order);
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = items[i].own = 0;
     } else if ((kind = screen_changed()) != 0) {
         screen_epoch = first_pending - 2u;
         /* A page just built has drawn all it shows; what it has not drawn
@@ -4046,6 +4126,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
             if (items[i].changed == 2 || !live(&items[i]))
                 items[i].changed = 0;
     }
+    dialog_closed = 0;
     efx_was_showing = efx_showing;
     effect_shown = 0;
     for (i = 0; i < ITEMS && !effect_shown; i++)

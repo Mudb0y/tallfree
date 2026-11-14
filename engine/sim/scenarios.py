@@ -1680,6 +1680,38 @@ def chromatic():
     write('chromatic', d, ['top screen', 'CHROMATIC MODE | SCALE: chromatic | BANK-PAD A-1',
                            'top screen'])
 
+# A dialog's question in the message box, on a pop-up layer, and its buttons,
+# CANCEL focused, as INIT PARAM, Protect and START/END's DEL drew them.
+def message_dialog(t, surf, lines, focus='CANCEL'):
+    ys = [10, 32] if len(lines) == 2 else [10, 21, 32]
+    sites = ['=8001F4BD:', '=8001F6B5:'] if len(lines) == 2 else \
+        ['=8001F4BD:', '=8001F677:', '=8001F6B5:']
+    out = [f'{t} s{surf} 13 {y} ~{site}{line}' for y, site, line in zip(ys, sites, lines)]
+    return out + dialog_buttons(t, surf, focus)
+
+def dialog_buttons(t, surf, focus):
+    return [f'{t} s{surf} 86 47 {"!" if focus == "OK" else ""}=800907B1:OK',
+            f'{t} s{surf} 16 47 {"!" if focus == "CANCEL" else ""}=800907B1:CANCEL']
+
+# START/END's DEL, "Initialize Points. All PAD Stops.", as LOG001 drew it:
+# the page's legends and markers, the dialog over them, the focus moved and
+# back, and CANCEL: closing it names the screen it leaves you on.
+def dialogclose():
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 17', '1000 PAGE 90',
+          '1000 s1 8 2 _=80107AA5:C1:START', '1000 s1 95 2 _=80107AC7:C3:END',
+          '1000 s2 53 2 _=80107C07:C2:OFF', '1000 s2 58 53 _=80107C83:A-1',
+          '1000 s2 76 53 _=80107CF5:M:[S]', '1000 s2 103 53 !=80107D6D:MENU',
+          '1000 s2 4 53 !=801078A9:ENC:ZOOM(1x)',
+          '1000 s1 2 42 _=8014BBB3:S', '1000 s1 122 42 _=8014BCA5:E', '1150 KEY UP 17']
+    d += ['3000 KEY DOWN 1a'] + \
+        message_dialog(3000, 3, ['Initialize Points.\\nAll PAD Stops.', 'Are you sure?'])
+    d += ['3200 KEY UP 1a'] + dialog_buttons(4500, 3, 'OK') + dialog_buttons(5500, 3, 'CANCEL')
+    d += ['7000 MSG 10', '7100 KEY UP 22', '8000 VALUE']
+    write('dialogclose', d, ['top screen', 'START/END',
+                             'Initialize Points. All PAD Stops. | Are you sure? | CANCEL',
+                             'OK', 'CANCEL', 'START/END'])
+
 menu()
 params()
 popup()
@@ -1739,3 +1771,4 @@ cardback()
 cardleft()
 recinput()
 chromatic()
+dialogclose()
