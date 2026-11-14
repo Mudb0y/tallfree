@@ -10,7 +10,11 @@
    Holding SHIFT + EXIT for a second turns screen reading off or on without
    the menu, saying which, and saves nothing: a restart brings back what the
    menu last saved, so a reader muted for one session cannot leave the unit
-   silent for good. */
+   silent for good.
+
+   SHIFT held and EXIT tapped twice reads the whole screen: the first tap
+   opens the menu, the second, within half a second, closes it unsaved and
+   unannounced, and the screen hook reads everything showing. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -146,7 +150,8 @@ int menu_is_open(void)
 }
 
 /* One control, already kept from the interface; answers 1 when the menu
-   has just closed, so the screen can be announced after it. */
+   has just closed, so the screen can be announced after it, and 2 when the
+   whole screen is to be read. */
 int menu_action(int action, int step)
 {
     int s;
@@ -163,6 +168,10 @@ int menu_action(int action, int step)
         apply(READING);
         screen_say_text(settings[READING].value ? "Speech on" : "Speech off");
         return 1;
+    case MENU_SAY_ALL:
+        open_now = 0;
+        editing = 0;
+        return 2;
     case MENU_CLOSE:
         open_now = 0;
         editing = 0;

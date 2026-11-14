@@ -831,7 +831,10 @@ static void menu_event(int action, int step)
    pads included, goes through. A key's release is kept whenever its press
    was. */
 #define TOGGLE_HOLD MS_TO_TICKS(1000)
-static uint32_t exit_down;
+/* A second tap of EXIT, SHIFT still held, this soon after the menu opened
+   reads the whole screen instead of closing the menu. */
+#define SAY_ALL_TAP MS_TO_TICKS(500)
+static uint32_t exit_down, menu_opened;
 static int exit_deciding;
 
 static int keep_for_menu(int type, int code, int step)
@@ -844,7 +847,8 @@ static int keep_for_menu(int type, int code, int step)
         if (code == KEY_EXIT && keys_to_menu) {
             exit_kept = 1;
             keys_to_menu = 0;
-            menu_event(MENU_CLOSE, 0);
+            menu_event(shift_down && device_ticks() - menu_opened < SAY_ALL_TAP
+                       ? MENU_SAY_ALL : MENU_CLOSE, 0);
             return 1;
         }
         if (code == KEY_EXIT && shift_down) {
@@ -871,6 +875,7 @@ static int keep_for_menu(int type, int code, int step)
                     menu_event(MENU_TOGGLE, 0);
                 } else {
                     keys_to_menu = 1;
+                    menu_opened = device_ticks();
                     menu_event(MENU_OPEN, 0);
                 }
             }
@@ -3646,6 +3651,28 @@ int screen_say_text(const char *text)
     return say3(text, NULL, NULL);
 }
 
+/* Everything showing, asked for: the screen, then any pop-up over it, top
+   to bottom, each value with its label as a screen without a title is
+   read. A pop-up not drawn again lately has gone, though its layer still
+   holds it. */
+static int want_shown(const struct item *it)
+{
+    return it->role != ROLE_HINT
+        && (!is_popup(it) || b_now - it->last_drawn < STEADY);
+}
+
+static void say_all(void)
+{
+    static struct item *order[ITEMS];
+    int n = in_order(order, ITEMS, want_shown);
+
+    if (n == 0) {
+        say3("nothing on screen", NULL, NULL);
+        return;
+    }
+    say_contents(order, n);
+}
+
 /* What is showing, when nothing has just been drawn to say so: after the
    settings menu closes over a screen that did not change. The focus drawn
    most recently, with anything lit within a second of it; the newest title
@@ -3820,7 +3847,9 @@ int screen_poll(char *phrases, size_t cap, int *count)
             closed = menu_action(menu_q[i].action, menu_q[i].step);
         }
         menu_n = 0;
-        if (closed && !muted)
+        if (closed == 2)
+            say_all();
+        else if (closed && !muted)
             reannounce();
         for (i = 0; i < ITEMS; i++)
             items[i].changed = items[i].fresh = 0;
