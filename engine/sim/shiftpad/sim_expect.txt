@@ -1,0 +1,9 @@
+top screen
+Current Sample Parameter initialize | Are you sure? | CANCEL
+OK
+CANCEL
+top screen
+Current Sample Parameter initialize | Are you sure? | CANCEL
+OK
+CANCEL
+top screen

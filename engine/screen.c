@@ -1263,7 +1263,7 @@ static int nframe_sites;
    PLAY-PTN C1 62 ticks after the pad. */
 #define PLAY_WINDOW 110u                     /* ticks, 147 ms */
 static uint32_t last_turn, last_press, last_pad, last_fx, last_bank_key, last_ctrl_logged;
-static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen, bank_key_seen;
+static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen, bank_key_seen, shift_held;
 static int pad_page;
 /* The last key pressed, and what DEL last emptied from a chain's slot. */
 #define KEY_DEL 0x1A
@@ -1822,13 +1822,23 @@ static int take(const struct draw *d)
         return 0;
     }
     if (d->kind == EV_PAGE && d->x >= 5 && d->x <= 7) {
+        /* SHIFT as the pages had it, in step with the keys around it:
+           shift_down is the interface task's, ahead of the model. */
+        if (d->y == KEY_SHIFT && (d->x == 5 || d->x == 6))
+            shift_held = d->x == 5;
         if (d->x == 5) {
             last_press = d->tick;
             press_seen = 1;
             last_key = d->y;
             /* Keys 0 to 15 are the pads, 1 to 16; with an effect's button
-               held they choose an effect, which is said, and play nothing. */
-            if (d->y >= 0 && d->y < 16 && !fx_held) {
+               held they choose an effect, which is said, and play nothing.
+               With SHIFT held they play nothing either: they open what is
+               printed above them, INIT PARAM on pad 6, CHROMATIC on pad 4,
+               which is said. Counted as played, a dialog they open would
+               be silent, and its buttons with it for as long as they stay
+               on the model, since whether text came of a pad is only
+               judged again when the text changes. */
+            if (d->y >= 0 && d->y < 16 && !fx_held && !shift_held) {
                 last_pad = d->tick;
                 pad_seen = 1;
                 pad_page = (int)d->mark;

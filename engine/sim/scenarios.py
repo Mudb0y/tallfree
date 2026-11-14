@@ -1693,6 +1693,47 @@ def dialog_buttons(t, surf, focus):
     return [f'{t} s{surf} 86 47 {"!" if focus == "OK" else ""}=800907B1:OK',
             f'{t} s{surf} 16 47 {"!" if focus == "CANCEL" else ""}=800907B1:CANCEL']
 
+INIT_PARAM = ['Current Sample\\nParameter Init', 'Are you sure?']
+INIT_SAID = 'Current Sample Parameter initialize | Are you sure? | CANCEL'
+
+# SHIFT and pad 6, INIT PARAM, as LOG001 drew it: the dialog with CANCEL
+# focused, VALUE moving the focus to OK and back, EXIT closing it, which
+# the page is sent as message 10; then shown again. A pad pressed with SHIFT
+# held is not played, so the dialog and its buttons are said, and closing it
+# says where it leaves you.
+def shiftpad():
+    d = main_screen(0, 0, 'A-1')
+    for t in (1000, 7000):
+        d += [f'{t} KEY DOWN 2a', f'{t + 200} PAD 6'] + message_dialog(t + 200, 3, INIT_PARAM)
+        d += [f'{t + 300} KEY UP 05', f'{t + 600} KEY UP 2a']
+        d += dialog_buttons(t + 1500, 3, 'OK') + dialog_buttons(t + 2500, 3, 'CANCEL')
+        d += [f'{t + 4000} MSG 10', f'{t + 4100} KEY UP 22']
+    d += ['13000 VALUE']
+    write('shiftpad', d, ['top screen', INIT_SAID, 'OK', 'CANCEL', 'top screen',
+                          INIT_SAID, 'OK', 'CANCEL', 'top screen'])
+
+# Protect, SHIFT and COPY, opened after INIT PARAM on the layer it used, as
+# LOG001 drew them: the box's three lines new, its buttons drawn again just
+# as INIT PARAM left them. Before message 10 cleared the dialog away, the
+# buttons were still on the model, so the layer was not new and Protect was
+# no new dialog: its three lines, more than the two a key's answer may be,
+# said nothing, and the buttons, put on the model by the SHIFT and pad that
+# opened INIT PARAM, were still taken as played.
+def protect():
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 6'] + message_dialog(1200, 3, INIT_PARAM)
+    d += ['1300 KEY UP 05', '1600 KEY UP 2a']
+    d += dialog_buttons(2500, 3, 'OK') + dialog_buttons(3500, 3, 'CANCEL')
+    d += ['5000 MSG 10', '5100 KEY UP 22']
+    d += ['7000 KEY DOWN 2a', '7200 KEY DOWN 23'] + \
+        message_dialog(7200, 3, ['Protect', 'BANK A', 'Are you sure?'])
+    d += ['7300 KEY UP 23', '7700 KEY UP 2a']
+    d += dialog_buttons(8500, 3, 'OK') + dialog_buttons(9500, 3, 'CANCEL')
+    d += ['11000 MSG 10', '11100 KEY UP 22', '12000 VALUE']
+    write('protect', d, ['top screen', INIT_SAID, 'OK', 'CANCEL', 'top screen',
+                         'Protect | BANK A | Are you sure? | CANCEL', 'OK', 'CANCEL',
+                         'top screen'])
+
 # START/END's DEL, "Initialize Points. All PAD Stops.", as LOG001 drew it:
 # the page's legends and markers, the dialog over them, the focus moved and
 # back, and CANCEL: closing it names the screen it leaves you on.
@@ -1772,3 +1813,5 @@ cardleft()
 recinput()
 chromatic()
 dialogclose()
+shiftpad()
+protect()
