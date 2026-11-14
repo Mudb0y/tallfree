@@ -20,12 +20,15 @@ byte the image changes and why.
 **It is a working screen reader.** Image 32 starts OpenEVV at boot, from the
 card or the eMMC, and it reads the screen as a screen reader should: on
 entering a screen its title and the focused item, then only what changes;
-settings rows with their values, tabs, dialogs on their own, the main
-screen as "top screen", the manual's name, a bank change by its letter, never
-a pad played, pads in the modes that pick them. SHIFT + EXIT opens a spoken
-speech settings menu, saved on the eMMC. Speech mixes into the main and
-headphone outputs, and with compiled rules the median time from a change on
-the screen to its sound is under 50 ms, with no stalls at speed 135.
+settings rows with their values, tabs, dialogs on their own and, as they
+close, where they leave you, the main screen as "top screen", the manual's
+name, a bank change by its letter, never a pad played, nor chromatic mode's
+grid, pads in the modes that pick them. SHIFT + EXIT opens a spoken speech
+settings menu, saved on the eMMC; held a second it turns screen reading off
+or on, saving nothing, and tapped twice it reads the whole screen. Speech
+mixes into the main and headphone outputs, and with compiled rules the
+median time from a change on the screen to its sound is under 50 ms, with no
+stalls at speed 135.
 
 How the screen is read: hooks, all data writes, on the seven surface
 vtables' DrawString, clear, fill and rectangle outline; the 76 icon menus'
@@ -33,9 +36,6 @@ icon draw; the SYSTEM page's row draw; the tab strip's draw, which names
 the current tab; and the 94 page handlers, which also carry every key and
 knob. Read the kernel's and the firmware's own code
 before trusting any record layout or vtable slot.
-
-Not solved: say-all and speech off, which the key hook makes easy; dialogs
-closing, if they are not pages; which pad deletion mode points at.
 
 ## The hardware, in one paragraph
 
@@ -53,9 +53,12 @@ Everything happens through the SD card. Nothing needs the SP on USB.
 
 Every command here runs inside `nix develop` at the top of the repo: the ARM
 compiler, QEMU, make, and a python3 with capstone and numpy, from the nixpkgs
-revision in `flake.lock`. `nix develop -c CMD` runs one. Each run after an
-edit copies the tree into the Nix store, which is why the Ghidra scripts fetch
-Ghidra by revision instead of through the flake.
+revision in `flake.lock`. `nix develop -c CMD` runs one. The shell is defined
+for x86_64-linux and aarch64-darwin. On an Apple Silicon Mac `make sims` runs
+and passes, but `make check` cannot: OpenEVV's desktop engine keeps addresses
+in 32 bits and has to load below 4 GB, which macOS does not allow. Each run
+after an edit copies the tree into the Nix store, which is why the Ghidra
+scripts fetch Ghidra by revision instead of through the flake.
 
 Roland's firmware is not in the repo. Building the image or the Ghidra project
 needs Roland's SP-404MKII system program 5.52, from Roland's download page,
