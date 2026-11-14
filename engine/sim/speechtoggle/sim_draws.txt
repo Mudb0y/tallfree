@@ -1,0 +1,28 @@
+# The main screen.
+0 s0 12 2 !=80149DC7:P-2
+0 s0 34 2 !=80149DD5:A-13
+0 s0 56 2 !=80149DE5:BUS-1
+0 s0 84 2 !=80149DF5:Fix
+0 s0 104 2 ! DC 
+0 s0 53 14 _9 4 
+# SHIFT + EXIT held a second: speech off, no menu.
+1000 KEY DOWN 2a
+1050 KEY DOWN 22
+2100 KEY UP 22
+2150 KEY UP 2a
+# A bank change while it is off says nothing.
+3000 BANK 1
+3000 s0 34 2 !=80149DD5:B-1
+# Held again: speech on, and where you are.
+4000 KEY DOWN 2a
+4050 KEY DOWN 22
+5100 KEY UP 22
+5150 KEY UP 2a
+# A tap still opens the menu, and EXIT closes it.
+6000 KEY DOWN 2a
+6050 KEY DOWN 22
+6150 KEY UP 22
+6200 KEY UP 2a
+7000 KEY DOWN 22
+7100 KEY UP 22
+9000 VALUE

@@ -5,7 +5,12 @@
    and the VALUE knob and its press for it while it is open, and hands
    them here. Turning VALUE moves between settings; a press starts changing
    the one it is on, turning then changes it, spoken in the new setting at
-   once, and another press goes back to choosing. EXIT saves and closes. */
+   once, and another press goes back to choosing. EXIT saves and closes.
+
+   Holding SHIFT + EXIT for a second turns screen reading off or on without
+   the menu, saying which, and saves nothing: a restart brings back what the
+   menu last saved, so a reader muted for one session cannot leave the unit
+   silent for good. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -153,6 +158,11 @@ int menu_action(int action, int step)
         screen_say_text("Speech settings");
         say_setting(current);
         return 0;
+    case MENU_TOGGLE:
+        settings[READING].value = !settings[READING].value;
+        apply(READING);
+        screen_say_text(settings[READING].value ? "Speech on" : "Speech off");
+        return 1;
     case MENU_CLOSE:
         open_now = 0;
         editing = 0;

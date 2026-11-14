@@ -822,11 +822,18 @@ static void menu_event(int action, int step)
 }
 
 /* In the interface's own task, before the page sees a message: answers 1 to
-   keep it from the page. SHIFT + EXIT opens the menu, and that EXIT is kept,
-   so it does not stop everything as SHIFT + EXIT otherwise does; while the
-   menu is open EXIT, pressing VALUE and turning VALUE are kept for it, and
-   everything else, SHIFT and the pads included, goes through. A key's
-   release is kept whenever its press was. */
+   keep it from the page. SHIFT + EXIT is kept, so it does not stop
+   everything as SHIFT + EXIT otherwise does, and what it does is decided
+   when EXIT comes up: let go within a second, it opens the menu; held a
+   second or more, it turns screen reading off or on without opening it,
+   for recording the outputs. While the menu is open EXIT, pressing VALUE
+   and turning VALUE are kept for it, and everything else, SHIFT and the
+   pads included, goes through. A key's release is kept whenever its press
+   was. */
+#define TOGGLE_HOLD MS_TO_TICKS(1000)
+static uint32_t exit_down;
+static int exit_deciding;
+
 static int keep_for_menu(int type, int code, int step)
 {
     if (type == 5) {
@@ -834,10 +841,16 @@ static int keep_for_menu(int type, int code, int step)
             shift_down = 1;
             return 0;
         }
-        if (code == KEY_EXIT && (keys_to_menu || shift_down)) {
+        if (code == KEY_EXIT && keys_to_menu) {
             exit_kept = 1;
-            keys_to_menu = !keys_to_menu;
-            menu_event(keys_to_menu ? MENU_OPEN : MENU_CLOSE, 0);
+            keys_to_menu = 0;
+            menu_event(MENU_CLOSE, 0);
+            return 1;
+        }
+        if (code == KEY_EXIT && shift_down) {
+            exit_kept = 1;
+            exit_deciding = 1;
+            exit_down = device_ticks();
             return 1;
         }
         if (code == KEY_VALUE_PRESS && keys_to_menu) {
@@ -852,6 +865,15 @@ static int keep_for_menu(int type, int code, int step)
             shift_down = 0;
         if (code == KEY_EXIT && exit_kept) {
             exit_kept = 0;
+            if (exit_deciding) {
+                exit_deciding = 0;
+                if (device_ticks() - exit_down >= TOGGLE_HOLD) {
+                    menu_event(MENU_TOGGLE, 0);
+                } else {
+                    keys_to_menu = 1;
+                    menu_event(MENU_OPEN, 0);
+                }
+            }
             return 1;
         }
         if (code == KEY_VALUE_PRESS && press_kept) {

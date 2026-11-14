@@ -64,7 +64,7 @@ void *screen_log_spare(size_t *len);
 void screen_report(void);
 
 /* menu.c */
-enum { MENU_OPEN, MENU_CLOSE, MENU_PRESS, MENU_TURN };
+enum { MENU_OPEN, MENU_CLOSE, MENU_PRESS, MENU_TURN, MENU_TOGGLE };
 void settings_load(int volume, int abbreviations);
 int  menu_is_open(void);
 int  menu_action(int action, int step);
