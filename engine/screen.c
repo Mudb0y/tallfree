@@ -1249,6 +1249,21 @@ static int nframe_sites;
    pop-up layers. */
 #define WHITE 0xFFFFFF
 #define STEADY 900u                          /* ticks, 1.2 s */
+/* How long a value being turned must hold still before it is said, the
+   speech menu's Knob wait, STEADY unless set there; at 0 each step is said
+   as it comes. Text that changes on its own, a meter or a clock, always
+   waits STEADY, so a short wait does not make it heard. */
+static uint32_t knob_rest = STEADY;
+
+void screen_knob_wait(int ms)
+{
+    knob_rest = MS_TO_TICKS(ms);
+}
+
+static uint32_t rest_of(const struct item *it)
+{
+    return it->own ? STEADY : knob_rest;
+}
 #define POPUP_LIFE 2250u                     /* ticks, 3 s */
 /* Text erased and drawn back within a frame is unchanged: the auto mark
    page draws over its menu every frame and the menu is drawn again the
@@ -2087,7 +2102,7 @@ static int take(const struct draw *d)
             it->own = 1;
         /* A first change is said at once. One that follows another within
            STEADY neither interrupts nor is said until the item has held still
-           that long: a meter or a clock that never stops is not heard at all,
+           for the knob wait, STEADY itself for text changing on its own: a meter or a clock that never stops is not heard at all,
            and an effect being played is heard where it stops. A value just
            turned or changed by a key is said at every step, as the focus is,
            the pop-ups a key brings among them, COUNT-IN 2MEAS, COUNT-IN WAIT.
@@ -3700,7 +3715,7 @@ static void same_screen(struct item **order)
             it->changed = 0;
             continue;
         }
-        if (it->rapid > 0 && b_now - it->last_change < STEADY)
+        if (it->rapid > 0 && b_now - it->last_change < rest_of(it))
             continue;
         /* A key's legend is heard when what you just did changed it, as
            turning VALUE changes the zoom, not as a screen sets it arriving. */
@@ -4006,7 +4021,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
        otherwise make every poll a batch once it held still. */
     for (i = 0; i < ITEMS && !due; i++)
         if (live(&items[i]) && items[i].changed == 1 && items[i].rapid > 0
-            && now - items[i].last_change >= STEADY)
+            && now - items[i].last_change >= rest_of(&items[i]))
             due = 1;
     if (!due)
         return 0;

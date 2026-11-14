@@ -1753,6 +1753,36 @@ def dialogclose():
                              'Initialize Points. All PAD Stops. | Are you sure? | CANCEL',
                              'OK', 'CANCEL', 'START/END'])
 
+# The speech menu's Knob wait taken from its 1200 ms down to 300, then
+# Filter+Drive's CUTOFF swept with CTRL 1 in two bursts 600 ms apart, as
+# params sweeps it. The first step is said at once, as always; the value
+# the first burst stops on once it has held still 300 ms, which at 1200 it
+# never would, the second burst coming first; and the last.
+def knobwait():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 2a', '1050 KEY DOWN 22', '1150 KEY UP 22', '1200 KEY UP 2a',
+          '1600 KNOB 0 -1', '2000 KEY DOWN 31', '2100 KEY UP 31']
+    d += [f'{2500 + 150 * k} KNOB 0 -1' for k in range(9)]
+    d += ['4500 KEY DOWN 31', '4600 KEY UP 31', '5000 KEY DOWN 22', '5100 KEY UP 22']
+    d += ['6000 s0 CLEAR',
+          f'6000 s0 9 3 _{LABEL}CUTOFF', '6000 s0 23 33 _Hz ', f'6000 s0 11 18 _{FXVALUE}637',
+          f'6000 s0 44 3 _{LABEL}RESONANCE', '6000 s0 73 33 _ ',
+          f'6000 s0 54 18 _{FXVALUE}   1',
+          f'6000 s0 95 3 _{LABEL}DRIVE', '6000 s0 115 33 _ ', f'6000 s0 96 18 _{FXVALUE}   0',
+          '6000 s0 53 47 _Filter+Drive']
+    steps = [('827', 11), ('1914', 7), ('4202', 7), ('8308', 7),
+             ('14035', 4), ('5183', 7), ('1194', 7), ('707', 11)]
+    for k, (v, x) in enumerate(steps):
+        t = 8000 + 50 * k + (600 if k >= 4 else 0)
+        d += [f'{t} CTRL 1 {40 + 10 * k}', f'{t} s0 FILL 0 18 40 30', f'{t} s0 {x} 18 _{FXVALUE}{v}']
+    d += ['11000 VALUE']
+    write('knobwait', d, ['top screen', 'Speech settings | Speed 50',
+                          'Knob wait 1200 milliseconds', '1200 milliseconds'] +
+          [f'{1200 - 100 * k} milliseconds' for k in range(1, 10)] +
+          ['Knob wait',
+                          'Settings saved | top screen', 'Filter+Drive', 'CUTOFF 827 hertz',
+                          '8308', '707'])
+
 menu()
 params()
 popup()
@@ -1815,3 +1845,4 @@ chromatic()
 dialogclose()
 shiftpad()
 protect()
+knobwait()
