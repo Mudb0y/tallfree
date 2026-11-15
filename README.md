@@ -18,11 +18,14 @@ but you can always go back to Roland's firmware; see below.
 - Moving through a menu reads the item you land on. Turning a value reads the
   new value, and a setting is read with its name.
 - Tabbed pages announce the tab. A dialog is read on its own, then its
-  selected button.
+  selected button, and when it closes you hear where it left you.
 - On the main screen, which Roland calls the top screen, you hear "top screen"
   when you get there, and a bank change is its letter, on every screen. Pads
   are silent wherever they play a sound, and named on screens where you pick
-  one, such as sampling, export or delete.
+  one, such as sampling, export or delete. In chromatic mode the grid of
+  semitone offsets isn't read.
+- Holding SHIFT and pressing a pad opens what's printed above it, such as
+  INIT PARAM on pad 6, and that's read like any other screen.
 - GATE, LOOP, REVERSE, BPM SYNC and EXT SOURCE say whether they're on or off,
   and turning an effect on says its name.
 - In the file lists, a sample's name is read once you've stayed on it for two
@@ -36,9 +39,21 @@ isn't recorded when you sample or resample.
 ## Speech settings
 
 Hold SHIFT and press EXIT on any screen. Turn VALUE to choose Speed, Pitch,
-Voice, Volume, Abbreviations or Screen reading, press VALUE to edit it, turn
-to change it, and press again when you're done. EXIT saves and closes. The
-settings are kept on the SP.
+Voice, Volume, Abbreviations, Screen reading or Knob wait, press VALUE to edit
+it, turn to change it, and press again when you're done. EXIT saves and
+closes. The settings are kept on the SP.
+
+Knob wait is how long a value you're turning, such as an effect's CUTOFF on
+CTRL 1, has to stay still before it's read. It goes from 0 to 2000
+milliseconds in steps of 100, and starts at 1200. At 0, every step is read as
+you turn.
+
+Two more things work with SHIFT and EXIT from any screen:
+
+- Hold SHIFT and hold EXIT for a second to turn speech off or on. It says
+  which, and doesn't save, so restarting the SP brings back whatever the
+  settings menu last saved.
+- Hold SHIFT and tap EXIT twice to read everything on the screen.
 
 ## What's different
 
