@@ -1177,9 +1177,10 @@ def chain():
                        'PATTERN CHAIN [1] | REPEAT All', 'G.1', 'G.1', 'G.1', 'G.2',
                        'delete, G.2', 'Current', 'Off'])
 
-# REMAIN held on the top screen, as runs/68 drew it: page 49, a list of
-# names and values, one on white; let go, the top screen again. Each line
-# is said, name and value together; letting go says nothing.
+# REMAIN tapped on the top screen, as runs/68 drew it: page 49, a list of
+# names and values, one on white; let go within half a second, the top
+# screen again. Each line is said, name and value together, as it closes;
+# letting go says nothing more.
 def remain():
     L = '=8008C665:'
     d = main_screen(0, 0, 'A-13')
@@ -1190,8 +1191,8 @@ def remain():
           f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
           f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
           f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
-    d += ['3500 KEY UP 24', '3500 PAGE 84'] + main_screen(3500, 0, 'A-13')
-    d += ['5000 VALUE']
+    d += ['2300 KEY UP 24', '2300 PAGE 84'] + main_screen(2300, 0, 'A-13')
+    d += ['4000 VALUE']
     write('remain', d, ['top screen',
                         'STORAGE AVAILABLE 14.36GB | PROJECT 1 PROJECT_01 | NAME New Sample | '
                         'Color White | Remaining Time -00:05 | STEREO/MONO STEREO'])
@@ -1410,6 +1411,82 @@ def importprogress():
                                 'destination: PAD B14', 'Import sample | WAIT: IMPORTING',
                                 'Operation Completed!', 'destination: PRESS PAD'])
 
+# REMAIN held, as for giving pads their buses: the same page, but held
+# past half a second it is "REMAIN" alone. The pads pressed meanwhile draw
+# nothing, as LOG009 recorded, and letting go says nothing.
+def remainhold():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['3000 KEY DOWN 0c', '3000 PAD 13', '3120 KEY UP 0c',
+          '3500 KEY DOWN 08', '3500 PAD 9', '3620 KEY UP 08',
+          '4000 KEY DOWN 0c', '4000 PAD 13', '4120 KEY UP 0c']
+    d += ['4500 KEY UP 24', '4500 PAGE 84'] + main_screen(4500, 0, 'A-13')
+    d += ['6000 VALUE']
+    write('remainhold', d, ['top screen', 'REMAIN', 'A 13 BUS 1', 'A 9 BUS 1', 'A 13 DRY'])
+
+# REMAIN held and a pad hit at once, before the half second is up: that is
+# a hold too, and the pad's bus is all that is said, no "REMAIN".
+def remainfast():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['2150 KEY DOWN 0c', '2150 PAD 13', '2270 KEY UP 0c']
+    d += ['3500 KEY UP 24', '3500 PAGE 84'] + main_screen(3500, 0, 'A-13')
+    d += ['5000 VALUE']
+    write('remainfast', d, ['top screen', 'A 13 BUS 1'])
+
+# REMAIN held, then a bank key and EXT SOURCE, neither drawing anything:
+# the bank's sixteen pads given BUS 1 together, then DRY; the input flipped
+# to BUS 1. Each is said by what it set, EXT as Roland's abbreviations
+# have it said, external.
+def remainbank():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['3000 KEY DOWN 26', '3120 KEY UP 26', '3600 KEY DOWN 26', '3720 KEY UP 26',
+          '4200 KEY DOWN 12', '4320 KEY UP 12']
+    d += ['5000 KEY UP 24', '5000 PAGE 84'] + main_screen(5000, 0, 'A-13')
+    d += ['6500 VALUE']
+    write('remainbank', d, ['top screen', 'REMAIN', 'BANK B BUS 1', 'BANK B DRY',
+                            'external SOURCE BUS 1'])
+
+# REMAIN held and BUS FX pressed: BUS 1's and BUS 2's effects swapped, the
+# sim's Filter+Drive and Reverb, nothing drawn; then swapped back.
+def remainswap():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['3000 KEY DOWN 10', '3120 KEY UP 10', '3800 KEY DOWN 10', '3920 KEY UP 10']
+    d += ['4600 KEY UP 24', '4600 PAGE 84'] + main_screen(4600, 0, 'A-13')
+    d += ['6000 VALUE']
+    write('remainswap', d, ['top screen', 'REMAIN', 'swapped, BUS 1 Reverb | BUS 2 Filter+Drive',
+                            'swapped, BUS 1 Filter+Drive | BUS 2 Reverb'])
+
 # REMAIN with a sample's name too long for its line: FUN_8008C4A0 draws it
 # from x 56, not right-aligned, a character further every draw and whole
 # again once the rest fits, the line wiped and drawn every 50 ms. The line
@@ -1425,12 +1502,12 @@ def remainname():
           f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
           f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
     k = 0
-    for t in range(2000, 7000, 50):
+    for t in range(2000, 2300, 50):
         d += [f'{t} s1 FILL 0 27 127 35', f'{t} s1 1 27 _{L} NAME',
               f'{t} s1 SCROLL {k} 56 27 _{NAME}{name}']
         k = k + 1 if 5 * len(name[k:]) > 0x79 - 0x3C else 0
-    d += ['7000 KEY UP 24', '7000 PAGE 84'] + main_screen(7000, 0, 'A-13')
-    d += ['8500 VALUE']
+    d += ['2300 KEY UP 24', '2300 PAGE 84'] + main_screen(2300, 0, 'A-13')
+    d += ['4000 VALUE']
     write('remainname', d, ['top screen',
                             'STORAGE AVAILABLE 14.36GB | PROJECT 1 PROJECT_01 | '
                             'NAME file_name_example_140bpm_gmaj_whow | Color White | '
@@ -1972,6 +2049,10 @@ remain()
 project()
 importlist()
 remainname()
+remainhold()
+remainfast()
+remainbank()
+remainswap()
 importfolder()
 importscroll()
 importprogress()

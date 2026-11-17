@@ -88,9 +88,31 @@ static const uint32_t vt_base[] = {
    banks from 0x82E2CD08, as FUN_800DC6B8 reads them: GATE at 0xE0 (its
    parameter 0x6A), LOOP at 0xE4 (0x6B), BPM SYNC at 0xF0 (0x6E), and at
    0x10C (0x75) REVERSE in bit 0 and the ping pong loop in bit 1. The
-   current pad in its bank, 0 to 15, is at 0x82E2CD20. */
+   current pad in its bank, 0 to 15, is at 0x82E2CD20. The bus a pad plays
+   into is at 0x120 (parameter 0x7A): 0 DRY, 1 BUS 1, 2 BUS 2, as
+   FUN_800C5168 writes it in the top screen's status bar, BUS-1 or DRY. */
 #define PAD_STORE       0x82E2CD08u
 #define PAD_NOW         (*(volatile int32_t *)0x82E2CD20u)
+/* The name editor, RENAME PROJECT and RENAME SAMPLE, page 74: the page
+   keeps itself at 0x80CFD4E0, as its factory FUN_80064A00 stores it, and
+   its editor, made by FUN_800C4A18 at 0x8011CC3C, at +0x1A80. The editor
+   as FUN_8016D468 fills it: the name a byte a character from +0x9C, its
+   length at +0x4A4, the cursor at +0x4A0, set to 0 as it opens, and a
+   byte at +0x4BD the page sets to 1. */
+#define RENAME_PAGE     (*(volatile uint32_t *)0x80CFD4E0u)
+/* The bus the external input, INPUT and LINE IN, plays into, as the status
+   bar reads it for EXT, FUN_800D61F0's setting 0x2B: a word at 0x83FFB4AC,
+   0 DRY, 1 BUS 1, 2 BUS 2. */
+#define EXT_BUS         (*(volatile int32_t *)0x83FFB4ACu)
+/* The effect on each bus, 0 to 4, a halfword each from 0x82DFEF94, the
+   store at 0x82DFEED0 plus 0xC4, as FUN_800DA010 reads its setting 0x27C;
+   and the effects' names, Bypass first, as FUN_800D5940 takes them for
+   BUS SELECT: 49 pointers from 0x8020B3D8. */
+#define FX_TYPE(n)      (*(volatile int16_t *)(0x82DFEF94u + 2u * (uint32_t)(n)))
+#define FX_NAME(i)      (((const char *const *)0x8020B3D8u)[i])
+/* Whether each bus's effect is on, a halfword each from 0x82DFEF60, the
+   store's setting 0x276: off, BUS SELECT shows Bypass whatever is chosen. */
+#define FX_ON(n)        (*(volatile int16_t *)(0x82DFEF60u + 2u * (uint32_t)(n)))
 #define EXPORT_PAGE     (*(volatile uint32_t *)0x80CFD4E4u)
 #define PADOPS_PAGE     (*(volatile uint32_t *)0x80CFD490u)
 #define PAT_STORE       0x82DFFC88u
@@ -129,7 +151,9 @@ extern volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
 extern volatile uint32_t sim_padstore[], sim_patstore[], sim_seq_state;
 extern volatile int32_t sim_step_count, sim_step_slots, sim_step_last;
 extern volatile uint16_t sim_step_bits[];
-extern volatile int32_t sim_padnow;
+extern volatile int32_t sim_padnow, sim_extbus;
+extern volatile int16_t sim_fxtype[5], sim_fxon[5];
+extern const char *const sim_fxnames[49];
 extern volatile int32_t sim_bank;
 extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
 #define PICK_STORE      ((uint32_t)(uintptr_t)sim_store)
@@ -142,6 +166,11 @@ extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
 #define STEP_LAST       sim_step_last
 #define STEP_BITS       ((uint32_t)(uintptr_t)sim_step_bits)
 #define PAD_NOW         sim_padnow
+#define RENAME_PAGE     0u
+#define EXT_BUS         sim_extbus
+#define FX_TYPE(n)      sim_fxtype[n]
+#define FX_ON(n)        sim_fxon[n]
+#define FX_NAME(i)      sim_fxnames[i]
 #define EXPORT_PAGE     sim_export_page
 #define PADOPS_PAGE     sim_padops_page
 void sim_draw_icon(void);
@@ -333,6 +362,12 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80145EDFu, ROLE_CELL },             /* the effects grid's cells */
     { 0x80195269u, ROLE_TITLE },            /* 16 VELOCITY, PAD LINK GROUPS, MUTE GROUP */
     { 0x8013FE3Du, ROLE_IGNORE },           /* a second copy of those, a pixel over */
+    { 0x8011CC11u, ROLE_TITLE },            /* RENAME PROJECT and RENAME SAMPLE, page 74,
+                                               opened from REMAIN: LOG015 heard only its OK */
+    { 0x8016D75Bu, ROLE_IGNORE },           /* the name editor's row of characters to pick
+                                               from, ABCDEFGHIJKLMNOPQRSTUVWXYZ: the one
+                                               picked is said instead */
+    { 0x8016D771u, ROLE_IGNORE },           /* and the same row scrolled, FGHIJ... */
     { 0x8006BECDu, ROLE_TOAST },            /* STOP, RECORDING, METRO MODE ON */
     { 0x80149DD5u, ROLE_PAD },              /* the main screen's bank and pad */
     { 0x80149DC7u, ROLE_MAIN },             /* its pattern */
@@ -935,6 +970,7 @@ static int keep_for_menu(int type, int code, int step)
 #define PAGE_REC_INPUT 63                   /* sample mode's RECORD SETTING */
 #define PAGE_MICROSCOPE 80
 #define PAGE_REMAIN 49
+#define PAGE_RENAME 74
 #define PAGE_PROJECT 59
 /* Chromatic mode, SHIFT and pad 4: a grid of sixteen semitone offsets, -8
    to 7, one under each pad, the one a pad is playing on white. The
@@ -945,7 +981,7 @@ static int keep_for_menu(int type, int code, int step)
 #define CHROM_CELL_LIT  0x8008D30Du
 #define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
 enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS, PICK_PATTERNS, PICK_KEEP,
-       PICK_STEP };
+       PICK_STEP, PICK_BUS };
 
 static int pick_kind(uint32_t page, int pad, int *index)
 {
@@ -954,6 +990,14 @@ static int pick_kind(uint32_t page, int pad, int *index)
 
     if (pad < 0 || pad > 15)
         return PICK_NONE;
+    /* REMAIN held: a pad flips its bus between the one BUS FX has chosen
+       and DRY, which only its light shows. */
+    if (page == PAGE_REMAIN) {
+        if (bank < 0 || bank > 9)
+            return PICK_NONE;
+        *index = (int)bank * 16 + pad;
+        return PICK_BUS;
+    }
     /* The pattern screen's DELETE, from the bank the pads show, and COPY
        with a source chosen, choosing the samples to keep from theirs; a pad
        that sets COPY's destination instead is said as the screen shows
@@ -1019,8 +1063,43 @@ static int32_t pick_state(int kind, int index)
         return PAT_KEEP(index);
     case PICK_STEP:
         return step_on(index & 0xFF, index >> 8);
+    case PICK_BUS:
+        return *(volatile int32_t *)(PAD_STORE + (uint32_t)index * 0xACu + 0x120u);
     }
     return 0;
+}
+
+/* A bus by the status bar's names, DRY or BUS 1, after what it is for. */
+static void bus_words(char *t, size_t cap, const char *what, int32_t bus)
+{
+    if (bus == 0)
+        snprintf(t, cap, "%s DRY", what);
+    else
+        snprintf(t, cap, "%s BUS %ld", what, (long)bus);
+}
+
+/* REMAIN held, a bank key gives every pad in a bank one bus and EXT SOURCE
+   gives the input its bus: neither shows on screen. Every pad's bus and the
+   input's, as they were before the key reached the page, the pads' 0 to
+   159, the input's 160; and bus_key set for the reader to watch them. */
+static int32_t bus_before[161];
+static volatile uint8_t bus_key;
+#define KEY_BUS_FX 0x10
+static int16_t fx_before[2];
+
+/* The effect a bus shows, as BUS SELECT names it: Bypass while it is off. */
+static int16_t fx_shown(int bus)
+{
+    return FX_ON(bus) ? FX_TYPE(bus) : 0;
+}
+
+static void bus_snapshot(void)
+{
+    int i;
+
+    for (i = 0; i < 160; i++)
+        bus_before[i] = pick_state(PICK_BUS, i);
+    bus_before[160] = EXT_BUS;
 }
 
 /* The playback buttons, BPM SYNC to REVERSE, keys 0x1D to 0x20, as
@@ -1129,10 +1208,25 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
         d.y1 = 3;
         d.ink = pat_banks();
     }
-    /* EXT SOURCE, pressed or let go, with the input's state before. */
-    if ((type == 5 || type == 6) && d.y == KEY_EXT_SOURCE && !shift_down) {
+    /* EXT SOURCE, pressed or let go, with the input's state before; on
+       REMAIN's page it sets the input's bus instead, below. */
+    if ((type == 5 || type == 6) && d.y == KEY_EXT_SOURCE && !shift_down
+        && page != PAGE_REMAIN) {
         d.y1 = 1;
         d.ink = EXT_ON != 0;
+    }
+    /* BUS FX with REMAIN held swaps BUS 1's and BUS 2's effects, as
+       FUN_800C9788 does at 0x800CAE0C: the two before it. */
+    if (type == 5 && page == PAGE_REMAIN && d.y == KEY_BUS_FX) {
+        fx_before[0] = fx_shown(1);
+        fx_before[1] = fx_shown(2);
+        d.y1 = 5;
+    }
+    /* A bank key or EXT SOURCE with REMAIN held: the buses before it. */
+    if (type == 5 && page == PAGE_REMAIN
+        && (d.y == KEY_EXT_SOURCE || (d.y >= 0x25 && d.y <= 0x29))) {
+        bus_snapshot();
+        d.y1 = 4;
     }
     /* A playback button goes with the current pad's settings before the
        page sees it. With SHIFT, BPM SYNC and GATE set the whole bank and
@@ -1307,6 +1401,26 @@ static int pad_page;
 /* The last key pressed, and what DEL last emptied from a chain's slot. */
 #define KEY_DEL 0x1A
 static int last_key = -1;
+/* REMAIN, key 0x24. Its page, the current pad's sample, shows the moment
+   it goes down and goes as it comes up; held, it is also how pads, banks
+   and EXT SOURCE are given their buses, and more, none of which the page
+   shows. So the page is said only for a tap: let go within REMAIN_HOLD,
+   its lines are said as it closes; held longer, "REMAIN" alone, and the
+   reader keeps out of the way. remain_at is when it went down. */
+#define KEY_REMAIN 0x24
+#define REMAIN_HOLD MS_TO_TICKS(500)
+static uint32_t remain_at;
+static uint8_t remain_held, remain_spoke, remain_padded;
+static uint32_t bus_key_at, swap_key_at, freeze_key_at;
+static uint8_t swap_key, freeze_key, freeze_active;
+/* BUS FX pressed with REMAIN held also brings up BUS SELECT over REMAIN's
+   page: its boxes and the page's lines, read together, are noise beside
+   the swap, so the screen is not read again until REMAIN is let go. */
+static uint8_t remain_swapped;
+/* A bank key's watch, or EXT SOURCE's: EXT SOURCE writes a pad's record
+   too, B 3's on the unit, which is not news. */
+static uint8_t bus_ext;
+static void remain_keep(void);
 static char chain_removed[ITEM_TEXT];
 /* The pattern's state, STOP-PTN C1 or PLAY-PTN C1, is said as soon as it
    settles: one pad draws STOP and then PLAY a frame later. */
@@ -1848,12 +1962,16 @@ static int take(const struct draw *d)
                      (unsigned long)d->tick, d->y, (long)((int32_t)d->site >> 8),
                      step_mask((int32_t)d->site >> 8), (long)STEP_COUNT, (long)STEP_SLOTS,
                      (long)STEP_LAST);
+        /* A pad on REMAIN's page means it is held: no "REMAIN", the pad's
+           bus says enough. */
+        if (d->y1 == PICK_BUS)
+            remain_padded = 1;
         if (npicks < (int)(sizeof picks / sizeof picks[0])) {
             picks[npicks].kind = d->y1;
             picks[npicks].index = (int32_t)d->site;
             picks[npicks].before = d->ink;
             picks[npicks].tick = d->tick;
-            picks[npicks].resolved = d->y1 != PICK_STEP;
+            picks[npicks].resolved = d->y1 != PICK_STEP && d->y1 != PICK_BUS;
             npicks++;
         }
         last_pick = d->tick;
@@ -1877,6 +1995,45 @@ static int take(const struct draw *d)
            shift_down is the interface task's, ahead of the model. */
         if (d->y == KEY_SHIFT && (d->x == 5 || d->x == 6))
             shift_held = d->x == 5;
+        /* REMAIN down starts the wait; up before it is over is a tap, and
+           the page's lines, still on the model, are kept to be said. */
+        if (d->y == KEY_REMAIN && d->x == 5 && !remain_held) {
+            /* REMAIN also closes a held effect screen, onto its own page. */
+            freeze_active = 0;
+            remain_swapped = 0;
+            remain_held = 1;
+            remain_spoke = 0;
+            remain_padded = 0;
+            remain_at = d->tick;
+        }
+        /* A bank key or EXT SOURCE on REMAIN's page, its buses kept: watched
+           until one changes. Like a pad, it means REMAIN is held. */
+        if (d->x == 5 && d->y1 == 4) {
+            bus_ext = d->y == KEY_EXT_SOURCE;
+            bus_key = 1;
+            bus_key_at = d->tick;
+            remain_padded = 1;
+        }
+        if (d->x == 5 && d->y1 == 5) {
+            swap_key = 1;
+            swap_key_at = d->tick;
+            remain_padded = 1;
+            remain_swapped = 1;
+        }
+        /* An effect's button with REMAIN held keeps its edit screen up
+           once let go: said as "held" after the screen. */
+        if (d->x == 5 && remain_held && d->y >= 0x2B && d->y <= 0x30) {
+            freeze_key = 1;
+            freeze_key_at = d->tick;
+            remain_padded = 1;
+        }
+        if (d->y == KEY_REMAIN && d->x == 6 && remain_held) {
+            remain_held = 0;
+            remain_swapped = 0;
+            if (page_now == PAGE_REMAIN && !remain_spoke && !remain_padded
+                && d->tick - remain_at < REMAIN_HOLD)
+                remain_keep();
+        }
         if (d->x == 5) {
             last_press = d->tick;
             press_seen = 1;
@@ -2307,11 +2464,67 @@ static const char *const effect_names[] = {
    the screen, as the title over the effects grid, else the one effect whose
    name it begins, since a grid page showing none selected has no title.
    "DJFX .." begins two and stays as it is. */
+/* A pad colour, 1 to 127, as its pad lights it. FUN_800C06F0 makes the
+   light from the number: no table, a turn of the colour wheel at full
+   strength, number 1 blue and on through cyan, green, yellow, red and
+   magenta back to blue at 127. The hue in the usual sense, red at 0, is
+   240 less that turn, named in 24 steps of 15 degrees, about five numbers
+   a name, so that someone who cannot see the pad knows what it will be;
+   chosen on 17 November 2026. 0 is Default and 128 White, which
+   the screen names itself. */
+static const char *colour_name(int n)
+{
+    static const char *const names[24] = {
+        "red", "orange-red", "orange", "amber", "yellow", "yellow-green",
+        "lime", "leaf green", "green", "emerald", "mint", "turquoise",
+        "cyan", "sky blue", "azure", "cornflower blue", "blue", "royal blue",
+        "violet", "purple", "magenta", "hot pink", "pink", "rose",
+    };
+    int turn = (255 * (n - 1) / 127) * 360 / 255;
+    int hue = ((240 - turn) % 360 + 360) % 360;
+
+    return names[((hue * 2 + 15) / 30) % 24];
+}
+
+/* A colour's number, on a line whose name is a colour's, BUS1 Color,
+   PAD-3, the sample's Color, with the colour it makes: "12 sky blue". */
+static const char *with_colour(const struct item *it)
+{
+    static char said[2][ITEM_TEXT + 16];
+    static int which;
+    const char *t = it->text, *l;
+    int n = 0, i, digits = 0;
+
+    while (*t == ' ')
+        t++;
+    for (; t[digits] >= '0' && t[digits] <= '9'; digits++)
+        n = n * 10 + (t[digits] - '0');
+    if (digits == 0 || digits > 3 || (t[digits] != 0 && t[digits] != ' ') || n < 1 || n > 127)
+        return NULL;
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *o = &items[i];
+        if (!live(o) || o == it || o->surf != it->surf || o->x >= it->x
+            || o->y - it->y > 2 || it->y - o->y > 2)
+            continue;
+        for (l = o->text; *l == ' '; l++)
+            ;
+        if (strstr(l, "Color") != NULL || strncmp(l, "PAD-", 4) == 0) {
+            which ^= 1;
+            snprintf(said[which], sizeof said[which], "%d %s", n, colour_name(n));
+            return said[which];
+        }
+    }
+    return NULL;
+}
+
 static const char *full_text(const struct item *it)
 {
     size_t n = strlen(it->text), k;
     const char *found = NULL;
     int i;
+
+    if ((found = with_colour(it)) != NULL)
+        return found;
 
     /* The chain's heading without the (*) a change adds, which OpenEVV
        reads as "asterisk". */
@@ -2665,7 +2878,7 @@ static int say_focus(const struct item *it)
         const struct item *v = &items[i];
         if (v != it && live(v) && v->row_sel && row_label(v) == it) {
             last_label = it;
-            return say3(it->text, v->text, NULL);
+            return say3(it->text, full_text(v), NULL);
         }
     }
     return say(it);
@@ -3240,14 +3453,39 @@ static int trrec_showing(void)
 }
 
 /* The REMAIN page, a line at a time, each name with its value. */
+/* REMAIN's page shares the screen: with an effect's edit screen frozen
+   over it, held there by REMAIN, and with the top screen's status bar
+   beneath. LOG011 heard all three read as one. Only one layer's lines are
+   read: the effect's while one is being held, else the page's own, known
+   by its first line, STORAGE AVAILABLE. */
+#define REMAIN_FIRST 0x80194097u
+static uint32_t rows_surf;
+
+static uint32_t remain_layer(void)
+{
+    int i;
+
+    if (freeze_key || freeze_active)
+        for (i = 0; i < ITEMS; i++)
+            if (live(&items[i]) && items[i].role == ROLE_EFFECT)
+                return items[i].surf;
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].site == REMAIN_FIRST)
+            return items[i].surf;
+    return 0;
+}
+
 static int want_drawn(const struct item *it)
 {
-    return drawn_now(it) && !is_popup(it);
+    return drawn_now(it) && !is_popup(it) && (rows_surf == 0 || it->surf == rows_surf);
 }
 
 static void say_rows(struct item **order)
 {
-    int n = in_order(order, ITEMS, want_drawn), i, k;
+    int n, i, k;
+
+    rows_surf = remain_layer();
+    n = in_order(order, ITEMS, want_drawn);
 
     for (i = 0; i < n; i = k) {
         const char *part[3] = { NULL, NULL, NULL };
@@ -3257,6 +3495,55 @@ static void say_rows(struct item **order)
                 part[m++] = order[k]->text;
         say3(part[0], part[1], part[2]);
     }
+    rows_surf = 0;
+}
+
+/* A tap of REMAIN: its page's lines, as say_rows makes them, kept here at
+   the moment it is let go, while they are still on the model, and said in
+   the batch that follows, after the page has gone. say_rows writes to the
+   batch, so it is pointed here for the while. */
+static char remain_said[24 * WIDE];
+static size_t remain_used;
+static int remain_count;
+
+static void remain_keep(void)
+{
+    static struct item *order[ITEMS];
+    char *out = b_out;
+    size_t cap = b_cap, used = b_used;
+    int count = b_count;
+
+    b_out = remain_said;
+    b_cap = sizeof remain_said;
+    b_used = 0;
+    b_count = 0;
+    say_rows(order);
+    remain_used = b_used;
+    remain_count = b_count;
+    b_out = out;
+    b_cap = cap;
+    b_used = used;
+    b_count = count;
+    remain_spoke = 1;
+}
+
+/* What remain_keep kept, into the batch, each phrase as it was made. */
+static void remain_say(void)
+{
+    size_t at = 0;
+
+    while (remain_count > 0 && at < remain_used) {
+        size_t n = strlen(remain_said + at);
+        if (b_used + n + 1 < b_cap && b_count < 24 && !in_batch(remain_said + at)) {
+            memcpy(b_out + b_used, remain_said + at, n + 1);
+            b_used += n + 1;
+            b_count++;
+        }
+        at += n + 1;
+        remain_count--;
+    }
+    remain_count = 0;
+    remain_used = 0;
 }
 
 /* INPUT FX Setting's strings: EFX Type's value beside its name, in the
@@ -3491,6 +3778,14 @@ static void new_screen(struct item **order)
     /* REMAIN's page, shown while the key is held on the top screen, is
        all information. */
     if (page_now == PAGE_REMAIN) {
+        /* Held past the wait: its name alone, once. After that, what
+           changes on it, as VALUE moves to PROJECT or NAME, line by line. */
+        if (remain_held && !remain_spoke) {
+            remain_spoke = 1;
+            if (!remain_padded)
+                say3("REMAIN", NULL, NULL);
+            return;
+        }
         say_rows(order);
         return;
     }
@@ -3694,6 +3989,23 @@ static void say_picks(void)
             say3(t, NULL, NULL);
             continue;
         }
+        /* A pad's bus, once the page has flipped it: "A 13 BUS 1", "A 13
+           DRY". */
+        if (kind == PICK_BUS) {
+            if (!picks[i].resolved) {
+                picks[kept++] = picks[i];
+                continue;
+            }
+            if (picks[i].resolved == 2 || now == before)
+                continue;
+            {
+                char what[8];
+                snprintf(what, sizeof what, "%c %d", 'A' + index / 16, index % 16 + 1);
+                bus_words(t, sizeof t, what, now);
+            }
+            say3(t, NULL, NULL);
+            continue;
+        }
         if (kind == PICK_PATTERN) {
             if (now == before || now < 0 || now >= 160)
                 continue;
@@ -3709,6 +4021,206 @@ static void say_picks(void)
         say3(t, NULL, NULL);
     }
     npicks = kept;
+}
+
+/* The name editor, read from its memory: none of its name reaches the
+   screen's text. Its state as last said, and as last seen. */
+struct rename_state {
+    char text[33];
+    int32_t len, cursor;
+    uint8_t mode;
+};
+static struct rename_state rn_said, rn_seen;
+static uint8_t rn_open;
+
+static uint32_t rename_editor(void)
+{
+    uint32_t page = RENAME_PAGE, ed;
+
+    if (page_now != PAGE_RENAME || page < 0x80000000u || page >= 0x84000000u)
+        return 0;
+    ed = *(volatile uint32_t *)(page + 0x1A80u);
+    return ed >= 0x80000000u && ed < 0x84000000u ? ed : 0;
+}
+
+static int rename_read(struct rename_state *st)
+{
+    uint32_t ed = rename_editor();
+    int i, n;
+
+    if (ed == 0)
+        return 0;
+    memset(st, 0, sizeof *st);
+    n = *(volatile int32_t *)(ed + 0x4A4u);
+    if (n < 0 || n > 32)
+        return 0;
+    for (i = 0; i < n; i++)
+        st->text[i] = *(volatile char *)(ed + 0x9Cu + (uint32_t)i);
+    st->text[n] = 0;
+    st->len = n;
+    st->cursor = *(volatile int32_t *)(ed + 0x4A0u);
+    st->mode = *(volatile uint8_t *)(ed + 0x4BDu);
+    return 1;
+}
+
+/* A character as it should be heard: capitals marked, and every mark the
+   picker offers by name, as a screen reader names them. Said bare, most of
+   them were dropped before they reached the voice: LOG019 heard nothing
+   for ! to /, : to @, [ ] \\ and { | } ` ^. */
+static void rename_char(char *t, size_t cap, char c)
+{
+    static const struct { char c; const char *name; } marks[] = {
+        { ' ', "space" }, { '!', "exclamation" }, { '"', "quote" }, { '#', "number" },
+        { '$', "dollar" }, { '%', "percent" }, { '&', "and" }, { '\'', "apostrophe" },
+        { '(', "left paren" }, { ')', "right paren" }, { '*', "star" }, { '+', "plus" },
+        { ',', "comma" }, { '-', "dash" }, { '.', "dot" }, { '/', "slash" },
+        { ':', "colon" }, { ';', "semicolon" }, { '<', "less than" }, { '=', "equals" },
+        { '>', "greater than" }, { '?', "question" }, { '@', "at" },
+        { '[', "left bracket" }, { '\\', "backslash" }, { ']', "right bracket" },
+        { '^', "caret" }, { '_', "underscore" }, { '`', "grave" },
+        { '{', "left brace" }, { '|', "bar" }, { '}', "right brace" }, { '~', "tilde" },
+    };
+    unsigned i;
+
+    if (c >= 'A' && c <= 'Z') {
+        snprintf(t, cap, "cap %c", c);
+        return;
+    }
+    if (c == 0) {
+        snprintf(t, cap, "end");
+        return;
+    }
+    for (i = 0; i < sizeof marks / sizeof marks[0]; i++)
+        if (marks[i].c == c) {
+            snprintf(t, cap, "%s", marks[i].name);
+            return;
+        }
+    snprintf(t, cap, "%c", c);
+}
+
+/* Watched every poll: a change makes a batch, as a change on screen does. */
+static void rename_watch(uint32_t now)
+{
+    struct rename_state st;
+
+    if (!rename_read(&st)) {
+        rn_open = 0;
+        return;
+    }
+    if (memcmp(&st, &rn_seen, sizeof st) != 0) {
+        log_line("%lu rename cursor %ld len %ld mode %d |%s|\n", (unsigned long)now,
+                 (long)st.cursor, (long)st.len, st.mode, st.text);
+        rn_seen = st;
+        if (!pending)
+            first_pending = now;
+        pending = 1;
+        last_change = now;
+    }
+}
+
+/* The editor has two modes, as LOG017 found its byte at +0x4BD: 1, the
+   name, where VALUE moves the cursor along its 31 places and past them to
+   OK; 0, picking, where VALUE turns the character at the cursor through
+   the ones it may be, written into the name as it turns, and pressing
+   VALUE goes back. Opened: the title and the name, then the cursor. In the
+   name, a move says its place and the character there, "4, cap J", or OK;
+   picking says the character alone, "pick, cap P" as it begins. */
+static void rename_place(const struct rename_state *st)
+{
+    char c[16], t[48];
+
+    if (st->cursor >= st->len) {
+        say3("OK", NULL, NULL);
+        return;
+    }
+    if (st->cursor < 0)
+        return;
+    rename_char(c, sizeof c, st->text[st->cursor]);
+    snprintf(t, sizeof t, "%ld, %s", (long)st->cursor + 1, c);
+    say3(t, NULL, NULL);
+}
+
+static void rename_say(void)
+{
+    struct rename_state st;
+    char c[16];
+    int i, blank = 1;
+
+    if (!rename_read(&st))
+        return;
+    if (!rn_open) {
+        rn_open = 1;
+        /* The title as the page chooses it, FUN_8011CB58: RENAME SAMPLE
+           when its word at +0x1A88 is set, else RENAME PROJECT. Read from
+           the page, as LOG018 found the title's text gone from the screen
+           by the time the name was said. */
+        say3(*(volatile uint32_t *)(RENAME_PAGE + 0x1A88u) ? "RENAME SAMPLE" : "RENAME PROJECT",
+             NULL, NULL);
+        for (i = 0; i < st.len; i++)
+            blank &= st.text[i] == ' ';
+        say3(blank ? "empty" : st.text, NULL, NULL);
+        rn_said = st;
+        rename_place(&st);
+        return;
+    }
+    if (memcmp(&st, &rn_said, sizeof st) == 0)
+        return;
+    if (st.mode == 0 && st.cursor >= 0 && st.cursor < st.len
+        && (rn_said.mode != 0 || st.text[st.cursor] != rn_said.text[st.cursor])) {
+        rename_char(c, sizeof c, st.text[st.cursor]);
+        say3(rn_said.mode != 0 ? "pick," : c, rn_said.mode != 0 ? c : NULL, NULL);
+    } else if (st.mode != 0 && (st.cursor != rn_said.cursor || rn_said.mode == 0
+                                || strcmp(st.text, rn_said.text) != 0)) {
+        rename_place(&st);
+    }
+    rn_said = st;
+}
+
+/* An effect by its number, Bypass to Cloud Delay and DJFX Delay. */
+static const char *fx_name(int16_t n)
+{
+    return n >= 0 && n < 49 ? FX_NAME(n) : NULL;
+}
+
+/* BUS FX's swap, with what each bus now has: "swapped, BUS 1 Delay, BUS 2
+   Filter+Drive". */
+static void swap_say(void)
+{
+    if (swap_key != 2)
+        return;
+    swap_key = 0;
+    say3("swapped,", "BUS 1", fx_name(fx_shown(1)));
+    say3("BUS 2", fx_name(fx_shown(2)), NULL);
+}
+
+/* What a bank key or EXT SOURCE changed with REMAIN held: "BANK B BUS 1",
+   "EXT SOURCE DRY". A bank is said by the bus its pads now share, the
+   first changed pad's. */
+static void bus_say(void)
+{
+    char t[32], what[16];
+    int b, i;
+
+    if (bus_key != 2)
+        return;
+    bus_key = 0;
+    if (bus_ext) {
+        if (EXT_BUS != bus_before[160]) {
+            bus_words(t, sizeof t, "EXT SOURCE", EXT_BUS);
+            say3(t, NULL, NULL);
+        }
+        return;
+    }
+    for (b = 0; b < 10; b++)
+        for (i = b * 16; i < b * 16 + 16; i++) {
+            int32_t now = pick_state(PICK_BUS, i);
+            if (now != bus_before[i]) {
+                snprintf(what, sizeof what, "BANK %c", 'A' + b);
+                bus_words(t, sizeof t, what, now);
+                say3(t, NULL, NULL);
+                break;
+            }
+        }
 }
 
 /* The playback buttons pressed, each as its name and what it now is, in the
@@ -3811,9 +4323,10 @@ static void same_screen(struct item **order)
             it->changed = 0;
             continue;
         }
-        /* A value turned on the selected row says the value alone. */
+        /* A value turned on the selected row says the value alone, a
+           colour's with its name. */
         if (it->changed == 1 && (l = row_label(it)) != NULL && l->row_sel) {
-            if (say3(it->text, NULL, NULL))
+            if (say3(full_text(it), NULL, NULL))
                 it->changed = 0;
         } else if (say_focus(it)) {
             it->changed = 0;
@@ -4095,8 +4608,8 @@ int screen_poll(char *phrases, size_t cap, int *count)
     /* A TR-REC step changes a moment after its pad, as the sequencer takes
        the note: watched until it does, or a quarter of a second passes. */
     for (i = 0; i < npicks; i++)
-        if (picks[i].kind == PICK_STEP && !picks[i].resolved) {
-            if (pick_state(PICK_STEP, picks[i].index) != picks[i].before) {
+        if ((picks[i].kind == PICK_STEP || picks[i].kind == PICK_BUS) && !picks[i].resolved) {
+            if (pick_state(picks[i].kind, picks[i].index) != picks[i].before) {
                 picks[i].resolved = 1;
             } else if (now - picks[i].tick > STEP_WAIT) {
                 picks[i].resolved = 2;
@@ -4108,6 +4621,38 @@ int screen_poll(char *phrases, size_t cap, int *count)
             pending = 1;
             last_change = now;
         }
+    /* A bank key's or EXT SOURCE's buses, watched as a TR-REC step is. */
+    if (bus_key == 1) {
+        int changed = 0;
+        if (bus_ext)
+            changed = EXT_BUS != bus_before[160];
+        for (i = 0; i < 160 && !changed && !bus_ext; i++)
+            changed = pick_state(PICK_BUS, i) != bus_before[i];
+        if (changed) {
+            bus_key = 2;
+            if (!pending)
+                first_pending = now;
+            pending = 1;
+            last_change = now;
+        } else if (now - bus_key_at > STEP_WAIT) {
+            bus_key = 0;
+        }
+    }
+    rename_watch(now);
+    /* BUS FX's swap: done when either effect has moved, or, the two the
+       same so that nothing can, once the wait is over. */
+    if (swap_key == 1) {
+        if (fx_shown(1) != fx_before[0] || fx_shown(2) != fx_before[1]
+            || (now - swap_key_at > STEP_WAIT && fx_before[0] == fx_before[1])) {
+            swap_key = 2;
+            if (!pending)
+                first_pending = now;
+            pending = 1;
+            last_change = now;
+        } else if (now - swap_key_at > STEP_WAIT) {
+            swap_key = 0;
+        }
+    }
     /* The settings menu answers at once, and nothing else speaks while it
        is open, or while screen reading is off. */
     if (menu_n > 0) {
@@ -4184,6 +4729,11 @@ int screen_poll(char *phrases, size_t cap, int *count)
         if (live(&items[i]) && items[i].changed == 1 && items[i].rapid > 0
             && now - items[i].last_change >= rest_of(&items[i]))
             due = 1;
+    /* REMAIN's page waits while the key is down and the wait is not over:
+       a tap or a hold is not known yet. */
+    if (due && page_now == PAGE_REMAIN && remain_held && !remain_spoke && !remain_padded
+        && now - remain_at < REMAIN_HOLD)
+        due = 0;
     if (!due)
         return 0;
     /* What was erased and not drawn back within a frame is gone, and so is a
@@ -4251,6 +4801,9 @@ int screen_poll(char *phrases, size_t cap, int *count)
     pat_pending = 0;
     say_picks();
     say_presses();
+    remain_say();
+    bus_say();
+    swap_say();
     if (chain_removed[0] && page_now == PAGE_CHAIN)
         say3("delete,", chain_removed, NULL);
     chain_removed[0] = 0;
@@ -4258,6 +4811,17 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < ITEMS; i++)
             if (items[i].role != ROLE_MESSAGE)
                 items[i].changed = 0;
+    } else if (page_now == PAGE_RENAME && rename_editor() != 0 && screen_mode != SCREEN_ALL) {
+        /* The name editor is said from its memory, by rename_say below: its
+           OK, redrawn each time the mode changes, and its rows of
+           characters are not read from the screen. */
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = 0;
+        page_pending = 0;
+    } else if (remain_swapped && remain_held && screen_mode != SCREEN_ALL) {
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = 0;
+        page_pending = 0;
     } else if (screen_mode == SCREEN_ALL) {
         for (i = 0; i < nburst; i++)
             say(&items[burst[i]]);
@@ -4311,6 +4875,28 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < ITEMS; i++)
             if (items[i].changed == 2 || !live(&items[i]))
                 items[i].changed = 0;
+    }
+    /* The name editor's name and cursor, after its title and OK. */
+    rename_say();
+    /* An effect's edit screen kept up by REMAIN: "held" once the screen
+       has been said; given up after a second. */
+    if (freeze_key || freeze_active) {
+        int shown = 0;
+        for (i = 0; i < ITEMS && !shown; i++)
+            shown = live(&items[i]) && items[i].role == ROLE_EFFECT;
+        if (freeze_key && shown) {
+            say3("held", NULL, NULL);
+            freeze_key = 0;
+            freeze_active = 1;
+        } else if (freeze_key && now - freeze_key_at > 1500u) {
+            freeze_key = 0;
+        } else if (freeze_active && !shown && page_now == 84) {
+            /* EXIT closing the held screen: the top screen, which leaving an
+               effect's display otherwise never says, as it comes and goes
+               with every touch of a knob. */
+            say3("top screen", NULL, NULL);
+            freeze_active = 0;
+        }
     }
     dialog_closed = 0;
     efx_was_showing = efx_showing;

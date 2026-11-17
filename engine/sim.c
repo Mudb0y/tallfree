@@ -93,6 +93,24 @@ volatile int32_t sim_bank;
    current pad in its bank. */
 volatile uint32_t sim_padstore[160 * 0xAC / 4 + 16];
 volatile int32_t sim_padnow;
+/* The external input's bus, the word at 0x83FFB4AC: 0 DRY, 1 BUS 1. */
+volatile int32_t sim_extbus;
+/* Each bus's effect, BUS 1 to BUS 4 at 1 to 4, as at 0x82DFEF94: BUS 1
+   Filter+Drive and BUS 2 Reverb to start; and the effects' names, as the
+   firmware's table at 0x8020B3D8 has them. */
+volatile int16_t sim_fxtype[5] = { 0, 1, 10, 0, 0 };
+/* And whether each is on, as at 0x82DFEF60: BUS 1's and BUS 2's are. */
+volatile int16_t sim_fxon[5] = { 0, 1, 1, 0, 0 };
+const char *const sim_fxnames[49] = {
+    "Bypass", "Filter+Drive", "TimeCtrlDly", "Isolator", "Crusher", "Phaser", "Flanger",
+    "Overdrive", "Distortion", "Tape Echo", "Reverb", "WrmSaturator", "Resonator",
+    "DJFX Looper", "Chorus", "JUNO Chorus", "Tremolo/Pan", "Wah", "Sync Delay",
+    "Equalizer", "Lo-fi", "Ring Mod", "Chromatic PS", "Gt Amp Sim", "Stopper", "Downer",
+    "Slicer", "Auto Pitch", "Compressor", "COMPRESSOR 2", "Scatter", "404 VinylSim",
+    "303 VinylSim", "Zan-Zou", "Super Filter", "Hyper-Reso", "Ko-Da-Ma", "Ha-Dou",
+    "To-Gu-Ro", "Cassette Sim", "SBF", "SX Delay", "Vocoder", "Harmony", "SX Reverb",
+    "Sub Sonic", "Back Spin", "Cloud Delay", "DJFX Delay"
+};
 /* The pattern sequencer's store at 0x82DFFC88, and whether COPY is choosing
    the samples to keep, the flag at 0x2A of the store at 0x82E01144. */
 volatile uint32_t sim_patstore[0x800 / 4];
@@ -161,8 +179,32 @@ static int sim_page_factory(void *request)
         sim_patedit = *m == 5;
     /* EXT SOURCE as FUN_80134A98 sets the input, the word at 0x5C of the
        store: each press flips it. */
-    if (*m == 5 && m[1] == 0x12 && !sim_shift)
+    if (*m == 5 && m[1] == 0x12 && !sim_shift && page_now != 49)
         sim_store[0x5C / 4] = !sim_store[0x5C / 4];
+    /* With REMAIN held, its page 49 showing: EXT SOURCE flips the input's
+       bus between BUS 1 and DRY, and a bank key, A/F to E/J, gives its
+       bank's sixteen pads one bus, DRY if any was on a bus, else BUS 1. */
+    if (*m == 5 && page_now == 49 && m[1] == 0x12)
+        sim_extbus = !sim_extbus;
+    /* BUS FX there swaps BUS 1's and BUS 2's effects. */
+    if (*m == 5 && page_now == 49 && m[1] == 0x10) {
+        int16_t t = sim_fxtype[1];
+        sim_fxtype[1] = sim_fxtype[2];
+        sim_fxtype[2] = t;
+        t = sim_fxon[1];
+        sim_fxon[1] = sim_fxon[2];
+        sim_fxon[2] = t;
+    }
+    if (*m == 5 && page_now == 49 && m[1] >= 0x25 && m[1] <= 0x29) {
+        int k = m[1] - 0x25, i, any = 0;
+        uint32_t *bus;
+        for (i = 0; i < 16; i++)
+            any |= *(uint32_t *)((uint8_t *)sim_padstore + (k * 16 + i) * 0xAC + 0x120) != 0;
+        for (i = 0; i < 16; i++) {
+            bus = (uint32_t *)((uint8_t *)sim_padstore + (k * 16 + i) * 0xAC + 0x120);
+            *bus = !any;
+        }
+    }
     /* The playback buttons as FUN_800C9788 and FUN_801339C8 set the
        current pad: BPM SYNC, GATE, REVERSE flip; LOOP turns on, with SHIFT
        the ping pong loop, and off. */
@@ -225,6 +267,13 @@ static int sim_page_factory(void *request)
     if (*m != 16 || m[1] < 0 || m[1] > 15)
         return 0;
     pad = m[1];
+    /* REMAIN's page: a pad flips its bus, the word at 0x120 of its record,
+       between BUS 1, as BUS FX chooses it here, and DRY. */
+    if (page_now == 49) {
+        uint32_t *bus = (uint32_t *)((uint8_t *)sim_padstore + (sim_bank * 16 + pad) * 0xAC + 0x120);
+        *bus = *bus ? 0 : 1;
+        return 0;
+    }
     if (page_now == 60 && sim_seq[0] == 6) {
         if (sim_subpad)
             sim_seq[0x5A / 2] = (int16_t)(0x2F + PSTORE(0x2BC) * 16 + pad);
