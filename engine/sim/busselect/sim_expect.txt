@@ -1,0 +1,6 @@
+top screen
+BUS 2 | Bypass
+BUS 1 | Bypass
+BUS 3 and 4 OFF
+BUS 2 | Bypass
+BUS 3 and 4 ON

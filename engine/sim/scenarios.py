@@ -1899,6 +1899,30 @@ def fxtabs():
                         'BUS 4 | effects Type: Bypass', 'SIDE CHAIN | SOURCE DRY',
                         'DIRECT | Direct FX1 Filter+Drive', 'BUS 4 | effects Type: Bypass'])
 
+# BUS SELECT, the box BUS FX brings up, as LOG006 and LOG007 drew it: BUS 1
+# and BUS 2 over their effects, the selected one on white, and BUS 3-4 ON in
+# its corner, on white too, or OFF from other code. Each press says the bus
+# chosen and its effect, not the ON, which once came with it as "BUS 2 |
+# Bypass | ON"; VALUE held with BUS FX turning BUS 3-4 off says so, the next
+# press says the bus alone, and turning it back on says ON.
+def busselect():
+    BOX = [('=8016C211:', 'BUS 1', 17, 24), ('=8016C35B:', 'Bypass', 19, 41),
+           ('=8016C211:', 'BUS 2', 81, 24), ('=8016C35B:', 'Bypass', 83, 41)]
+    def buses(t, sel):
+        return [f'{t} s1 {x} {y} {"!" if (k // 2 == sel) else "_"}{site}{text}'
+                for k, (site, text, x, y) in enumerate(BOX)]
+    d = main_screen(0, 0, 'A-2')
+    d += ['1000 KEY DOWN 10', '1000 s1 29 2 _=8016C0CD:BUS SELECT',
+          '1000 s1 110 56 !=8016C3EF:ON', '1000 s1 69 56 _=800EE779:BUS 3-4'] + buses(1000, 1)
+    d += ['1150 KEY UP 10', '2500 KEY DOWN 10'] + buses(2500, 0) + ['2650 KEY UP 10']
+    d += ['4000 KEY DOWN 31', '4200 KEY DOWN 10', '4200 s1 FILL 100 54 128 64', '4200 s1 108 56 _=8016C3BB:OFF',
+          '4350 KEY UP 10', '4500 KEY UP 31']
+    d += ['6000 KEY DOWN 10'] + buses(6000, 1) + ['6150 KEY UP 10']
+    d += ['7500 KEY DOWN 31', '7700 KEY DOWN 10', '7700 s1 FILL 100 54 128 64', '7700 s1 110 56 !=8016C3EF:ON',
+          '7850 KEY UP 10', '8000 KEY UP 31', '9000 VALUE']
+    write('busselect', d, ['top screen', 'BUS 2 | Bypass', 'BUS 1 | Bypass', 'BUS 3 and 4 OFF',
+                           'BUS 2 | Bypass', 'BUS 3 and 4 ON'])
+
 menu()
 params()
 popup()
@@ -1965,3 +1989,4 @@ knobwait()
 undocount()
 favorite()
 fxtabs()
+busselect()

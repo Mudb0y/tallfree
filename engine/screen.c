@@ -309,6 +309,12 @@ enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE
    BUS 4 take the place of its "---" while a favourite is on. */
 #define FAV_LABEL       0x80136645u
 #define FAV_EFFECT      0x80136399u
+/* BUS SELECT, the box BUS FX brings up: BUS 1 and BUS 2, each over its
+   effect, the selected one on white; and in its corner BUS 3-4 with ON, on
+   white, or OFF, which other code draws, a little to the left and not on
+   white. VALUE held with BUS FX switches between them. */
+#define BUS34_ON        0x8016C3EFu
+#define BUS34_OFF       0x8016C3BBu
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -412,6 +418,10 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     /* The FAVORITE tab's effects and the routing's BUS 3 and BUS 4, or the
        "---" in their place: said with the favourite, and nowhere else. */
     { FAV_EFFECT, ROLE_FAV },
+    /* BUS SELECT's BUS 3-4 ON: never the focus, though on white, so not said
+       with the bus just chosen, as "BUS 2, Bypass, ON" was; and its OFF. */
+    { BUS34_ON, ROLE_UNLIT },
+    { BUS34_OFF, ROLE_UNLIT },
     { 0x8013682Fu, ROLE_FAV },              /* BUS 3 */
     { 0x8013686Du, ROLE_FAV },              /* BUS 4 */
     { 0x8013689Fu, ROLE_FAV },              /* --- */
@@ -3397,6 +3407,29 @@ static void fav_say(const struct item *num)
         say3("BUS 4", full_text(fx[1]), NULL);
 }
 
+/* BUS 3-4's ON or OFF in BUS SELECT, said with its name when it is not
+   what it was the last time the box showed, and the first time if OFF. */
+static void bus34_same(void)
+{
+    static char last[ITEM_TEXT];
+    struct item *state = NULL;
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        if (!live(it) || (it->site != BUS34_ON && it->site != BUS34_OFF))
+            continue;
+        it->changed = 0;
+        if (state == NULL || (int32_t)(it->last_drawn - state->last_drawn) > 0)
+            state = it;
+    }
+    if (state == NULL)
+        return;
+    if (last[0] != 0 ? strcmp(last, state->text) != 0 : !reads(state->text, "ON"))
+        say3("BUS 3 and 4", state->text, NULL);
+    memcpy(last, state->text, ITEM_TEXT);
+}
+
 /* VALUE turned on the FAVORITE tab redraws the favourite and both effects
    at once, three strings changing together, which would otherwise be taken
    for a new screen saying only its focus, FAVORITE:; and turned quickly,
@@ -3519,6 +3552,7 @@ static void new_screen(struct item **order)
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
         say_focus(order[i]);
+    bus34_same();
     /* The FAVORITE tab's focus, FAVORITE:, with the favourite it is on. */
     {
         const struct item *num = fav_number();
@@ -3731,6 +3765,7 @@ static void same_screen(struct item **order)
     if (efx_showing)
         efx_same();
     fav_same();
+    bus34_same();
     /* A choice newly made says what the screen now shows for it, changed or
        not: the BPM screen's tempo, when PROJECT gives way to the bank. */
     for (i = 0; i < ITEMS; i++)
