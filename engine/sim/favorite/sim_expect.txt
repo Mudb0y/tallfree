@@ -1,0 +1,10 @@
+top screen
+FAVORITE | FAVORITE: | Bypass
+1 | BUS 3 Equalizer | BUS 4 303 Vinyl Sim
+2 | BUS 3 warm saturator | BUS 4 303 Vinyl Sim
+3 | BUS 3 Reverb | BUS 4 303 Vinyl Sim
+4 | BUS 3 Downer | BUS 4 Lo-fi
+5 | BUS 3 To-Gu-Ro | BUS 4 Zan-Zou
+13 | BUS 3 Bypass | BUS 4 Bypass
+14 | BUS 3 Bypass | BUS 4 Bypass
+Bypass

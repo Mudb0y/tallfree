@@ -1783,6 +1783,122 @@ def knobwait():
                           'Settings saved | top screen', 'Filter+Drive', 'CUTOFF 827 hertz',
                           '8308', '707'])
 
+# Recording a pattern in chromatic mode, as LOG005 drew it: UNDO:0/16 beside
+# SCALE, counting each note played, 1/16, 2/16, 3/16, a moment after its
+# pad; then a key with SHIFT held taking one back, 2/16. The notes say
+# nothing; the one taken back is said.
+UNDO = '=80170723:'
+def undocount():
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 4', '1200 PAGE 8',
+          '1200 s0 8 12 _=801733B3:SCALE:Chrom', f'1200 s0 86 12 _{UNDO}UNDO:0/16']
+    d += [f'1200 s1 {x} {y} {CHROM_CELL}{t}' for x, y, t in CHROM_CELLS]
+    d += ['1200 s1 13 2 _=801120A1:CHROMATIC MODE', '1200 s1 91 20 =801119F5:BANK-PAD',
+          '1200 s1 100 28 =80111A79:A - 1', '1350 KEY UP 03', '1400 KEY UP 2a']
+    for k, (t, pad) in enumerate([(3000, 9), (3600, 5), (4200, 1)]):
+        x, y, text = CHROM_CELLS[{9: 8, 5: 4, 1: 0}[pad]]
+        d += [f'{t} PAD {pad}', f'{t} s1 {x} {y} !{CHROM_LIT}{text}',
+              f'{t + 50} s0 86 12 _{UNDO}UNDO:{k + 1}/16',
+              f'{t + 200} KEY UP {pad - 1:02x}', f'{t + 200} s1 {x} {y} {CHROM_CELL}{text}']
+    d += ['6000 KEY DOWN 2a', '6200 KEY DOWN 14', f'6280 s0 86 12 _{UNDO}UNDO:2/16',
+          '6400 KEY UP 14', '6600 KEY UP 2a']
+    d += ['8000 KEY DOWN 22', '8000 PAGE 84', '8000 s1 CLEAR', '8000 s0 CLEAR'] + \
+        main_screen(8000, 0, 'A-1')
+    d += ['8100 KEY UP 22', '9000 VALUE']
+    write('undocount', d, ['top screen',
+                           'CHROMATIC MODE | SCALE: chromatic | UNDO: 0/16 | BANK-PAD A-1',
+                           'UNDO: 2/16', 'top screen'])
+
+# EFX SET's FAVORITE tab, SHIFT and pad 16, as LOG005 drew it: FAVORITE: on
+# white with Bypass beside it, then VALUE turned through the favourites,
+# each drawing the effects it puts on BUS 3 and BUS 4, cut short, with the
+# routing's BUS 3 and BUS 4 where its "---" were. Three strings changing at
+# once used to be taken for a new screen, saying FAVORITE: alone, and the
+# steps between were lost. Each favourite is said with its effects in full;
+# one whose effects are the last one's says them again; Bypass alone.
+FAV = '=80136645:'
+FAVFX = '=80136399:'
+def favorite():
+    tabs = ['FAVORITE', 'BUS 3', 'BUS 4', 'SIDE CHAIN', 'DIRECT', 'OTHER']
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 16', '1200 PAGE 6', '1200 s0 CLEAR',
+          '1200 s0 103 2 =800EE779: 1/ 6']
+    d += [f'1200 s0 {x} 2 =80121751:{n}' for x, n in zip([5, 51, 79, 107, 156, 188], tabs)]
+    d += ['1200 s0 TAB 0 ' + ','.join(tabs),
+          '1200 s0 9 16 =801367A3:BUS 1', '1200 s0 39 16 =801367E1:BUS 2',
+          '1200 s0 72 16 =8013689F:---', '1200 s0 100 16 =801368D5:---',
+          f'1200 s0 63 54 !{FAV}FAVORITE:', '1200 s0 98 54 =800EE779:Bypass',
+          '1200 s0 5 54 =801366AD:ENTER: TYPE A', '1350 KEY UP 0f', '1400 KEY UP 2a']
+    def fav(t, n, fx=None, step=1):
+        out = [f'{t} KNOB 0 {step}']
+        if n == 'Bypass':
+            out += [f'{t} s0 FILL 0 36 128 50', f'{t} s0 FILL 66 12 128 22',
+                    f'{t} s0 72 16 =8013689F:---', f'{t} s0 100 16 =801368D5:---',
+                    f'{t} s0 98 54 =800EE779:Bypass']
+            return out
+        if fx is not None:
+            out += [f'{t} s0 68 16 =8013682F:BUS 3', f'{t} s0 96 16 =8013686D:BUS 4',
+                    f'{t} s0 25 40 {FAVFX}{fx[0]}', f'{t} s0 76 40 {FAVFX}{fx[1]}']
+        return out + [f'{t} s0 {118 if len(n) == 1 else 114} 54 =800EE779:{n}']
+    d += fav(3000, '1', ('Equalizer', '303 Viny..'))
+    d += fav(4000, '2', ('WrmSatur..', '303 Viny..'))
+    d += fav(5000, '3', ('Reverb', '303 Viny..'))
+    d += fav(5400, '4', ('Downer', 'Lo-fi'))
+    d += fav(5800, '5', ('To-Gu-Ro', 'Zan-Zou'))
+    d += fav(7000, '13', ('Bypass', 'Bypass'))
+    d += fav(8000, '14')
+    d += fav(9500, 'Bypass', step=-14)
+    d += ['11000 VALUE']
+    write('favorite', d, ['top screen', 'FAVORITE | FAVORITE: | Bypass',
+                          '1 | BUS 3 Equalizer | BUS 4 303 Vinyl Sim',
+                          '2 | BUS 3 warm saturator | BUS 4 303 Vinyl Sim',
+                          '3 | BUS 3 Reverb | BUS 4 303 Vinyl Sim',
+                          '4 | BUS 3 Downer | BUS 4 Lo-fi',
+                          '5 | BUS 3 To-Gu-Ro | BUS 4 Zan-Zou',
+                          '13 | BUS 3 Bypass | BUS 4 Bypass',
+                          '14 | BUS 3 Bypass | BUS 4 Bypass', 'Bypass'])
+
+# EFX SET's tabs turned with CTRL 3, as LOG005 drew them: FAVORITE, then
+# BUS 4, whose EFX Type: is drawn as INPUT FX Setting's is, then SIDE CHAIN
+# and DIRECT, then BUS 4 again. INPUT FX Setting's way of speaking, turned on
+# by EFX Type:, stayed on once BUS 4 had shown it, and every tab after said
+# nothing. Each tab is said with its focus.
+def fxtabs():
+    tabs = ['FAVORITE', 'BUS 3', 'BUS 4', 'SIDE CHAIN', 'DIRECT', 'OTHER']
+    def strip(t, cur, first, xs):
+        out = [f'{t} s0 FILL 0 0 200 8', f'{t} s0 103 2 =800EE779: {cur + 1}/ 6']
+        out += [f'{t} s0 {x} 2 {TABS}{tabs[first + k]}' for k, x in enumerate(xs)]
+        return out + [f'{t} s0 TAB {cur} ' + ','.join(tabs)]
+    def rows(t, rows, sel):
+        out = [f'{t} s0 FILL 0 9 127 63']
+        for k, (name, x, value) in enumerate(rows):
+            y = 13 + 8 * k
+            out += [f'{t} s0 ROW {y} {int(k == sel)}',
+                    f'{t} s0 5 {y} _{ROWLABEL}{name}', f'{t} s0 {x} {y} =800EE779:{value}']
+        return out
+    def bus(t, cur):
+        return [f'{t} CTRL 3 {40 + 10 * cur}'] + strip(t, cur, 0, [5, 51, 79, 107, 156, 188]) + \
+            [f'{t} s0 FILL 0 9 127 63', f'{t} EFX 0 0', f'{t} s0 93 14 _=800EE779:Bypass',
+             f'{t} s0 4 14 _=80147EBF:EFX Type:']
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 16', '1200 PAGE 6', '1200 s0 CLEAR']
+    d += strip(1200, 0, 0, [5, 51, 79, 107, 156, 188])
+    d += ['1200 s0 9 16 =801367A3:BUS 1', '1200 s0 39 16 =801367E1:BUS 2',
+          '1200 s0 72 16 =8013689F:---', '1200 s0 100 16 =801368D5:---',
+          f'1200 s0 63 54 !{FAV}FAVORITE:', '1200 s0 98 54 =800EE779:Bypass',
+          '1200 s0 5 54 =801366AD:ENTER: TYPE A', '1350 KEY UP 0f', '1400 KEY UP 2a']
+    d += bus(3000, 2)
+    d += ['5000 CTRL 3 70'] + strip(5000, 3, 2, [15, 43, 98, 130])
+    d += rows(5000, [('SOURCE', 106, 'DRY'), ('TARGET', 105, 'OFF'),
+                     ('THRESHOLD', 101, ' 100')], 0)
+    d += ['7000 CTRL 3 90'] + strip(7000, 4, 2, [15, 43, 98, 130])
+    d += rows(7000, [('Direct FX1', 69, 'Filter+Drive'), ('Direct FX2', 76, 'Resonator')], 0)
+    d += bus(9000, 2)
+    d += ['11000 VALUE']
+    write('fxtabs', d, ['top screen', 'FAVORITE | FAVORITE: | Bypass',
+                        'BUS 4 | effects Type: Bypass', 'SIDE CHAIN | SOURCE DRY',
+                        'DIRECT | Direct FX1 Filter+Drive', 'BUS 4 | effects Type: Bypass'])
+
 menu()
 params()
 popup()
@@ -1846,3 +1962,6 @@ dialogclose()
 shiftpad()
 protect()
 knobwait()
+undocount()
+favorite()
+fxtabs()

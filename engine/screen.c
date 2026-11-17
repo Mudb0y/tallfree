@@ -282,7 +282,7 @@ static unsigned step_mask(int note)
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
        ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
        ROLE_CELL, ROLE_QUIET, ROLE_STATE, ROLE_COPY_FROM, ROLE_COPY_TO, ROLE_NOTICE, ROLE_ANSWER,
-       ROLE_MESSAGE, ROLE_EFX };
+       ROLE_MESSAGE, ROLE_EFX, ROLE_FAV };
 #define CHAIN_TITLE     0x80141D3Fu
 #define CHAIN_SLOT      0x8008D11Bu
 #define CHAIN_SLOT_LIT  0x8008D19Bu
@@ -302,6 +302,13 @@ enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE
 #define EFX_TITLE       0x80147EDBu
 #define EFX_NAME        0x80148119u            /* the parameters' names, FUN_80147F40 */
 #define EFX_VALUE       0x801481F5u            /* and their values */
+/* EFX SET's FAVORITE tab, SHIFT and pad 16: FAVORITE: on white, and beside it
+   in the big font the favourite VALUE turns through, Bypass then 1 to 16.
+   Each one chosen draws what it puts on BUS 3 and BUS 4, cut short, "303
+   Viny..", left and right under the routing; the routing's own BUS 3 and
+   BUS 4 take the place of its "---" while a favourite is on. */
+#define FAV_LABEL       0x80136645u
+#define FAV_EFFECT      0x80136399u
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -402,6 +409,13 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { EFX_TYPE_LABEL, ROLE_EFX },
     { EFX_NAME, ROLE_EFX },
     { EFX_VALUE, ROLE_EFX },
+    /* The FAVORITE tab's effects and the routing's BUS 3 and BUS 4, or the
+       "---" in their place: said with the favourite, and nowhere else. */
+    { FAV_EFFECT, ROLE_FAV },
+    { 0x8013682Fu, ROLE_FAV },              /* BUS 3 */
+    { 0x8013686Du, ROLE_FAV },              /* BUS 4 */
+    { 0x8013689Fu, ROLE_FAV },              /* --- */
+    { 0x801368D5u, ROLE_FAV },              /* --- */
     /* The markers along a waveform, which he places by ear: sample edit's
        start, end, loop and cursor, and auto mark's marks, the selected one
        on white. */
@@ -1447,6 +1461,18 @@ static int live(const struct item *it)
     return *t != 0;
 }
 
+/* FAVORITE: on SURF, at Y and left of X, when the FAVORITE tab is showing. */
+static const struct item *fav_label(uint32_t surf, int x, int y)
+{
+    int i;
+
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].site == FAV_LABEL && items[i].surf == surf
+            && items[i].y == y && items[i].x < x)
+            return &items[i];
+    return NULL;
+}
+
 /* The item a draw belongs to: the one at its surface and position, or a new
    one. A string drawn by the same code over the space an old one took, on
    the same line, is that item moved, as a centred title or a right-aligned
@@ -1947,6 +1973,13 @@ static int take(const struct draw *d)
             return 0;
         memcpy(tab_now, d->text, ITEM_TEXT);
         tab_changed = 1;
+        /* A new tab is a new screen, though no page is built for it: EFX
+           SET's BUS 3 and BUS 4 tabs draw EFX Type: as INPUT FX Setting
+           does, and left as it was, its way of speaking stayed on for
+           SIDE CHAIN, DIRECT and the rest, which said nothing. The new
+           tab's EFX Type:, if it has one, turns it back on. */
+        efx_showing = 0;
+        efx_was_showing = 0;
         log_line("%lu tab %ld |%s|\n", (unsigned long)d->tick, (long)d->mark, d->text);
         return 1;
     }
@@ -2038,6 +2071,8 @@ static int take(const struct draw *d)
         it->role = d->y >= 50 ? ROLE_IGNORE : padlike(d->text) ? ROLE_QUIET : ROLE_NONE;
     if (page_now == PAGE_CHROMATIC && (d->site == CHROM_CELL || d->site == CHROM_CELL_LIT))
         it->role = ROLE_IGNORE;
+    if (d->site == BIG_TEXT && fav_label(d->surf, d->x, d->y) != NULL)
+        it->role = ROLE_FAV;
     it->title = it->role == ROLE_TITLE;
     if (d->site == EFX_TYPE_LABEL) {
         if (!efx_showing || efx_surf != d->surf)
@@ -2077,9 +2112,13 @@ static int take(const struct draw *d)
         it->prompted = (uint8_t)(turned || just_after(last_press, press_seen, d->tick));
         /* What a pad or a bank key changes where the pads play, and the
            tempo a bank key brings on the pattern screen in every mode, is
-           not said; what a pad chooses is. */
+           not said; what a pad chooses is. Chromatic mode's pads play too:
+           recording there, each note played counts on its UNDO: 1/16,
+           which is said when a key takes one back, not as the notes go
+           in. */
         it->by_pad = (uint8_t)(it->role != ROLE_STATE && it->role != ROLE_ANSWER
-                               && ((pads_play() && played_just_before(last_pad, pad_seen, d->tick))
+                               && (((pads_play() || page_now == PAGE_CHROMATIC)
+                                    && played_just_before(last_pad, pad_seen, d->tick))
                                    || ((pads_play() || page_now == PAGE_PATTERN)
                                        && played_just_before(last_bank_key, bank_key_seen,
                                                              d->tick))));
@@ -3315,15 +3354,93 @@ static void efx_same(void)
             items[i].changed = 0;
 }
 
+/* The FAVORITE tab's favourite, the number beside FAVORITE:, if showing. */
+static const struct item *fav_number(void)
+{
+    const struct item *n = NULL;
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *it = &items[i];
+        if (live(it) && it->role == ROLE_FAV && it->site == BIG_TEXT
+            && fav_label(it->surf, it->x, it->y) != NULL
+            && (n == NULL || (int32_t)(it->last_drawn - n->last_drawn) > 0))
+            n = it;
+    }
+    return n;
+}
+
+/* The favourite, then what it puts on BUS 3 and BUS 4 by their full names,
+   the left one BUS 3's. Bypass puts nothing on either. */
+static void fav_say(const struct item *num)
+{
+    const struct item *fx[2] = { NULL, NULL };
+    int i;
+
+    say3(num->text, NULL, NULL);
+    if (reads(num->text, "Bypass"))
+        return;
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *it = &items[i];
+        if (!live(it) || it->site != FAV_EFFECT || it->surf != num->surf)
+            continue;
+        if (fx[0] == NULL || it->x < fx[0]->x) {
+            fx[1] = fx[0];
+            fx[0] = it;
+        } else if (fx[1] == NULL || it->x < fx[1]->x) {
+            fx[1] = it;
+        }
+    }
+    if (fx[0] != NULL)
+        say3("BUS 3", full_text(fx[0]), NULL);
+    if (fx[1] != NULL)
+        say3("BUS 4", full_text(fx[1]), NULL);
+}
+
+/* VALUE turned on the FAVORITE tab redraws the favourite and both effects
+   at once, three strings changing together, which would otherwise be taken
+   for a new screen saying only its focus, FAVORITE:; and turned quickly,
+   the steps between were not said at all. Each favourite VALUE lands on is
+   said here with its effects, and its strings nowhere else. */
+static void fav_same(void)
+{
+    const struct item *num = fav_number();
+    int i, any = 0;
+
+    for (i = 0; i < ITEMS; i++)
+        if (items[i].role == ROLE_FAV && items[i].changed == 1 && live(&items[i]))
+            any = 1;
+    if (any && num != NULL)
+        fav_say(num);
+    for (i = 0; i < ITEMS; i++)
+        if (items[i].role == ROLE_FAV)
+            items[i].changed = 0;
+}
+
 /* What to say about a new screen. A dialog that has just opened is all
    there is: its text, then its own focused button. Otherwise the title, the
    tab a tabbed page is on when it has changed, then the focus: the focused
    item, else a settings list's top row, else on the main screen the bank
    and pad; then any pop-up; and on a screen with none of those, what it
    shows. */
-static void new_screen(struct item **order)
+/* The tab a tabbed page is on, when it has changed. */
+static void say_tab(void)
 {
     const struct item *tab;
+
+    if (tab_known()) {
+        if (strcmp(tab_now, last_tab) != 0) {
+            memcpy(last_tab, tab_now, ITEM_TEXT);
+            say3(tab_now, NULL, NULL);
+        }
+    } else if ((tab = current_tab()) != NULL && strcmp(tab->text, last_tab) != 0) {
+        memcpy(last_tab, tab->text, ITEM_TEXT);
+        say(tab);
+    }
+}
+
+static void new_screen(struct item **order)
+{
     int n, i, k, focus, popups, effect = 0, top = 0;
 
     last_label = NULL;
@@ -3355,6 +3472,9 @@ static void new_screen(struct item **order)
         if (!title_said(order[i]))
             say(order[i]);
     if (efx_showing) {
+        /* EFX SET's BUS 3 and BUS 4 tabs, named before their EFX Type. */
+        if (tab_known())
+            say_tab();
         efx_focus();
         return;
     }
@@ -3393,20 +3513,22 @@ static void new_screen(struct item **order)
                 if (batch_page != page_now)
                     say3(page_names[i].name, NULL, NULL);
             }
-    if (tab_known()) {
-        if (strcmp(tab_now, last_tab) != 0) {
-            memcpy(last_tab, tab_now, ITEM_TEXT);
-            say3(tab_now, NULL, NULL);
-        }
-    } else if ((tab = current_tab()) != NULL && strcmp(tab->text, last_tab) != 0) {
-        memcpy(last_tab, tab->text, ITEM_TEXT);
-        say(tab);
-    }
+    say_tab();
     /* The focus counts when it is there, even when the title has already
        said its words, as a grid's title names the focused cell. */
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
         say_focus(order[i]);
+    /* The FAVORITE tab's focus, FAVORITE:, with the favourite it is on. */
+    {
+        const struct item *num = fav_number();
+        if (num != NULL) {
+            fav_say(num);
+            for (i = 0; i < ITEMS; i++)
+                if (items[i].role == ROLE_FAV)
+                    items[i].changed = 0;
+        }
+    }
     if (copy_bank((uint32_t)page_now))
         say3(copy_side((uint32_t)page_now) ? "destination" : "source", NULL, NULL);
     /* The main screen, the manual's top screen, is named so on arrival,
@@ -3608,6 +3730,7 @@ static void same_screen(struct item **order)
 
     if (efx_showing)
         efx_same();
+    fav_same();
     /* A choice newly made says what the screen now shows for it, changed or
        not: the BPM screen's tempo, when PROJECT gives way to the bank. */
     for (i = 0; i < ITEMS; i++)
@@ -3835,6 +3958,9 @@ static int screen_changed(void)
             continue;
         if (is_title(it) && it->changed == 1)
             return 1;
+        /* The FAVORITE tab's favourite and effects, changing together. */
+        if (it->role == ROLE_FAV)
+            continue;
         alive++;
         if (it->fresh || (it->changed == 1 && !is_status(it)))
             fresh++;
