@@ -225,7 +225,9 @@ def system():
             out += [f'{t} s0 ROW {y} {int(k == sel)}',
                     f'{t} s0 6 {y} _{ROWLABEL}{name}', f'{t} s0 {x} {y} {value}']
         return out
-    d += ['3000 PAGE 11', '3000 s0 CLEAR'] + page(3000, rows, 0)
+    # Page 12 stands in for the SYSTEM page here: 11, which this used to
+    # borrow, is DJ mode on the unit (LOG004), and now says so as it opens.
+    d += ['3000 PAGE 12', '3000 s0 CLEAR'] + page(3000, rows, 0)
     d += ['3000 s0 103 2  1/ 5']
     for k, t in enumerate(['GENERAL', 'CLICK', 'MIDI', 'GAIN', 'VERSION']):
         d.append(f'3000 s0 {5 + 25 * k} 2 {TABS}{t}')
@@ -1830,6 +1832,63 @@ def dialogclose():
                              'Initialize Points. All PAD Stops. | Are you sure? | CANCEL',
                              'OK', 'CANCEL', 'START/END'])
 
+# The speech menu's Speech to, four settings on from Speed, changed from
+# mains plus headphones to headphones and back to choosing, then saved with
+# EXIT. The simulator has no outputs; what is said is the test.
+def speechout():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 2a', '1050 KEY DOWN 22', '1150 KEY UP 22', '1200 KEY UP 2a',
+          '2500 KNOB 0 1', '4000 KNOB 0 1', '5500 KNOB 0 1', '7000 KNOB 0 1',
+          '8500 KEY DOWN 31', '8600 KEY UP 31',
+          '9500 KNOB 0 1',
+          '10500 KEY DOWN 31', '10600 KEY UP 31',
+          '11500 KEY DOWN 22', '11600 KEY UP 22',
+          '13500 VALUE']
+    write('speechout', d, ['top screen', 'Speech settings | Speed 50', 'Pitch 65',
+                           'Voice Adult Male 1', 'Volume 50',
+                           'Speech to mains plus headphones', 'mains plus headphones',
+                           'headphones', 'Speech to', 'Settings saved | top screen'])
+
+# CUE mode, SHIFT and pad 3, page 9, as LOG002 drew it: its title twice,
+# shadow and face, a C and an M either side of the balance bar, and NAME.
+# The C and M are not said; the balance is, from CUE_MIX, centred to start.
+# CTRL 3 then turned to each end and back towards M, each said once it has
+# held still for the knob wait: 0 is cue, 127 main, 96 is 192 of 255,
+# 50 towards main.
+def cuemix():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 2a', '1000 PAGE 9',
+          '1000 s0 4 33 ~=8013FE3D:Cue (Phones Monitor)',
+          '1000 s0 3 32 ~=80195269:Cue (Phones Monitor)',
+          '1000 s0 89 9 !=80172B77:C', '1000 s0 117 9 !=800EE779:M',
+          '1000 s0 15 56 _=801611BF:NAME: ---                   ',
+          '1100 KEY UP 2a']
+    d += ['3000 CTRL 3 10', '3050 CTRL 3 0',
+          '6000 CTRL 3 127',
+          '9000 CTRL 3 96',
+          '12000 VALUE']
+    write('cuemix', d, ['top screen', 'Cue (Phones Monitor) | NAME: --- | cue mix centre',
+                        'cue', 'main', 'main 50'])
+
+# DJ mode, bank D/I and E/J together, page 11, which has no title: arriving
+# says so, with both levels, the cross-fader and CUE MIX from memory, the
+# levels as percents of the knob's 127. Then CTRL 1, CTRL 2 and CTRL 3 each
+# turned, said once it has held still: CTRL 3 sets CUE MIX, as START/END
+# first leaves it. START/END then builds the page again with CTRL 3 on
+# X-FADE, which says just that, and CTRL 3 turned moves the cross-fader.
+def djmode():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 11',
+          '3000 CTRL 1 64', '6000 CTRL 2 0', '9000 CTRL 3 0',
+          '11000 KEY DOWN 17', '11000 PAGE 11', '11100 KEY UP 17',
+          '13000 CTRL 3 127',
+          '16000 VALUE']
+    write('djmode', d, ['top screen',
+                        'DJ mode | channel 1 level 79 | channel 2 level 79 | fade centre | '
+                        'cue mix centre',
+                        'channel 1 level 50', 'channel 2 level 0', 'cue',
+                        'control 3 fade centre', 'fade channel 2'])
+
 # The speech menu's Knob wait taken from its 1200 ms down to 300, then
 # Filter+Drive's CUTOFF swept with CTRL 1 in two bursts 600 ms apart, as
 # params sweeps it. The first step is said at once, as always; the value
@@ -2067,6 +2126,9 @@ dialogclose()
 shiftpad()
 protect()
 knobwait()
+speechout()
+cuemix()
+djmode()
 undocount()
 favorite()
 fxtabs()

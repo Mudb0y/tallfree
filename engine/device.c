@@ -187,7 +187,9 @@ static volatile uint32_t g_gain = 64;
    with words 2 to 7, so speech there was sampled; word 12, mono on both
    outputs, and words 14 and 15, a pair, reach the main outputs and are never
    sent back (the receive probe). Word 12 is the metronome's, and the click's
-   Output Assign silences it; no setting touched 14 and 15. */
+   Output Assign silences it; no setting touched 14 and 15. Words 8 and 9,
+   a pair, reach the headphones but not the main outputs (the slot probe,
+   recorded from PHONES), so speech there is heard on headphones only. */
 static uint8_t g_out[2] = { 14, 15 };
 static volatile uint32_t g_nout = 2;
 
@@ -200,13 +202,19 @@ void target_output(int word)
         g_out[0] = 0;
         g_out[1] = 1;
         g_nout = 2;
+    } else if (word == 8) {
+        g_out[0] = 8;
+        g_out[1] = 9;
+        g_nout = 2;
     } else {
         g_out[0] = 14;
         g_out[1] = 15;
         g_nout = 2;
     }
-    printf("speech into line 3 word%s %u%s\n", g_nout > 1 ? "s" : "", g_out[0],
-           g_nout > 1 ? (g_out[1] == 1 ? " and 1" : " and 15") : "");
+    if (g_nout > 1)
+        printf("speech into line 3 words %u and %u\n", g_out[0], g_out[1]);
+    else
+        printf("speech into line 3 word %u\n", g_out[0]);
 }
 
 void target_volume(uint32_t percent)

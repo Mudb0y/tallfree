@@ -247,7 +247,16 @@ Writing all sixteen summed six copies per side, which is why early speech was
 so loud. The firmware's mixer (ITCM 0x1C2D0) fills words 0 to 11, 14 and 15
 with its fourteen bus channels, word 12 with a mono stream of its own, the
 metronome, and word 13 with a bitmask of the buses in use, not audio.
-Words 8 to 11 and 13 do not reach the main outputs.
+Words 8 to 11 and 13 do not reach the main outputs. PHONES carries
+everything the main outputs do plus words 8 to 11 (8 and 10 left, 9 and 11
+right; the slot probe recorded from PHONES), so words 8 and 9 are a
+headphones-only pair. CUE MIX, the phones' C to M balance, is the halfword
+at 0x82DFEF2C (store 0x82DFEED0, setting 0x57), 0 to 255, and does not touch
+words 8 to 11: speech there stays at both ends.
+DJ mode's CH1 LEVEL, CH2 LEVEL and X-FADE are words at 0x82E00A38,
+0x82E00A3C and 0x82E01018 (store 0x82E009D0, settings 0xE3, 0xE4, 0xFF),
+the knob's 0 to 127, as FUN_80139EC0 hands them to the DJ page's pick-up
+knobs. With setting 0xD6 on, CTRL 1 is 0xE5 instead, not yet read.
 
 **What the recorder hears.** Sampling and resampling both take audio only
 from the receive side (eDMA channel 4, 0x20008000), and the hardware sends
@@ -255,7 +264,8 @@ back on receive words 0 and 1, digitally, the sum of line 3 words 0 to 7,
 and never words 12, 14 or 15 (`#rxprobe` measures it). So speech is added to
 **words 14 and 15**, clamped to +/-2^19, where recordings cannot catch it;
 in words 0 and 1 it was sampled. Word 12 is no better: the click's Output
-Assign silences it. `#out` chooses among them, `#vol N` sets the level, 50
+Assign silences it. `#out 8` puts speech in words 8 and 9 instead, heard on
+headphones only. `#out` chooses among them, `#vol N` sets the level, 50
 by default. `TALLFREE.DEBUG` beginning `#slots` runs the 64-tone probe, and
 `engine/slotmap.py` reads a recording of it, taking the two loudest channels
 as the SP's outputs unless told which.

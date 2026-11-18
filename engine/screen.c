@@ -113,6 +113,23 @@ static const uint32_t vt_base[] = {
 /* Whether each bus's effect is on, a halfword each from 0x82DFEF60, the
    store's setting 0x276: off, BUS SELECT shows Bypass whatever is chosen. */
 #define FX_ON(n)        (*(volatile int16_t *)(0x82DFEF60u + 2u * (uint32_t)(n)))
+/* CUE MIX, the headphones' balance between CUE and the main mix, a
+   halfword at 0x82DFEF2C, the same store's setting 0x57, as FUN_800DA010
+   reads it: 0, all CUE, the C side, to 255, all main, the M side. CTRL 3
+   sets it in CUE mode, FUN_800F5638 passing the knob's 0 to 127 to
+   FUN_800DE270, which FUN_800D1188 scales to 0 to 255; in DJ mode too. */
+#define CUE_MIX         (*(volatile int16_t *)0x82DFEF2Cu)
+/* DJ mode's levels, words in the store at 0x82E009D0 as FUN_800DDA38 reads
+   them, the knob's 0 to 127: CH1 LEVEL, CTRL 1, at +0x68 (setting 0xE3);
+   CH2 LEVEL, CTRL 2, at +0x6C (0xE4); X-FADE, CTRL 3 with START/END, at
+   +0x648 (0xFF), 0 towards CH1. FUN_80139EC0 gives them to the DJ page's
+   knobs, which pick a value up only once turned past it. */
+#define DJ_CH1          (*(volatile int32_t *)0x82E00A38u)
+#define DJ_CH2          (*(volatile int32_t *)0x82E00A3Cu)
+#define DJ_FADE         (*(volatile int32_t *)0x82E01018u)
+/* What CTRL 3 sets there, which START/END switches: a word at 0x805924E0,
+   0 CUE MIX, else X-FADE, as FUN_80139EC0 asks. */
+#define DJ_C3_FADE      (*(volatile int32_t *)0x805924E0u)
 #define EXPORT_PAGE     (*(volatile uint32_t *)0x80CFD4E4u)
 #define PADOPS_PAGE     (*(volatile uint32_t *)0x80CFD490u)
 #define PAT_STORE       0x82DFFC88u
@@ -152,7 +169,8 @@ extern volatile uint32_t sim_padstore[], sim_patstore[], sim_seq_state;
 extern volatile int32_t sim_step_count, sim_step_slots, sim_step_last;
 extern volatile uint16_t sim_step_bits[];
 extern volatile int32_t sim_padnow, sim_extbus;
-extern volatile int16_t sim_fxtype[5], sim_fxon[5];
+extern volatile int16_t sim_fxtype[5], sim_fxon[5], sim_cuemix;
+extern volatile int32_t sim_djch1, sim_djch2, sim_djfade, sim_djc3fade;
 extern const char *const sim_fxnames[49];
 extern volatile int32_t sim_bank;
 extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
@@ -170,6 +188,11 @@ extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
 #define EXT_BUS         sim_extbus
 #define FX_TYPE(n)      sim_fxtype[n]
 #define FX_ON(n)        sim_fxon[n]
+#define CUE_MIX         sim_cuemix
+#define DJ_CH1          sim_djch1
+#define DJ_CH2          sim_djch2
+#define DJ_FADE         sim_djfade
+#define DJ_C3_FADE      sim_djc3fade
 #define FX_NAME(i)      sim_fxnames[i]
 #define EXPORT_PAGE     sim_export_page
 #define PADOPS_PAGE     sim_padops_page
@@ -977,6 +1000,16 @@ static int keep_for_menu(int type, int code, int step)
    offsets only mirror the pads, so its cells are never read, on arriving
    or as each pad lights its cell and lets it go. */
 #define PAGE_CHROMATIC 8
+/* CUE mode, SHIFT and pad 3: its title, Cue (Phones Monitor), and the
+   balance CTRL 3 sets as a bar between a C and an M, FUN_80172A50, which
+   draws the C from 0x80172B76 and the M through FUN_800CE5B8 at x 117, y 9.
+   The bar is no text, so the C and M are never said, and the balance is
+   said from CUE_MIX in their place. */
+#define PAGE_CUE 9
+/* DJ mode, bank D/I and E/J together, page 11: its levels, cross-fader
+   and CUE MIX are bars too, said from memory the same way. */
+#define PAGE_DJ 11
+#define CUE_BAR_C       0x80172B77u
 #define CHROM_CELL      0x8008D349u
 #define CHROM_CELL_LIT  0x8008D30Du
 #define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
@@ -1329,6 +1362,24 @@ static uint8_t pick_seen;
 static int page_arrived;
 static int32_t bank_seen = -1;
 static int bank_moved;
+/* The values only bars show, watched: CUE MIX and DJ mode's levels and
+   cross-fader. Each as last seen, -1 before the first look; whether a knob
+   has just moved it, and when; and whether CUE or DJ mode has just opened,
+   to say them there. */
+enum { W_CUE, W_CH1, W_CH2, W_FADE, WATCHES };
+static int w_seen[WATCHES] = { -1, -1, -1, -1 };
+static uint8_t w_moved[WATCHES];
+static uint32_t w_moved_at[WATCHES];
+/* What each was last said as after a turn: two of the knob's steps can
+   round to one percent, and the same words twice in a row say nothing. */
+static char w_said[WATCHES][40];
+static int cue_entered, dj_entered, dj_switched;
+/* DJ mode draws its page about 85 ticks after it is built, after the first
+   batch would be due: arriving or switched, it waits this long, so what it
+   draws, its EXIT, comes in the same batch as what is said of it, after,
+   and does not cut it off. */
+#define DJ_WAIT 200u                         /* ticks, 267 ms */
+static uint32_t dj_at;
 /* Whether the last batch had the effect display or its grid showing. */
 static int effect_shown;
 
@@ -2126,12 +2177,25 @@ static int take(const struct draw *d)
         }
         if (d->x != 1)
             return 0;
-        if ((int)d->mark != page_now)
-            page_prev = page_now;
-        page_now = (int)d->mark;
-        page_pending = 1;
-        page_seq = draw_seq;
-        efx_showing = 0;
+        {
+            int again = (int)d->mark == page_now;
+            if (!again)
+                page_prev = page_now;
+            page_now = (int)d->mark;
+            page_pending = 1;
+            page_seq = draw_seq;
+            efx_showing = 0;
+            if (page_now == PAGE_CUE)
+                cue_entered = 1;
+            /* DJ mode built again where it is, as START/END switching
+               CTRL 3 does: what CTRL 3 now sets, not the whole page. */
+            if (page_now == PAGE_DJ && again)
+                dj_switched = 1;
+            else if (page_now == PAGE_DJ)
+                dj_entered = 1;
+            if (page_now == PAGE_DJ)
+                dj_at = d->tick;
+        }
         return 1;
     }
     if (d->kind == EV_TAB) {
@@ -2237,6 +2301,9 @@ static int take(const struct draw *d)
     if (page_now == PAGE_PATTERN && d->site == BIG_TEXT && it->role == ROLE_NONE)
         it->role = d->y >= 50 ? ROLE_IGNORE : padlike(d->text) ? ROLE_QUIET : ROLE_NONE;
     if (page_now == PAGE_CHROMATIC && (d->site == CHROM_CELL || d->site == CHROM_CELL_LIT))
+        it->role = ROLE_IGNORE;
+    if (page_now == PAGE_CUE
+        && (d->site == CUE_BAR_C || (d->x == 117 && d->y == 9 && strcmp(d->text, "M") == 0)))
         it->role = ROLE_IGNORE;
     if (d->site == BIG_TEXT && fav_label(d->surf, d->x, d->y) != NULL)
         it->role = ROLE_FAV;
@@ -4563,6 +4630,72 @@ static const struct item *sample_focus(void)
    changing quickly has held still, fills phrases with what to say and
    answers 1. Answers 1 with no phrases when what is being said should
    stop. */
+/* A balance between two sides, v from 0, all left, to max, all right:
+   the side's name alone at either end, "centre" between, else how far
+   towards a side, 1 to 99, "cue 40", "main 12". CUE MIX's sides are cue
+   and main, not C and M, which before a number would be read as CTRL. */
+static void balance_words(char *t, size_t cap, int v, int max, const char *left,
+                          const char *right)
+{
+    int d;
+
+    if (v < 0)
+        v = 0;
+    if (v > max)
+        v = max;
+    d = (v * 200 - max * 100) / max;
+    if (d <= -100)
+        snprintf(t, cap, "%s", left);
+    else if (d >= 100)
+        snprintf(t, cap, "%s", right);
+    else if (d == 0)
+        snprintf(t, cap, "centre");
+    else
+        snprintf(t, cap, "%s %d", d < 0 ? left : right, d < 0 ? -d : d);
+}
+
+static int watch_value(int k)
+{
+    switch (k) {
+    case W_CUE:
+        return CUE_MIX;
+    case W_CH1:
+        return DJ_CH1;
+    case W_CH2:
+        return DJ_CH2;
+    default:
+        return DJ_FADE;
+    }
+}
+
+/* What a watched value is said as, with its name or not: "channel 1 level
+   80", a percent of the knob's 127; "fade channel 2 30"; "cue mix main 30",
+   or after a turn of CTRL 3 just "main 30", as CUE mode's knob alone. */
+static void watch_words(char *t, size_t cap, int k, int named)
+{
+    char side[24];
+    int v = watch_value(k);
+
+    switch (k) {
+    case W_CUE:
+        balance_words(side, sizeof side, v, 255, "cue", "main");
+        snprintf(t, cap, "%s%s", named ? "cue mix " : "", side);
+        break;
+    case W_CH1:
+    case W_CH2:
+        if (v < 0)
+            v = 0;
+        if (v > 127)
+            v = 127;
+        snprintf(t, cap, "channel %d level %d", k == W_CH1 ? 1 : 2, (v * 100 + 63) / 127);
+        break;
+    default:
+        balance_words(side, sizeof side, v, 127, "channel 1", "channel 2");
+        snprintf(t, cap, "fade %s", side);
+        break;
+    }
+}
+
 int screen_poll(char *phrases, size_t cap, int *count)
 {
     static struct item *order[ITEMS];
@@ -4639,6 +4772,21 @@ int screen_poll(char *phrases, size_t cap, int *count)
         }
     }
     rename_watch(now);
+    /* A watched value moved by a knob, CTRL 3 in CUE mode or any CTRL
+       knob in DJ mode: said once it has held still for the knob wait, as a
+       value on screen is. A change with no knob turned just before, a
+       project loading, is not said. */
+    for (i = 0; i < WATCHES; i++) {
+        int v = watch_value(i);
+        if (v != w_seen[i]) {
+            if (w_seen[i] >= 0 && turn_seen && now - last_turn < STEADY) {
+                w_moved[i] = 1;
+                w_moved_at[i] = now;
+                log_line("%lu watch %d at %d\n", (unsigned long)now, i, v);
+            }
+            w_seen[i] = v;
+        }
+    }
     /* BUS FX's swap: done when either effect has moved, or, the two the
        same so that nothing can, once the wait is over. */
     if (swap_key == 1) {
@@ -4697,6 +4845,10 @@ int screen_poll(char *phrases, size_t cap, int *count)
         pending = 0;
         page_pending = 0;
         tab_changed = 0;
+        memset(w_moved, 0, sizeof w_moved);
+        cue_entered = 0;
+        dj_entered = 0;
+        dj_switched = 0;
         return 0;
     }
     sample = sample_focus();
@@ -4729,10 +4881,15 @@ int screen_poll(char *phrases, size_t cap, int *count)
         if (live(&items[i]) && items[i].changed == 1 && items[i].rapid > 0
             && now - items[i].last_change >= rest_of(&items[i]))
             due = 1;
+    for (i = 0; i < WATCHES && !due; i++)
+        if (w_moved[i] && now - w_moved_at[i] >= knob_rest)
+            due = 1;
     /* REMAIN's page waits while the key is down and the wait is not over:
        a tap or a hold is not known yet. */
     if (due && page_now == PAGE_REMAIN && remain_held && !remain_spoke && !remain_padded
         && now - remain_at < REMAIN_HOLD)
+        due = 0;
+    if (due && page_now == PAGE_DJ && (dj_entered || dj_switched) && now - dj_at < DJ_WAIT)
         due = 0;
     if (!due)
         return 0;
@@ -4781,7 +4938,7 @@ int screen_poll(char *phrases, size_t cap, int *count)
        screen, whose choice of PROJECT or BANK A reads it already. */
     if (working) {
         ;
-    } else if (bank_moved && page_now != 81 && page_now != PAGE_PROJECT) {
+    } else if (bank_moved && page_now != 81 && page_now != PAGE_PROJECT && page_now != PAGE_DJ) {
         char t[2] = { (char)('A' + bank_seen), 0 };
         say3(t, NULL, NULL);
     } else if (pat_pending && page_now != 81) {
@@ -4799,6 +4956,30 @@ int screen_poll(char *phrases, size_t cap, int *count)
     }
     bank_moved = 0;
     pat_pending = 0;
+    /* DJ mode, which has no title: arriving, "DJ mode" and the four values
+       its bars show; built again by START/END, what CTRL 3 now sets. First,
+       before what the page draws. */
+    if (page_now != PAGE_DJ)
+        dj_entered = dj_switched = 0;
+    if (dj_entered || dj_switched) {
+        char t[40], v[32];
+        if (dj_entered) {
+            say3("DJ mode", NULL, NULL);
+            for (i = W_CH1; i <= W_FADE; i++) {
+                watch_words(t, sizeof t, i, 1);
+                say3(t, NULL, NULL);
+            }
+            watch_words(t, sizeof t, W_CUE, 1);
+            say3(t, NULL, NULL);
+        } else {
+            watch_words(v, sizeof v, DJ_C3_FADE != 0 ? W_FADE : W_CUE, 1);
+            snprintf(t, sizeof t, "control 3 %s", v);
+            say3(t, NULL, NULL);
+        }
+        memset(w_moved, 0, sizeof w_moved);
+        memset(w_said, 0, sizeof w_said);
+        dj_entered = dj_switched = 0;
+    }
     say_picks();
     say_presses();
     remain_say();
@@ -4878,6 +5059,32 @@ int screen_poll(char *phrases, size_t cap, int *count)
     }
     /* The name editor's name and cursor, after its title and OK. */
     rename_say();
+    /* The watched values: as CUE mode opens, after its title, "cue mix
+       centre"; and wherever a knob has left one, it alone. DJ mode's are
+       said above, first. */
+    if (page_now != PAGE_CUE)
+        cue_entered = 0;
+    {
+        char t[40];
+        if (cue_entered) {
+            watch_words(t, sizeof t, W_CUE, 1);
+            say3(t, NULL, NULL);
+            w_moved[W_CUE] = 0;
+            memset(w_said, 0, sizeof w_said);
+        }
+        for (i = 0; i < WATCHES; i++)
+            if (w_moved[i] && now - w_moved_at[i] >= knob_rest) {
+                watch_words(t, sizeof t, i, i != W_CUE);
+                if (strcmp(t, w_said[i]) != 0) {
+                    say3(t, NULL, NULL);
+                    memcpy(w_said[i], t, sizeof w_said[i]);
+                }
+                w_moved[i] = 0;
+            }
+        cue_entered = 0;
+        dj_entered = 0;
+        dj_switched = 0;
+    }
     /* An effect's edit screen kept up by REMAIN: "held" once the screen
        has been said; given up after a second. */
     if (freeze_key || freeze_active) {

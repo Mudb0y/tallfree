@@ -101,6 +101,16 @@ volatile int32_t sim_extbus;
 volatile int16_t sim_fxtype[5] = { 0, 1, 10, 0, 0 };
 /* And whether each is on, as at 0x82DFEF60: BUS 1's and BUS 2's are. */
 volatile int16_t sim_fxon[5] = { 0, 1, 1, 0, 0 };
+/* CUE MIX, as at 0x82DFEF2C, 0 to 255: centred to start. CTRL 3 in CUE
+   mode, page 9, sets it from the knob's 0 to 127, as FUN_800D1188 scales. */
+volatile int16_t sim_cuemix = 128;
+/* DJ mode's CH1 and CH2 levels and cross-fader, as at 0x82E00A38,
+   0x82E00A3C and 0x82E01018, the knob's 0 to 127; CTRL 1 and 2 on page 11
+   set the levels, and CTRL 3 there CUE MIX, as START/END first leaves it. */
+volatile int32_t sim_djch1 = 100, sim_djch2 = 100, sim_djfade = 64;
+/* And what CTRL 3 sets there, 0 CUE MIX: START/END, key 0x17, switches
+   it, and the page builds itself again. */
+volatile int32_t sim_djc3fade;
 const char *const sim_fxnames[49] = {
     "Bypass", "Filter+Drive", "TimeCtrlDly", "Isolator", "Crusher", "Phaser", "Flanger",
     "Overdrive", "Distortion", "Tape Echo", "Reverb", "WrmSaturator", "Resonator",
@@ -173,6 +183,16 @@ static int sim_page_factory(void *request)
         page_saw_keys++;
     if ((*m == 5 || *m == 6) && m[1] == 0x2A)
         sim_shift = *m == 5;
+    if (*m == 5 && m[1] == 0x17 && page_now == 11)
+        sim_djc3fade = !sim_djc3fade;
+    if (*m == 9 && m[1] == 3 && (page_now == 9 || (page_now == 11 && !sim_djc3fade)))
+        sim_cuemix = (int16_t)(m[2] * 255 / 127);
+    if (*m == 9 && m[1] == 3 && page_now == 11 && sim_djc3fade)
+        sim_djfade = m[2];
+    if (*m == 9 && m[1] == 1 && page_now == 11)
+        sim_djch1 = m[2];
+    if (*m == 9 && m[1] == 2 && page_now == 11)
+        sim_djch2 = m[2];
     if ((*m == 5 || *m == 6) && m[1] == 0x13)
         sim_subpad = *m == 5;
     if ((*m == 5 || *m == 6) && m[1] == 0x15)
