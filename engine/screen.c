@@ -1025,6 +1025,22 @@ static int keep_for_menu(int type, int code, int step)
    and CUE MIX are bars too, said from memory the same way. */
 #define PAGE_DJ 11
 #define PAGE_BANK_VOLUME 2                  /* SHIFT and a bank key: BANK A VOLUME */
+/* DJ mode's fields for each channel, CH1 left, CH2 right of x 64, drawn by
+   the text widget FUN_80156A60, on no background: the BPM and SYNC's S
+   in the top row, S at x 39 and 108, the speed in the second, 100.0% or
+   +1%, the time left in the third, -00:03, and a dash or --:-- for a
+   channel with no sample. Pad 10 and pad 12 put the S on and off, as
+   LOG010 shows. Below them the channel's state, PLAY, PAUSE, STOP and
+   REVERS, from their own sites. The time changes as a sample plays and is
+   said only when the whole screen is asked for; the state is said when it
+   changes, as he chose on 19 November 2026. */
+#define DJ_FIELD        0x80156ABDu
+#define DJ_STATE_PLAY   0x80161619u
+#define DJ_STATE_PAUSE  0x8016141Du
+#define DJ_STATE_STOP   0x801614B3u
+/* And each channel's sample name, 2 and 94 across, scrolling if long. */
+#define DJ_NAME         0x8013FA65u
+#define DJ_NAME_SHORT   0x8013FA81u
 #define CUE_BAR_C       0x80172B77u
 #define CHROM_CELL      0x8008D349u
 #define CHROM_CELL_LIT  0x8008D30Du
@@ -1397,6 +1413,23 @@ static int cue_entered, dj_entered, dj_switched;
    has changed is said: PATTERN EDIT changing nothing CTRL 3 sets was heard
    as "control 3 cue mix centre" in LOG009. */
 static int dj_ptn_said = -1, dj_c3_said = -1;
+/* A channel's S gone from DJ mode's top row, SYNC turned off: bit 0 CH1,
+   bit 1 CH2, said as "channel 1 sync off". */
+static int dj_sync_off;
+/* Whether the whole screen is being read, asked for: DJ mode's running
+   time and state are said then and only then. */
+static int reading_all;
+/* A channel bending: pad 1 or 5 for CH1, 3 or 7 for CH2, as he mapped
+   them on 19 November 2026. The BPM is not drawn while the pad is held,
+   and once it is let go glides back to where it was, a step every second
+   or so, each one drawn: LOG012 heard eighteen of them. A channel bending
+   says nothing of its BPM or speed until the BPM is back to what it was
+   when the bend began, said then; or its nudge or sync pad is pressed;
+   or half a minute has passed. Index 0 CH1, 1 CH2. */
+#define DJ_BEND_LIFE 22500u                  /* ticks, 30 s */
+static uint8_t dj_bending[2];
+static uint32_t dj_bend_at[2];
+static char dj_bend_bpm[2][ITEM_TEXT];
 /* DJ mode draws its page about 85 ticks after it is built, after the first
    batch would be due: arriving or switched, it waits this long, so what it
    draws, its EXIT, comes in the same batch as what is said of it, after,
@@ -1515,6 +1548,81 @@ static int played_just_before(uint32_t then, int seen, uint32_t now)
 /* The page showing, by the last page built; the one built before it; and
    the one showing when the last batch was said. */
 static int page_now = 84, page_prev = 84, batch_page = 84;
+
+/* What a DJ mode field is, by where it sits. */
+enum { DJF_NONE, DJF_BPM, DJF_SYNC, DJF_SPEED, DJF_TIME, DJF_STATE, DJF_BUS, DJF_NAME };
+
+static int dj_kind(uint32_t site, int x, int y)
+{
+    int ch2 = x >= 64;
+
+    if (page_now != PAGE_DJ)
+        return DJF_NONE;
+    if (site == DJ_STATE_PLAY || site == DJ_STATE_PAUSE || site == DJ_STATE_STOP)
+        return DJF_STATE;
+    if (site == DJ_NAME || site == DJ_NAME_SHORT)
+        return DJF_NAME;
+    if (site != DJ_FIELD)
+        return DJF_NONE;
+    /* The top row, as LOG013 has it: CH1's BPM at 9 to 11 and its SYNC
+       slot at 38 or 39; CH2's slot at 85 or 86 and its BPM at 101 to 103.
+       A slot shows S for the channel following the other's tempo, M for
+       the one it follows, and a dash or nothing otherwise. */
+    if (y == 10)
+        return (ch2 ? x < 95 : x >= 30) ? DJF_SYNC : DJF_BPM;
+    if (y == 45)
+        return DJF_BUS;
+    if (y == 18)
+        return DJF_SPEED;
+    if (y == 26)
+        return DJF_TIME;
+    return DJF_NONE;
+}
+
+/* Nothing but dashes, colons and spaces: a channel with no sample. */
+static int dashes(const char *t)
+{
+    int any = 0;
+
+    for (; *t; t++) {
+        if (*t == '-')
+            any = 1;
+        else if (*t != ':' && *t != ' ')
+            return 0;
+    }
+    return any;
+}
+
+static int blank(const char *t)
+{
+    while (*t == ' ')
+        t++;
+    return *t == 0;
+}
+
+/* A pad on DJ mode, 0 to 15 for pads 1 to 16. A bend pad starts a
+   channel's bend, keeping the BPM it showed; its nudge or sync pad, 2, 6
+   or 10 for CH1, 4, 8 or 12 for CH2, ends it. */
+static void dj_pad(int pad, uint32_t tick)
+{
+    int ch = (pad == 0 || pad == 4) ? 0 : (pad == 2 || pad == 6) ? 1 : -1, i;
+
+    if (ch >= 0) {
+        dj_bending[ch] = 1;
+        dj_bend_at[ch] = tick;
+        dj_bend_bpm[ch][0] = 0;
+        for (i = 0; i < ITEMS; i++)
+            if (items[i].used && dj_kind(items[i].site, items[i].x, items[i].y) == DJF_BPM
+                && (items[i].x >= 64) == (ch == 1))
+                memcpy(dj_bend_bpm[ch], items[i].text, ITEM_TEXT);
+        return;
+    }
+    if (pad == 1 || pad == 5 || pad == 9)
+        dj_bending[0] = 0;
+    if (pad == 3 || pad == 7 || pad == 11)
+        dj_bending[1] = 0;
+}
+
 
 /* Screens where the pads play, as they do on the main screen, and choose
    nothing: START/END, CHOP and PITCH/SPEED select the sample to edit by
@@ -2069,6 +2177,8 @@ static int take(const struct draw *d)
            shift_down is the interface task's, ahead of the model. */
         if (d->y == KEY_SHIFT && (d->x == 5 || d->x == 6))
             shift_held = d->x == 5;
+        if (d->x == 5 && d->mark == PAGE_DJ && d->y >= 0 && d->y < 16 && !shift_held)
+            dj_pad(d->y, d->tick);
         /* REMAIN down starts the wait; up before it is over is a tap, and
            the page's lines, still on the model, are kept to be said. */
         if (d->y == KEY_REMAIN && d->x == 5 && !remain_held) {
@@ -2328,6 +2438,12 @@ static int take(const struct draw *d)
     if (page_now == PAGE_CUE
         && (d->site == CUE_BAR_C || (d->x == 117 && d->y == 9 && strcmp(d->text, "M") == 0)))
         it->role = ROLE_IGNORE;
+    /* DJ mode's CUE MIX bar's ends, C and M, and the channel numbers 1 and
+       2 at the bottom: marks, which read-all said bare in LOG012. */
+    if (page_now == PAGE_DJ
+        && (d->site == CUE_BAR_C || (d->y == 2 && strcmp(d->text, "M") == 0)
+            || (d->y == 54 && (strcmp(d->text, "1") == 0 || strcmp(d->text, "2") == 0))))
+        it->role = ROLE_IGNORE;
     if (d->site == BIG_TEXT && fav_label(d->surf, d->x, d->y) != NULL)
         it->role = ROLE_FAV;
     it->title = it->role == ROLE_TITLE;
@@ -2363,6 +2479,16 @@ static int take(const struct draw *d)
     it->mark = d->mark;
     it->ink = d->ink;
     now_lit = is_lit(it);
+    /* A bent channel's BPM back where it was: the bend is over. */
+    if (text_changed && dj_kind(d->site, d->x, d->y) == DJF_BPM) {
+        int ch = d->x >= 64;
+        if (dj_bending[ch] && strcmp(d->text, dj_bend_bpm[ch]) == 0)
+            dj_bending[ch] = 0;
+    }
+    /* SYNC turned off on DJ mode: the channel's S taken away. */
+    if (text_changed && dj_kind(d->site, d->x, d->y) == DJF_SYNC && strcmp(it->text, "S") == 0
+        && (blank(d->text) || dashes(d->text)))
+        dj_sync_off |= d->x >= 64 ? 2 : 1;
     if (text_changed) {
         int turned = just_after(last_turn, turn_seen, d->tick);
 
@@ -2607,6 +2733,61 @@ static const char *with_colour(const struct item *it)
     return NULL;
 }
 
+/* A DJ mode field as it is said: with its channel, "channel 1 BPM 80.0",
+   "channel 2 sync on", "channel 1 master", "channel 1 speed +1%", "channel 2 DRY", "channel 1
+   sample On Time", "channel 1 PLAY", "channel 2 reverse"; the time only
+   while the whole screen is read, "channel 1 time -00:03", "channel 1
+   PLAY"; an empty channel's dashes never. NULL for any other text. */
+static const char *dj_text(const struct item *it)
+{
+    static char t[ITEM_TEXT + 24];
+    const char *v = it->text;
+    int kind = dj_kind(it->site, it->x, it->y), ch = it->x >= 64 ? 2 : 1;
+
+    if (kind == DJF_NONE)
+        return NULL;
+    while (*v == ' ')
+        v++;
+    if (dashes(v) || (kind == DJF_TIME && !reading_all && screen_mode != SCREEN_ALL))
+        return "";
+    if ((kind == DJF_BPM || kind == DJF_SPEED) && !reading_all && screen_mode != SCREEN_ALL
+        && dj_bending[ch - 1]) {
+        if (device_ticks() - dj_bend_at[ch - 1] < DJ_BEND_LIFE)
+            return "";
+        dj_bending[ch - 1] = 0;
+    }
+    switch (kind) {
+    case DJF_BPM:
+        snprintf(t, sizeof t, "channel %d BPM %s", ch, v);
+        break;
+    case DJF_SYNC:
+        if (strcmp(v, "S") == 0)
+            snprintf(t, sizeof t, "channel %d sync on", ch);
+        else if (strcmp(v, "M") == 0)
+            snprintf(t, sizeof t, "channel %d master", ch);
+        else
+            snprintf(t, sizeof t, "channel %d %s", ch, v);
+        break;
+    case DJF_SPEED:
+        snprintf(t, sizeof t, "channel %d speed %s", ch, v);
+        break;
+    case DJF_TIME:
+        snprintf(t, sizeof t, "channel %d time %s", ch, v);
+        break;
+    case DJF_NAME:
+        snprintf(t, sizeof t, "channel %d sample %s", ch, v);
+        break;
+    case DJF_STATE:
+        /* REVERS is cut short to fit; said in full. */
+        snprintf(t, sizeof t, "channel %d %s", ch, strncmp(v, "REVERS", 6) == 0 ? "reverse" : v);
+        break;
+    default:
+        snprintf(t, sizeof t, "channel %d %s", ch, v);
+        break;
+    }
+    return t;
+}
+
 static const char *full_text(const struct item *it)
 {
     size_t n = strlen(it->text), k;
@@ -2614,6 +2795,8 @@ static const char *full_text(const struct item *it)
     int i;
 
     if ((found = with_colour(it)) != NULL)
+        return found;
+    if ((found = dj_text(it)) != NULL)
         return found;
 
     /* The chain's heading without the (*) a change adds, which OpenEVV
@@ -3242,12 +3425,18 @@ static const struct item *label_of(const struct item *v)
 
     if (fixed_label(v, &fixed))
         return NULL;
+    /* DJ mode's fields name themselves, and are no other's label: LOG012
+       heard the time left as the label of the STOP under it. */
+    if (dj_kind(v->site, v->x, v->y) != DJF_NONE)
+        return NULL;
     best = row_label(v);
 
     if (best == NULL)
         best = column_label(v, 20, 0);
     if (best == NULL)
         best = column_label(v, 32, 1);
+    if (best != NULL && dj_kind(best->site, best->x, best->y) != DJF_NONE)
+        return NULL;
     return best;
 }
 
@@ -4532,7 +4721,8 @@ int screen_say_text(const char *text)
 static int want_shown(const struct item *it)
 {
     return it->role != ROLE_HINT
-        && (!is_popup(it) || b_now - it->last_drawn < STEADY);
+        && (!is_popup(it) || b_now - it->last_drawn < STEADY
+            || dj_kind(it->site, it->x, it->y) != DJF_NONE);
 }
 
 static void say_all(void)
@@ -4544,7 +4734,9 @@ static void say_all(void)
         say3("nothing on screen", NULL, NULL);
         return;
     }
+    reading_all = 1;
     say_contents(order, n);
+    reading_all = 0;
 }
 
 /* What is showing, when nothing has just been drawn to say so: after the
@@ -5039,6 +5231,15 @@ int screen_poll(char *phrases, size_t cap, int *count)
         memset(w_said, 0, sizeof w_said);
         dj_entered = dj_switched = 0;
     }
+    if (page_now != PAGE_DJ)
+        dj_sync_off = 0;
+    for (i = 0; i < 2; i++)
+        if (dj_sync_off & (1 << i)) {
+            char t[24];
+            snprintf(t, sizeof t, "channel %d sync off", i + 1);
+            say3(t, NULL, NULL);
+        }
+    dj_sync_off = 0;
     say_picks();
     say_presses();
     remain_say();

@@ -264,7 +264,15 @@ START/END, key 0x17, does. While it is on, CTRL 1 sets 0xE5, the
 pattern's level, the word at 0x82E00A50 (+0x80), 0 to 127
 (FUN_8013A4D0), and CTRL 3 sets CUE MIX whatever START/END chose
 (FUN_80139EC0). LOG009 has PATTERN EDIT pressed with a pattern chosen,
-each press flipping it.
+each press flipping it. The DJ page's per-channel fields come from the
+text widget at site 0x80156ABD, CH1 left of x 64: BPM and SYNC's S (x 39
+and 108; CH2's BPM at 103) at y 10, the speed at y 18, the time left at
+y 26, the bus at y 45; the sample names from 0x8013FA65 and 0x8013FA81 at
+y 48; PLAY, PAUSE,
+STOP and REVERS below from sites 0x80161619, 0x8016141D and 0x801614B3.
+Pad 10 and pad 12 put the S on and off (LOG010). Tallfree names each with
+its channel, says the state when it changes, and the time only on a
+read of the whole screen, as he chose on 19 November 2026.
 
 **What the recorder hears.** Sampling and resampling both take audio only
 from the receive side (eDMA channel 4, 0x20008000), and the hardware sends

@@ -1908,6 +1908,50 @@ def djpattern():
                            'pattern on | pattern level 79', 'pattern level 50', 'cue',
                            'pattern off', 'channel 1 level 0'])
 
+# DJ mode's own fields, as LOG010 and LOG012 drew them, on no background:
+# each channel's BPM, CH2's at 103, and SYNC's S, CH1's at 39; the speed;
+# the time left; EXIT and MENU at the bottom. Arriving says each with its
+# channel after EXIT, and nothing of the time. Pad 10 taking the S away
+# says sync off; the time running says nothing; a BPM pad's new BPM is
+# said with its channel; pad 10 again, sync on; CH2's BPM moving too. Pad
+# 12 has CH2 follow CH1: CH2's slot shows S, CH1's M, as LOG013 drew
+# them, and pad 12 again takes both away, which says sync off. Pad 15,
+# CH2's play, draws STOP under its time: the state is said, with its
+# channel, and the time is not, where LOG012 heard the time as the STOP's
+# label. Pad 7 bends CH2 down: let go, its
+# BPM glides back a step at a time, said only once it is back.
+def djfields():
+    F = '=80156ABD:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 11',
+          f'1100 s0 11 10 ~{F}80.0', f'1100 s0 39 10 ~{F}S', f'1100 s0 103 10 ~{F}72.0',
+          f'1100 s0 7 18 ~{F}100.0%', f'1100 s0 99 18 ~{F}100.0%',
+          f'1100 s0 9 26 ~{F}--:--', f'1100 s0 99 26 ~{F}-00:03',
+          '1100 s1 9 56 !=8013B3A5:EXIT', '1100 s1 103 56 !=8013B371:MENU',
+          '4000 PAD 10', f'4050 s0 39 10 ~{F} ',
+          f'6000 s0 99 26 ~{F}-00:02', f'7000 s0 99 26 ~{F}-00:01',
+          '9000 PAD 2', f'9050 s0 11 10 ~{F}81.2',
+          '11000 PAD 10', f'11050 s0 39 10 ~{F}S',
+          '13000 PAD 4', f'13050 s0 103 10 ~{F}72.4',
+          '14000 PAD 12', f'14040 s0 103 10 ~{F}80.0', f'14040 s0 86 10 ~{F}S',
+          f'14040 s0 38 10 ~{F}M',
+          '14600 PAD 12', f'14640 s0 103 10 ~{F}72.4', f'14640 s0 86 10 ~{F}-',
+          f'14640 s0 38 10 ~{F}-',
+          '15000 KEY DOWN 0e', '15040 s0 108 35 =801614B3:STOP', '15100 KEY UP 0e',
+          '16000 KEY DOWN 06', '16900 KEY UP 06',
+          f'17900 s0 103 10 ~{F}71.8', f'19400 s0 103 10 ~{F}72.1',
+          f'20900 s0 103 10 ~{F}72.4',
+          '23000 VALUE']
+    write('djfields', d, ['top screen',
+                          'DJ mode | channel 1 level 79 | channel 2 level 79 | fade centre | '
+                          'cue mix centre | EXIT | channel 1 BPM 80.0 | channel 1 sync on | '
+                          'channel 2 BPM 72.0 | channel 1 speed 100.0% | channel 2 speed 100.0%',
+                          'channel 1 sync off', 'channel 1 BPM 81.2', 'channel 1 sync on',
+                          'channel 2 BPM 72.4',
+                          'channel 1 master | channel 2 sync on | channel 2 BPM 80.0',
+                          'channel 2 sync off | channel 2 BPM 72.4',
+                          'channel 2 STOP', 'channel 2 BPM 72.4'])
+
 # SHIFT and a bank key's pop-up, page 2: BANK A VOLUME over the bank's
 # volume on white, as LOG008 drew it, where only the 127 was heard; the
 # heading is said first. VALUE turns the volume; another bank key moves it
@@ -2165,6 +2209,7 @@ speechout()
 cuemix()
 djmode()
 djpattern()
+djfields()
 bankvolume()
 undocount()
 favorite()
