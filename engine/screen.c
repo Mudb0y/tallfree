@@ -130,6 +130,15 @@ static const uint32_t vt_base[] = {
 /* What CTRL 3 sets there, which START/END switches: a word at 0x805924E0,
    0 CUE MIX, else X-FADE, as FUN_80139EC0 asks. */
 #define DJ_C3_FADE      (*(volatile int32_t *)0x805924E0u)
+/* Whether DJ mode is playing a pattern, setting 0xD6, a word at +0x4C of
+   the same store as FUN_800DDA38 reads it. Choosing a pattern from DJ
+   mode's PATTERN SELECT turns it on, FUN_801350B8; PATTERN EDIT there, key
+   0x15, switches it, FUN_8013B4F0's case for it, and the page builds itself
+   again. While it is on, CTRL 1 sets the pattern's level, setting 0xE5 at
+   +0x80, the knob's 0 to 127, as FUN_8013A4D0 hands it on, and CTRL 3 sets
+   CUE MIX whatever START/END says, FUN_80139EC0. */
+#define DJ_PTN          (*(volatile int32_t *)0x82E00A1Cu)
+#define DJ_PTN_LEVEL    (*(volatile int32_t *)0x82E00A50u)
 #define EXPORT_PAGE     (*(volatile uint32_t *)0x80CFD4E4u)
 #define PADOPS_PAGE     (*(volatile uint32_t *)0x80CFD490u)
 #define PAT_STORE       0x82DFFC88u
@@ -171,6 +180,7 @@ extern volatile uint16_t sim_step_bits[];
 extern volatile int32_t sim_padnow, sim_extbus;
 extern volatile int16_t sim_fxtype[5], sim_fxon[5], sim_cuemix;
 extern volatile int32_t sim_djch1, sim_djch2, sim_djfade, sim_djc3fade;
+extern volatile int32_t sim_djptn, sim_djptnlvl;
 extern const char *const sim_fxnames[49];
 extern volatile int32_t sim_bank;
 extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
@@ -193,6 +203,8 @@ extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
 #define DJ_CH2          sim_djch2
 #define DJ_FADE         sim_djfade
 #define DJ_C3_FADE      sim_djc3fade
+#define DJ_PTN          sim_djptn
+#define DJ_PTN_LEVEL    sim_djptnlvl
 #define FX_NAME(i)      sim_fxnames[i]
 #define EXPORT_PAGE     sim_export_page
 #define PADOPS_PAGE     sim_padops_page
@@ -400,6 +412,9 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x8017388Bu, ROLE_IGNORE },           /* LEVEL meters */
     { 0x801779C9u, ROLE_IGNORE },
     { 0x80105033u, ROLE_TITLE },            /* the BPM screen's heading, C1:TEMPO SEL */
+    { 0x80126D93u, ROLE_TITLE },            /* BANK D VOLUME, over its value on white,
+                                               page 2, SHIFT and a bank key: LOG008
+                                               heard only the 127 */
     { 0x8015604Bu, ROLE_PICKS },            /* SELECT PAD, TOT SELECTED PADS:1 */
     /* The pad operations page's other headings, centred in its status bar
        by FUN_80155768: COPY PAD, EXCHANGE PAD, COPY BANK PAD, DELETE BANK. */
@@ -1009,6 +1024,7 @@ static int keep_for_menu(int type, int code, int step)
 /* DJ mode, bank D/I and E/J together, page 11: its levels, cross-fader
    and CUE MIX are bars too, said from memory the same way. */
 #define PAGE_DJ 11
+#define PAGE_BANK_VOLUME 2                  /* SHIFT and a bank key: BANK A VOLUME */
 #define CUE_BAR_C       0x80172B77u
 #define CHROM_CELL      0x8008D349u
 #define CHROM_CELL_LIT  0x8008D30Du
@@ -1363,17 +1379,24 @@ static int page_arrived;
 static int32_t bank_seen = -1;
 static int bank_moved;
 /* The values only bars show, watched: CUE MIX and DJ mode's levels and
-   cross-fader. Each as last seen, -1 before the first look; whether a knob
-   has just moved it, and when; and whether CUE or DJ mode has just opened,
-   to say them there. */
-enum { W_CUE, W_CH1, W_CH2, W_FADE, WATCHES };
-static int w_seen[WATCHES] = { -1, -1, -1, -1 };
+   cross-fader, and the pattern's level CTRL 1 sets instead while DJ mode
+   plays a pattern. Each as last seen, -1 before the first look; whether a
+   knob has just moved it, and when; and whether CUE or DJ mode has just
+   opened, to say them there. */
+enum { W_CUE, W_CH1, W_CH2, W_FADE, W_PTN, WATCHES };
+static int w_seen[WATCHES] = { -1, -1, -1, -1, -1 };
 static uint8_t w_moved[WATCHES];
 static uint32_t w_moved_at[WATCHES];
 /* What each was last said as after a turn: two of the knob's steps can
    round to one percent, and the same words twice in a row say nothing. */
 static char w_said[WATCHES][40];
 static int cue_entered, dj_entered, dj_switched;
+/* What DJ mode was last said to be doing, -1 before it has been: playing a
+   pattern or not, and CTRL 3 on the cross-fader or not. Its page builds
+   itself again for START/END and for PATTERN EDIT alike, and only what
+   has changed is said: PATTERN EDIT changing nothing CTRL 3 sets was heard
+   as "control 3 cue mix centre" in LOG009. */
+static int dj_ptn_said = -1, dj_c3_said = -1;
 /* DJ mode draws its page about 85 ticks after it is built, after the first
    batch would be due: arriving or switched, it waits this long, so what it
    draws, its EXIT, comes in the same batch as what is said of it, after,
@@ -4663,9 +4686,18 @@ static int watch_value(int k)
         return DJ_CH1;
     case W_CH2:
         return DJ_CH2;
+    case W_PTN:
+        return DJ_PTN_LEVEL;
     default:
         return DJ_FADE;
     }
+}
+
+/* Whether CTRL 3 in DJ mode is on the cross-fader: START/END has put it
+   there, and no pattern is playing, which keeps it on CUE MIX. */
+static int dj_c3_fade(void)
+{
+    return DJ_C3_FADE != 0 && DJ_PTN == 0;
 }
 
 /* What a watched value is said as, with its name or not: "channel 1 level
@@ -4688,6 +4720,13 @@ static void watch_words(char *t, size_t cap, int k, int named)
         if (v > 127)
             v = 127;
         snprintf(t, cap, "channel %d level %d", k == W_CH1 ? 1 : 2, (v * 100 + 63) / 127);
+        break;
+    case W_PTN:
+        if (v < 0)
+            v = 0;
+        if (v > 127)
+            v = 127;
+        snprintf(t, cap, "pattern level %d", (v * 100 + 63) / 127);
         break;
     default:
         balance_words(side, sizeof side, v, 127, "channel 1", "channel 2");
@@ -4935,10 +4974,13 @@ int screen_poll(char *phrases, size_t cap, int *count)
                 && (!page_pending || (int32_t)(items[i].drawn_seq - page_seq) > 0);
     }
     /* A bank change is its letter alone, on every screen but the tempo
-       screen, whose choice of PROJECT or BANK A reads it already. */
+       screen, whose choice of PROJECT or BANK A reads it already, and the
+       bank volume pop-up, whose heading names the bank: LOG010 heard "D,
+       BANK D VOLUME". */
     if (working) {
         ;
-    } else if (bank_moved && page_now != 81 && page_now != PAGE_PROJECT && page_now != PAGE_DJ) {
+    } else if (bank_moved && page_now != 81 && page_now != PAGE_PROJECT && page_now != PAGE_DJ
+               && page_now != PAGE_BANK_VOLUME) {
         char t[2] = { (char)('A' + bank_seen), 0 };
         say3(t, NULL, NULL);
     } else if (pat_pending && page_now != 81) {
@@ -4957,25 +4999,42 @@ int screen_poll(char *phrases, size_t cap, int *count)
     bank_moved = 0;
     pat_pending = 0;
     /* DJ mode, which has no title: arriving, "DJ mode" and the four values
-       its bars show; built again by START/END, what CTRL 3 now sets. First,
+       its bars show, the pattern's level for channel 1's while a pattern
+       plays, CTRL 1 setting that instead; built again, by START/END or by
+       PATTERN EDIT, only what has changed: "pattern on" with its level, or
+       "pattern off", and what CTRL 3 now sets if that has moved. First,
        before what the page draws. */
     if (page_now != PAGE_DJ)
         dj_entered = dj_switched = 0;
     if (dj_entered || dj_switched) {
         char t[40], v[32];
+        int ptn = DJ_PTN != 0, c3 = dj_c3_fade();
         if (dj_entered) {
             say3("DJ mode", NULL, NULL);
             for (i = W_CH1; i <= W_FADE; i++) {
-                watch_words(t, sizeof t, i, 1);
+                watch_words(t, sizeof t, i == W_CH1 && ptn ? W_PTN : i, 1);
                 say3(t, NULL, NULL);
             }
             watch_words(t, sizeof t, W_CUE, 1);
             say3(t, NULL, NULL);
         } else {
-            watch_words(v, sizeof v, DJ_C3_FADE != 0 ? W_FADE : W_CUE, 1);
-            snprintf(t, sizeof t, "control 3 %s", v);
-            say3(t, NULL, NULL);
+            if (dj_ptn_said >= 0 && ptn != dj_ptn_said) {
+                if (ptn) {
+                    watch_words(v, sizeof v, W_PTN, 1);
+                    say3("pattern on", NULL, NULL);
+                    say3(v, NULL, NULL);
+                } else {
+                    say3("pattern off", NULL, NULL);
+                }
+            }
+            if (dj_c3_said < 0 || c3 != dj_c3_said) {
+                watch_words(v, sizeof v, c3 ? W_FADE : W_CUE, 1);
+                snprintf(t, sizeof t, "control 3 %s", v);
+                say3(t, NULL, NULL);
+            }
         }
+        dj_ptn_said = ptn;
+        dj_c3_said = c3;
         memset(w_moved, 0, sizeof w_moved);
         memset(w_said, 0, sizeof w_said);
         dj_entered = dj_switched = 0;

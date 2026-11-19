@@ -1889,6 +1889,41 @@ def djmode():
                         'channel 1 level 50', 'channel 2 level 0', 'cue',
                         'control 3 fade centre', 'fade channel 2'])
 
+# DJ mode playing a pattern, as LOG009 found it: PATTERN EDIT, key 0x15,
+# switches it on, and the page builds itself again, which says just that,
+# with the pattern's level, and nothing of CTRL 3, which has not moved.
+# CTRL 1 then sets the pattern's level, not channel 1's, and CTRL 3 CUE
+# MIX. PATTERN EDIT again switches it off, and CTRL 1 is channel 1's again.
+def djpattern():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 11',
+          '3000 KEY DOWN 15', '3000 PAGE 11', '3100 KEY UP 15',
+          '5000 CTRL 1 64', '8000 CTRL 3 0',
+          '10000 KEY DOWN 15', '10000 PAGE 11', '10100 KEY UP 15',
+          '12000 CTRL 1 0',
+          '15000 VALUE']
+    write('djpattern', d, ['top screen',
+                           'DJ mode | channel 1 level 79 | channel 2 level 79 | fade centre | '
+                           'cue mix centre',
+                           'pattern on | pattern level 79', 'pattern level 50', 'cue',
+                           'pattern off', 'channel 1 level 0'])
+
+# SHIFT and a bank key's pop-up, page 2: BANK A VOLUME over the bank's
+# volume on white, as LOG008 drew it, where only the 127 was heard; the
+# heading is said first. VALUE turns the volume; another bank key moves it
+# to bank D, which its heading names, so the bank's letter is not said
+# before it, as LOG010 heard.
+def bankvolume():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 2',
+          '1000 s1 31 23 _=80126D93:BANK A VOLUME', '1000 s1 58 42 !=80126DDF:127',
+          '3000 KNOB 0 -1', '3000 s1 58 42 !=80126DDF:126',
+          '5000 BANK 3',
+          '5000 s1 31 23 _=80126D93:BANK D VOLUME', '5000 s1 58 42 !=80126DDF:100',
+          '7000 VALUE']
+    write('bankvolume', d, ['top screen', 'BANK A VOLUME | 127', '126',
+                            'BANK D VOLUME | 100'])
+
 # The speech menu's Knob wait taken from its 1200 ms down to 300, then
 # Filter+Drive's CUTOFF swept with CTRL 1 in two bursts 600 ms apart, as
 # params sweeps it. The first step is said at once, as always; the value
@@ -2129,6 +2164,8 @@ knobwait()
 speechout()
 cuemix()
 djmode()
+djpattern()
+bankvolume()
 undocount()
 favorite()
 fxtabs()

@@ -256,7 +256,15 @@ words 8 to 11: speech there stays at both ends.
 DJ mode's CH1 LEVEL, CH2 LEVEL and X-FADE are words at 0x82E00A38,
 0x82E00A3C and 0x82E01018 (store 0x82E009D0, settings 0xE3, 0xE4, 0xFF),
 the knob's 0 to 127, as FUN_80139EC0 hands them to the DJ page's pick-up
-knobs. With setting 0xD6 on, CTRL 1 is 0xE5 instead, not yet read.
+knobs. Setting 0xD6, the word at 0x82E00A1C (+0x4C), is DJ mode playing
+a pattern: choosing one from DJ mode's PATTERN SELECT turns it on
+(FUN_801350B8), and PATTERN EDIT on the DJ page, key 0x15, flips it
+(FUN_8013B4F0, its key switch's case 5) and builds the page again, as
+START/END, key 0x17, does. While it is on, CTRL 1 sets 0xE5, the
+pattern's level, the word at 0x82E00A50 (+0x80), 0 to 127
+(FUN_8013A4D0), and CTRL 3 sets CUE MIX whatever START/END chose
+(FUN_80139EC0). LOG009 has PATTERN EDIT pressed with a pattern chosen,
+each press flipping it.
 
 **What the recorder hears.** Sampling and resampling both take audio only
 from the receive side (eDMA channel 4, 0x20008000), and the hardware sends

@@ -111,6 +111,12 @@ volatile int32_t sim_djch1 = 100, sim_djch2 = 100, sim_djfade = 64;
 /* And what CTRL 3 sets there, 0 CUE MIX: START/END, key 0x17, switches
    it, and the page builds itself again. */
 volatile int32_t sim_djc3fade;
+/* Whether DJ mode plays a pattern, as at 0x82E00A1C, and the pattern's
+   level, as at 0x82E00A50, the knob's 0 to 127: PATTERN EDIT, key 0x15,
+   switches the first on page 11, which builds itself again; while it is
+   on, CTRL 1 there sets the pattern's level, and CTRL 3 CUE MIX whatever
+   START/END has chosen. */
+volatile int32_t sim_djptn, sim_djptnlvl = 100;
 const char *const sim_fxnames[49] = {
     "Bypass", "Filter+Drive", "TimeCtrlDly", "Isolator", "Crusher", "Phaser", "Flanger",
     "Overdrive", "Distortion", "Tape Echo", "Reverb", "WrmSaturator", "Resonator",
@@ -185,12 +191,17 @@ static int sim_page_factory(void *request)
         sim_shift = *m == 5;
     if (*m == 5 && m[1] == 0x17 && page_now == 11)
         sim_djc3fade = !sim_djc3fade;
-    if (*m == 9 && m[1] == 3 && (page_now == 9 || (page_now == 11 && !sim_djc3fade)))
+    if (*m == 5 && m[1] == 0x15 && page_now == 11)
+        sim_djptn = !sim_djptn;
+    if (*m == 9 && m[1] == 3
+        && (page_now == 9 || (page_now == 11 && (!sim_djc3fade || sim_djptn))))
         sim_cuemix = (int16_t)(m[2] * 255 / 127);
-    if (*m == 9 && m[1] == 3 && page_now == 11 && sim_djc3fade)
+    if (*m == 9 && m[1] == 3 && page_now == 11 && sim_djc3fade && !sim_djptn)
         sim_djfade = m[2];
-    if (*m == 9 && m[1] == 1 && page_now == 11)
+    if (*m == 9 && m[1] == 1 && page_now == 11 && !sim_djptn)
         sim_djch1 = m[2];
+    if (*m == 9 && m[1] == 1 && page_now == 11 && sim_djptn)
+        sim_djptnlvl = m[2];
     if (*m == 9 && m[1] == 2 && page_now == 11)
         sim_djch2 = m[2];
     if ((*m == 5 || *m == 6) && m[1] == 0x13)
