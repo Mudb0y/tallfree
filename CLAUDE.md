@@ -15,7 +15,7 @@ record: `engine/screen.c` says what each hook is for and how the screen is
 read, `image/boot.c` how the engine is loaded, `image/make_image.py` every
 byte the image changes and why.
 
-## Status, 26 September 2026
+## Status, 19 November 2026
 
 **It is a working screen reader.** Image 32 starts OpenEVV at boot, from the
 card or the eMMC, and it reads the screen as a screen reader should: on
@@ -24,11 +24,21 @@ settings rows with their values, tabs, dialogs on their own and, as they
 close, where they leave you, the main screen as "top screen", the manual's
 name, a bank change by its letter, never a pad played, nor chromatic mode's
 grid, pads in the modes that pick them. SHIFT + EXIT opens a spoken speech
-settings menu, saved on the eMMC; held a second it turns screen reading off
-or on, saving nothing, and tapped twice it reads the whole screen. Speech
-mixes into the main and headphone outputs, and with compiled rules the
-median time from a change on the screen to its sound is under 50 ms, with no
-stalls at speed 135.
+settings menu, saved on the eMMC, with Speech to and the knob wait among its
+settings; held a second it turns screen reading off or on, saving nothing,
+and tapped twice it reads the whole screen.
+
+What the screen never shows is read from the firmware's own stores: with
+REMAIN held, a pad's, a bank's and EXT SOURCE's bus, BUS FX's swap and an
+effect's frozen edit screen (a tap of REMAIN reads its page, a hold says
+only "REMAIN"); CUE MIX; DJ mode's levels, cross-fader and pattern
+playback, with its per-channel fields named by channel; and the rename
+editor on page 74. PAD COLOR and BUS COLOR numbers come with a colour name.
+
+Speech mixes into the main and headphone outputs, words 14 and 15, or, with
+Speech to set to headphones, into words 8 and 9, which only PHONES carries.
+With compiled rules the median time from a change on the screen to its sound
+is under 50 ms, with no stalls at speed 135.
 
 How the screen is read: hooks, all data writes, on the seven surface
 vtables' DrawString, clear, fill and rectangle outline; the 76 icon menus'

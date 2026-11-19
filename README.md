@@ -28,6 +28,20 @@ but you can always go back to Roland's firmware; see below.
   INIT PARAM on pad 6, and that's read like any other screen.
 - GATE, LOOP, REVERSE, BPM SYNC and EXT SOURCE say whether they're on or off,
   and turning an effect on says its name.
+- REMAIN tapped reads its page. Held for more than half a second it just says
+  "REMAIN" and keeps quiet, so it doesn't get in the way while you assign
+  buses. With REMAIN held, the things the screen never shows are read: a pad
+  you press says its bus, such as "A 13 BUS 1" or "A 13 DRY", a bank key says
+  the bus of all sixteen pads, such as "BANK B BUS 1", and EXT SOURCE says its
+  input's bus. Swapping BUS FX says which effects went where and whether each
+  is on, and an effect button that holds its edit screen says "held".
+- PAD COLOR and BUS COLOR say the colour's number with a name for it, so you
+  know what colour you're getting.
+- RENAME PROJECT and RENAME SAMPLE read the name editor: the name, where the
+  cursor is and the character under it, and each character as you turn
+  through them, with marks said by name.
+- SHIFT and a bank key's BANK VOLUME pop-up says its heading before the
+  value.
 - In the file lists, a sample's name is read once you've stayed on it for two
   seconds, so you can scroll through a folder hearing the previews. Folders
   are read straight away, and the entry that goes back up is "parent folder".
@@ -39,7 +53,13 @@ but you can always go back to Roland's firmware; see below.
 - DJ mode (bank D/I and E/J together) says "DJ mode" as it opens, with both
   channel levels, the cross-fader and CUE MIX. Turning CTRL 1 or CTRL 2 reads
   that channel's level as a percent, "channel 1 level 80", and the
-  cross-fader reads like CUE MIX, "fade channel 2 30".
+  cross-fader reads like CUE MIX, "fade channel 2 30". Each channel's BPM,
+  sync and speed are said with the channel, such as "channel 1 BPM 80.0",
+  "channel 1 sync on" or "channel 1 speed +1%", and PLAY, PAUSE, STOP and
+  REVERSE are said when they change. The time counting down is only read
+  when you read the whole screen, and bends stay quiet while the BPM glides
+  back. PATTERN EDIT says "pattern on" or "pattern off", and while a pattern
+  plays, CTRL 1 reads "pattern level".
 
 Speech plays through the main outputs over whatever the SP is playing, or
 through the headphones only if you choose that in the speech settings, and it
