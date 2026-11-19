@@ -88,9 +88,57 @@ static const uint32_t vt_base[] = {
    banks from 0x82E2CD08, as FUN_800DC6B8 reads them: GATE at 0xE0 (its
    parameter 0x6A), LOOP at 0xE4 (0x6B), BPM SYNC at 0xF0 (0x6E), and at
    0x10C (0x75) REVERSE in bit 0 and the ping pong loop in bit 1. The
-   current pad in its bank, 0 to 15, is at 0x82E2CD20. */
+   current pad in its bank, 0 to 15, is at 0x82E2CD20. The bus a pad plays
+   into is at 0x120 (parameter 0x7A): 0 DRY, 1 BUS 1, 2 BUS 2, as
+   FUN_800C5168 writes it in the top screen's status bar, BUS-1 or DRY. */
 #define PAD_STORE       0x82E2CD08u
 #define PAD_NOW         (*(volatile int32_t *)0x82E2CD20u)
+/* The name editor, RENAME PROJECT and RENAME SAMPLE, page 74: the page
+   keeps itself at 0x80CFD4E0, as its factory FUN_80064A00 stores it, and
+   its editor, made by FUN_800C4A18 at 0x8011CC3C, at +0x1A80. The editor
+   as FUN_8016D468 fills it: the name a byte a character from +0x9C, its
+   length at +0x4A4, the cursor at +0x4A0, set to 0 as it opens, and a
+   byte at +0x4BD the page sets to 1. */
+#define RENAME_PAGE     (*(volatile uint32_t *)0x80CFD4E0u)
+/* The bus the external input, INPUT and LINE IN, plays into, as the status
+   bar reads it for EXT, FUN_800D61F0's setting 0x2B: a word at 0x83FFB4AC,
+   0 DRY, 1 BUS 1, 2 BUS 2. */
+#define EXT_BUS         (*(volatile int32_t *)0x83FFB4ACu)
+/* The effect on each bus, 0 to 4, a halfword each from 0x82DFEF94, the
+   store at 0x82DFEED0 plus 0xC4, as FUN_800DA010 reads its setting 0x27C;
+   and the effects' names, Bypass first, as FUN_800D5940 takes them for
+   BUS SELECT: 49 pointers from 0x8020B3D8. */
+#define FX_TYPE(n)      (*(volatile int16_t *)(0x82DFEF94u + 2u * (uint32_t)(n)))
+#define FX_NAME(i)      (((const char *const *)0x8020B3D8u)[i])
+/* Whether each bus's effect is on, a halfword each from 0x82DFEF60, the
+   store's setting 0x276: off, BUS SELECT shows Bypass whatever is chosen. */
+#define FX_ON(n)        (*(volatile int16_t *)(0x82DFEF60u + 2u * (uint32_t)(n)))
+/* CUE MIX, the headphones' balance between CUE and the main mix, a
+   halfword at 0x82DFEF2C, the same store's setting 0x57, as FUN_800DA010
+   reads it: 0, all CUE, the C side, to 255, all main, the M side. CTRL 3
+   sets it in CUE mode, FUN_800F5638 passing the knob's 0 to 127 to
+   FUN_800DE270, which FUN_800D1188 scales to 0 to 255; in DJ mode too. */
+#define CUE_MIX         (*(volatile int16_t *)0x82DFEF2Cu)
+/* DJ mode's levels, words in the store at 0x82E009D0 as FUN_800DDA38 reads
+   them, the knob's 0 to 127: CH1 LEVEL, CTRL 1, at +0x68 (setting 0xE3);
+   CH2 LEVEL, CTRL 2, at +0x6C (0xE4); X-FADE, CTRL 3 with START/END, at
+   +0x648 (0xFF), 0 towards CH1. FUN_80139EC0 gives them to the DJ page's
+   knobs, which pick a value up only once turned past it. */
+#define DJ_CH1          (*(volatile int32_t *)0x82E00A38u)
+#define DJ_CH2          (*(volatile int32_t *)0x82E00A3Cu)
+#define DJ_FADE         (*(volatile int32_t *)0x82E01018u)
+/* What CTRL 3 sets there, which START/END switches: a word at 0x805924E0,
+   0 CUE MIX, else X-FADE, as FUN_80139EC0 asks. */
+#define DJ_C3_FADE      (*(volatile int32_t *)0x805924E0u)
+/* Whether DJ mode is playing a pattern, setting 0xD6, a word at +0x4C of
+   the same store as FUN_800DDA38 reads it. Choosing a pattern from DJ
+   mode's PATTERN SELECT turns it on, FUN_801350B8; PATTERN EDIT there, key
+   0x15, switches it, FUN_8013B4F0's case for it, and the page builds itself
+   again. While it is on, CTRL 1 sets the pattern's level, setting 0xE5 at
+   +0x80, the knob's 0 to 127, as FUN_8013A4D0 hands it on, and CTRL 3 sets
+   CUE MIX whatever START/END says, FUN_80139EC0. */
+#define DJ_PTN          (*(volatile int32_t *)0x82E00A1Cu)
+#define DJ_PTN_LEVEL    (*(volatile int32_t *)0x82E00A50u)
 #define EXPORT_PAGE     (*(volatile uint32_t *)0x80CFD4E4u)
 #define PADOPS_PAGE     (*(volatile uint32_t *)0x80CFD490u)
 #define PAT_STORE       0x82DFFC88u
@@ -129,7 +177,11 @@ extern volatile uint32_t sim_store[0x600 / 4], sim_export_page, sim_padops_page;
 extern volatile uint32_t sim_padstore[], sim_patstore[], sim_seq_state;
 extern volatile int32_t sim_step_count, sim_step_slots, sim_step_last;
 extern volatile uint16_t sim_step_bits[];
-extern volatile int32_t sim_padnow;
+extern volatile int32_t sim_padnow, sim_extbus;
+extern volatile int16_t sim_fxtype[5], sim_fxon[5], sim_cuemix;
+extern volatile int32_t sim_djch1, sim_djch2, sim_djfade, sim_djc3fade;
+extern volatile int32_t sim_djptn, sim_djptnlvl;
+extern const char *const sim_fxnames[49];
 extern volatile int32_t sim_bank;
 extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
 #define PICK_STORE      ((uint32_t)(uintptr_t)sim_store)
@@ -142,6 +194,18 @@ extern volatile uint32_t sim_scroll_owner, sim_efx_owner;
 #define STEP_LAST       sim_step_last
 #define STEP_BITS       ((uint32_t)(uintptr_t)sim_step_bits)
 #define PAD_NOW         sim_padnow
+#define RENAME_PAGE     0u
+#define EXT_BUS         sim_extbus
+#define FX_TYPE(n)      sim_fxtype[n]
+#define FX_ON(n)        sim_fxon[n]
+#define CUE_MIX         sim_cuemix
+#define DJ_CH1          sim_djch1
+#define DJ_CH2          sim_djch2
+#define DJ_FADE         sim_djfade
+#define DJ_C3_FADE      sim_djc3fade
+#define DJ_PTN          sim_djptn
+#define DJ_PTN_LEVEL    sim_djptnlvl
+#define FX_NAME(i)      sim_fxnames[i]
 #define EXPORT_PAGE     sim_export_page
 #define PADOPS_PAGE     sim_padops_page
 void sim_draw_icon(void);
@@ -282,7 +346,7 @@ static unsigned step_mask(int note)
 enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE_TABS,
        ROLE_CHOICE, ROLE_EFFECT, ROLE_PICKS, ROLE_UNLIT, ROLE_FXLABEL, ROLE_HINT, ROLE_KNOB,
        ROLE_CELL, ROLE_QUIET, ROLE_STATE, ROLE_COPY_FROM, ROLE_COPY_TO, ROLE_NOTICE, ROLE_ANSWER,
-       ROLE_MESSAGE, ROLE_EFX };
+       ROLE_MESSAGE, ROLE_EFX, ROLE_FAV };
 #define CHAIN_TITLE     0x80141D3Fu
 #define CHAIN_SLOT      0x8008D11Bu
 #define CHAIN_SLOT_LIT  0x8008D19Bu
@@ -302,6 +366,19 @@ enum { ROLE_NONE, ROLE_TITLE, ROLE_TOAST, ROLE_PAD, ROLE_MAIN, ROLE_IGNORE, ROLE
 #define EFX_TITLE       0x80147EDBu
 #define EFX_NAME        0x80148119u            /* the parameters' names, FUN_80147F40 */
 #define EFX_VALUE       0x801481F5u            /* and their values */
+/* EFX SET's FAVORITE tab, SHIFT and pad 16: FAVORITE: on white, and beside it
+   in the big font the favourite VALUE turns through, Bypass then 1 to 16.
+   Each one chosen draws what it puts on BUS 3 and BUS 4, cut short, "303
+   Viny..", left and right under the routing; the routing's own BUS 3 and
+   BUS 4 take the place of its "---" while a favourite is on. */
+#define FAV_LABEL       0x80136645u
+#define FAV_EFFECT      0x80136399u
+/* BUS SELECT, the box BUS FX brings up: BUS 1 and BUS 2, each over its
+   effect, the selected one on white; and in its corner BUS 3-4 with ON, on
+   white, or OFF, which other code draws, a little to the left and not on
+   white. VALUE held with BUS FX switches between them. */
+#define BUS34_ON        0x8016C3EFu
+#define BUS34_OFF       0x8016C3BBu
 static const struct { uint32_t site; uint8_t role; } sites[] = {
     { TITLE_SITE,  ROLE_TITLE },            /* the page title setter */
     { 0x80151801u, ROLE_TITLE },            /* EXPORT SAMPLE/PROJ./MULTIPAD */
@@ -320,6 +397,12 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x80145EDFu, ROLE_CELL },             /* the effects grid's cells */
     { 0x80195269u, ROLE_TITLE },            /* 16 VELOCITY, PAD LINK GROUPS, MUTE GROUP */
     { 0x8013FE3Du, ROLE_IGNORE },           /* a second copy of those, a pixel over */
+    { 0x8011CC11u, ROLE_TITLE },            /* RENAME PROJECT and RENAME SAMPLE, page 74,
+                                               opened from REMAIN: LOG015 heard only its OK */
+    { 0x8016D75Bu, ROLE_IGNORE },           /* the name editor's row of characters to pick
+                                               from, ABCDEFGHIJKLMNOPQRSTUVWXYZ: the one
+                                               picked is said instead */
+    { 0x8016D771u, ROLE_IGNORE },           /* and the same row scrolled, FGHIJ... */
     { 0x8006BECDu, ROLE_TOAST },            /* STOP, RECORDING, METRO MODE ON */
     { 0x80149DD5u, ROLE_PAD },              /* the main screen's bank and pad */
     { 0x80149DC7u, ROLE_MAIN },             /* its pattern */
@@ -329,6 +412,9 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { 0x8017388Bu, ROLE_IGNORE },           /* LEVEL meters */
     { 0x801779C9u, ROLE_IGNORE },
     { 0x80105033u, ROLE_TITLE },            /* the BPM screen's heading, C1:TEMPO SEL */
+    { 0x80126D93u, ROLE_TITLE },            /* BANK D VOLUME, over its value on white,
+                                               page 2, SHIFT and a bank key: LOG008
+                                               heard only the 127 */
     { 0x8015604Bu, ROLE_PICKS },            /* SELECT PAD, TOT SELECTED PADS:1 */
     /* The pad operations page's other headings, centred in its status bar
        by FUN_80155768: COPY PAD, EXCHANGE PAD, COPY BANK PAD, DELETE BANK. */
@@ -402,6 +488,17 @@ static const struct { uint32_t site; uint8_t role; } sites[] = {
     { EFX_TYPE_LABEL, ROLE_EFX },
     { EFX_NAME, ROLE_EFX },
     { EFX_VALUE, ROLE_EFX },
+    /* The FAVORITE tab's effects and the routing's BUS 3 and BUS 4, or the
+       "---" in their place: said with the favourite, and nowhere else. */
+    { FAV_EFFECT, ROLE_FAV },
+    /* BUS SELECT's BUS 3-4 ON: never the focus, though on white, so not said
+       with the bus just chosen, as "BUS 2, Bypass, ON" was; and its OFF. */
+    { BUS34_ON, ROLE_UNLIT },
+    { BUS34_OFF, ROLE_UNLIT },
+    { 0x8013682Fu, ROLE_FAV },              /* BUS 3 */
+    { 0x8013686Du, ROLE_FAV },              /* BUS 4 */
+    { 0x8013689Fu, ROLE_FAV },              /* --- */
+    { 0x801368D5u, ROLE_FAV },              /* --- */
     /* The markers along a waveform, which he places by ear: sample edit's
        start, end, loop and cursor, and auto mark's marks, the selected one
        on white. */
@@ -822,11 +919,21 @@ static void menu_event(int action, int step)
 }
 
 /* In the interface's own task, before the page sees a message: answers 1 to
-   keep it from the page. SHIFT + EXIT opens the menu, and that EXIT is kept,
-   so it does not stop everything as SHIFT + EXIT otherwise does; while the
-   menu is open EXIT, pressing VALUE and turning VALUE are kept for it, and
-   everything else, SHIFT and the pads included, goes through. A key's
-   release is kept whenever its press was. */
+   keep it from the page. SHIFT + EXIT is kept, so it does not stop
+   everything as SHIFT + EXIT otherwise does, and what it does is decided
+   when EXIT comes up: let go within a second, it opens the menu; held a
+   second or more, it turns screen reading off or on without opening it,
+   for recording the outputs. While the menu is open EXIT, pressing VALUE
+   and turning VALUE are kept for it, and everything else, SHIFT and the
+   pads included, goes through. A key's release is kept whenever its press
+   was. */
+#define TOGGLE_HOLD MS_TO_TICKS(1000)
+/* A second tap of EXIT, SHIFT still held, this soon after the menu opened
+   reads the whole screen instead of closing the menu. */
+#define SAY_ALL_TAP MS_TO_TICKS(500)
+static uint32_t exit_down, menu_opened;
+static int exit_deciding;
+
 static int keep_for_menu(int type, int code, int step)
 {
     if (type == 5) {
@@ -834,10 +941,21 @@ static int keep_for_menu(int type, int code, int step)
             shift_down = 1;
             return 0;
         }
-        if (code == KEY_EXIT && (keys_to_menu || shift_down)) {
+        /* EXIT pressed again before it came up, as a held key may repeat,
+           is the same press: kept, and the hold timed from the first. */
+        if (code == KEY_EXIT && exit_kept)
+            return 1;
+        if (code == KEY_EXIT && keys_to_menu) {
             exit_kept = 1;
-            keys_to_menu = !keys_to_menu;
-            menu_event(keys_to_menu ? MENU_OPEN : MENU_CLOSE, 0);
+            keys_to_menu = 0;
+            menu_event(shift_down && device_ticks() - menu_opened < SAY_ALL_TAP
+                       ? MENU_SAY_ALL : MENU_CLOSE, 0);
+            return 1;
+        }
+        if (code == KEY_EXIT && shift_down) {
+            exit_kept = 1;
+            exit_deciding = 1;
+            exit_down = device_ticks();
             return 1;
         }
         if (code == KEY_VALUE_PRESS && keys_to_menu) {
@@ -852,6 +970,16 @@ static int keep_for_menu(int type, int code, int step)
             shift_down = 0;
         if (code == KEY_EXIT && exit_kept) {
             exit_kept = 0;
+            if (exit_deciding) {
+                exit_deciding = 0;
+                if (device_ticks() - exit_down >= TOGGLE_HOLD) {
+                    menu_event(MENU_TOGGLE, 0);
+                } else {
+                    keys_to_menu = 1;
+                    menu_opened = device_ticks();
+                    menu_event(MENU_OPEN, 0);
+                }
+            }
             return 1;
         }
         if (code == KEY_VALUE_PRESS && press_kept) {
@@ -880,10 +1008,45 @@ static int keep_for_menu(int type, int code, int step)
 #define PAGE_REC_INPUT 63                   /* sample mode's RECORD SETTING */
 #define PAGE_MICROSCOPE 80
 #define PAGE_REMAIN 49
+#define PAGE_RENAME 74
 #define PAGE_PROJECT 59
+/* Chromatic mode, SHIFT and pad 4: a grid of sixteen semitone offsets, -8
+   to 7, one under each pad, the one a pad is playing on white. The
+   offsets only mirror the pads, so its cells are never read, on arriving
+   or as each pad lights its cell and lets it go. */
+#define PAGE_CHROMATIC 8
+/* CUE mode, SHIFT and pad 3: its title, Cue (Phones Monitor), and the
+   balance CTRL 3 sets as a bar between a C and an M, FUN_80172A50, which
+   draws the C from 0x80172B76 and the M through FUN_800CE5B8 at x 117, y 9.
+   The bar is no text, so the C and M are never said, and the balance is
+   said from CUE_MIX in their place. */
+#define PAGE_CUE 9
+/* DJ mode, bank D/I and E/J together, page 11: its levels, cross-fader
+   and CUE MIX are bars too, said from memory the same way. */
+#define PAGE_DJ 11
+#define PAGE_BANK_VOLUME 2                  /* SHIFT and a bank key: BANK A VOLUME */
+/* DJ mode's fields for each channel, CH1 left, CH2 right of x 64, drawn by
+   the text widget FUN_80156A60, on no background: the BPM and SYNC's S
+   in the top row, S at x 39 and 108, the speed in the second, 100.0% or
+   +1%, the time left in the third, -00:03, and a dash or --:-- for a
+   channel with no sample. Pad 10 and pad 12 put the S on and off, as
+   LOG010 shows. Below them the channel's state, PLAY, PAUSE, STOP and
+   REVERS, from their own sites. The time changes as a sample plays and is
+   said only when the whole screen is asked for; the state is said when it
+   changes, as he chose on 19 November 2026. */
+#define DJ_FIELD        0x80156ABDu
+#define DJ_STATE_PLAY   0x80161619u
+#define DJ_STATE_PAUSE  0x8016141Du
+#define DJ_STATE_STOP   0x801614B3u
+/* And each channel's sample name, 2 and 94 across, scrolling if long. */
+#define DJ_NAME         0x8013FA65u
+#define DJ_NAME_SHORT   0x8013FA81u
+#define CUE_BAR_C       0x80172B77u
+#define CHROM_CELL      0x8008D349u
+#define CHROM_CELL_LIT  0x8008D30Du
 #define PAGE_MODE(p) (*(volatile int32_t *)((p) + 0x1A90u))
 enum { PICK_NONE, PICK_SAMPLE, PICK_PROJECT, PICK_PATTERN, PICK_PADS, PICK_PATTERNS, PICK_KEEP,
-       PICK_STEP };
+       PICK_STEP, PICK_BUS };
 
 static int pick_kind(uint32_t page, int pad, int *index)
 {
@@ -892,6 +1055,14 @@ static int pick_kind(uint32_t page, int pad, int *index)
 
     if (pad < 0 || pad > 15)
         return PICK_NONE;
+    /* REMAIN held: a pad flips its bus between the one BUS FX has chosen
+       and DRY, which only its light shows. */
+    if (page == PAGE_REMAIN) {
+        if (bank < 0 || bank > 9)
+            return PICK_NONE;
+        *index = (int)bank * 16 + pad;
+        return PICK_BUS;
+    }
     /* The pattern screen's DELETE, from the bank the pads show, and COPY
        with a source chosen, choosing the samples to keep from theirs; a pad
        that sets COPY's destination instead is said as the screen shows
@@ -957,8 +1128,43 @@ static int32_t pick_state(int kind, int index)
         return PAT_KEEP(index);
     case PICK_STEP:
         return step_on(index & 0xFF, index >> 8);
+    case PICK_BUS:
+        return *(volatile int32_t *)(PAD_STORE + (uint32_t)index * 0xACu + 0x120u);
     }
     return 0;
+}
+
+/* A bus by the status bar's names, DRY or BUS 1, after what it is for. */
+static void bus_words(char *t, size_t cap, const char *what, int32_t bus)
+{
+    if (bus == 0)
+        snprintf(t, cap, "%s DRY", what);
+    else
+        snprintf(t, cap, "%s BUS %ld", what, (long)bus);
+}
+
+/* REMAIN held, a bank key gives every pad in a bank one bus and EXT SOURCE
+   gives the input its bus: neither shows on screen. Every pad's bus and the
+   input's, as they were before the key reached the page, the pads' 0 to
+   159, the input's 160; and bus_key set for the reader to watch them. */
+static int32_t bus_before[161];
+static volatile uint8_t bus_key;
+#define KEY_BUS_FX 0x10
+static int16_t fx_before[2];
+
+/* The effect a bus shows, as BUS SELECT names it: Bypass while it is off. */
+static int16_t fx_shown(int bus)
+{
+    return FX_ON(bus) ? FX_TYPE(bus) : 0;
+}
+
+static void bus_snapshot(void)
+{
+    int i;
+
+    for (i = 0; i < 160; i++)
+        bus_before[i] = pick_state(PICK_BUS, i);
+    bus_before[160] = EXT_BUS;
 }
 
 /* The playback buttons, BPM SYNC to REVERSE, keys 0x1D to 0x20, as
@@ -1067,10 +1273,25 @@ __attribute__((used)) static int page_record(uint32_t page, const int16_t *messa
         d.y1 = 3;
         d.ink = pat_banks();
     }
-    /* EXT SOURCE, pressed or let go, with the input's state before. */
-    if ((type == 5 || type == 6) && d.y == KEY_EXT_SOURCE && !shift_down) {
+    /* EXT SOURCE, pressed or let go, with the input's state before; on
+       REMAIN's page it sets the input's bus instead, below. */
+    if ((type == 5 || type == 6) && d.y == KEY_EXT_SOURCE && !shift_down
+        && page != PAGE_REMAIN) {
         d.y1 = 1;
         d.ink = EXT_ON != 0;
+    }
+    /* BUS FX with REMAIN held swaps BUS 1's and BUS 2's effects, as
+       FUN_800C9788 does at 0x800CAE0C: the two before it. */
+    if (type == 5 && page == PAGE_REMAIN && d.y == KEY_BUS_FX) {
+        fx_before[0] = fx_shown(1);
+        fx_before[1] = fx_shown(2);
+        d.y1 = 5;
+    }
+    /* A bank key or EXT SOURCE with REMAIN held: the buses before it. */
+    if (type == 5 && page == PAGE_REMAIN
+        && (d.y == KEY_EXT_SOURCE || (d.y >= 0x25 && d.y <= 0x29))) {
+        bus_snapshot();
+        d.y1 = 4;
     }
     /* A playback button goes with the current pad's settings before the
        page sees it. With SHIFT, BPM SYNC and GATE set the whole bank and
@@ -1173,6 +1394,48 @@ static uint8_t pick_seen;
 static int page_arrived;
 static int32_t bank_seen = -1;
 static int bank_moved;
+/* The values only bars show, watched: CUE MIX and DJ mode's levels and
+   cross-fader, and the pattern's level CTRL 1 sets instead while DJ mode
+   plays a pattern. Each as last seen, -1 before the first look; whether a
+   knob has just moved it, and when; and whether CUE or DJ mode has just
+   opened, to say them there. */
+enum { W_CUE, W_CH1, W_CH2, W_FADE, W_PTN, WATCHES };
+static int w_seen[WATCHES] = { -1, -1, -1, -1, -1 };
+static uint8_t w_moved[WATCHES];
+static uint32_t w_moved_at[WATCHES];
+/* What each was last said as after a turn: two of the knob's steps can
+   round to one percent, and the same words twice in a row say nothing. */
+static char w_said[WATCHES][40];
+static int cue_entered, dj_entered, dj_switched;
+/* What DJ mode was last said to be doing, -1 before it has been: playing a
+   pattern or not, and CTRL 3 on the cross-fader or not. Its page builds
+   itself again for START/END and for PATTERN EDIT alike, and only what
+   has changed is said: PATTERN EDIT changing nothing CTRL 3 sets was heard
+   as "control 3 cue mix centre" in LOG009. */
+static int dj_ptn_said = -1, dj_c3_said = -1;
+/* A channel's S gone from DJ mode's top row, SYNC turned off: bit 0 CH1,
+   bit 1 CH2, said as "channel 1 sync off". */
+static int dj_sync_off;
+/* Whether the whole screen is being read, asked for: DJ mode's running
+   time and state are said then and only then. */
+static int reading_all;
+/* A channel bending: pad 1 or 5 for CH1, 3 or 7 for CH2, as he mapped
+   them on 19 November 2026. The BPM is not drawn while the pad is held,
+   and once it is let go glides back to where it was, a step every second
+   or so, each one drawn: LOG012 heard eighteen of them. A channel bending
+   says nothing of its BPM or speed until the BPM is back to what it was
+   when the bend began, said then; or its nudge or sync pad is pressed;
+   or half a minute has passed. Index 0 CH1, 1 CH2. */
+#define DJ_BEND_LIFE 22500u                  /* ticks, 30 s */
+static uint8_t dj_bending[2];
+static uint32_t dj_bend_at[2];
+static char dj_bend_bpm[2][ITEM_TEXT];
+/* DJ mode draws its page about 85 ticks after it is built, after the first
+   batch would be due: arriving or switched, it waits this long, so what it
+   draws, its EXIT, comes in the same batch as what is said of it, after,
+   and does not cut it off. */
+#define DJ_WAIT 200u                         /* ticks, 267 ms */
+static uint32_t dj_at;
 /* Whether the last batch had the effect display or its grid showing. */
 static int effect_shown;
 
@@ -1211,6 +1474,21 @@ static int nframe_sites;
    pop-up layers. */
 #define WHITE 0xFFFFFF
 #define STEADY 900u                          /* ticks, 1.2 s */
+/* How long a value being turned must hold still before it is said, the
+   speech menu's Knob wait, STEADY unless set there; at 0 each step is said
+   as it comes. Text that changes on its own, a meter or a clock, always
+   waits STEADY, so a short wait does not make it heard. */
+static uint32_t knob_rest = STEADY;
+
+void screen_knob_wait(int ms)
+{
+    knob_rest = MS_TO_TICKS(ms);
+}
+
+static uint32_t rest_of(const struct item *it)
+{
+    return it->own ? STEADY : knob_rest;
+}
 #define POPUP_LIFE 2250u                     /* ticks, 3 s */
 /* Text erased and drawn back within a frame is unchanged: the auto mark
    page draws over its menu every frame and the menu is drawn again the
@@ -1225,11 +1503,31 @@ static int nframe_sites;
    PLAY-PTN C1 62 ticks after the pad. */
 #define PLAY_WINDOW 110u                     /* ticks, 147 ms */
 static uint32_t last_turn, last_press, last_pad, last_fx, last_bank_key, last_ctrl_logged;
-static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen, bank_key_seen;
+static uint8_t turn_seen, press_seen, pad_seen, fx_held, fx_seen, bank_key_seen, shift_held;
 static int pad_page;
 /* The last key pressed, and what DEL last emptied from a chain's slot. */
 #define KEY_DEL 0x1A
 static int last_key = -1;
+/* REMAIN, key 0x24. Its page, the current pad's sample, shows the moment
+   it goes down and goes as it comes up; held, it is also how pads, banks
+   and EXT SOURCE are given their buses, and more, none of which the page
+   shows. So the page is said only for a tap: let go within REMAIN_HOLD,
+   its lines are said as it closes; held longer, "REMAIN" alone, and the
+   reader keeps out of the way. remain_at is when it went down. */
+#define KEY_REMAIN 0x24
+#define REMAIN_HOLD MS_TO_TICKS(500)
+static uint32_t remain_at;
+static uint8_t remain_held, remain_spoke, remain_padded;
+static uint32_t bus_key_at, swap_key_at, freeze_key_at;
+static uint8_t swap_key, freeze_key, freeze_active;
+/* BUS FX pressed with REMAIN held also brings up BUS SELECT over REMAIN's
+   page: its boxes and the page's lines, read together, are noise beside
+   the swap, so the screen is not read again until REMAIN is let go. */
+static uint8_t remain_swapped;
+/* A bank key's watch, or EXT SOURCE's: EXT SOURCE writes a pad's record
+   too, B 3's on the unit, which is not news. */
+static uint8_t bus_ext;
+static void remain_keep(void);
 static char chain_removed[ITEM_TEXT];
 /* The pattern's state, STOP-PTN C1 or PLAY-PTN C1, is said as soon as it
    settles: one pad draws STOP and then PLAY a frame later. */
@@ -1250,6 +1548,81 @@ static int played_just_before(uint32_t then, int seen, uint32_t now)
 /* The page showing, by the last page built; the one built before it; and
    the one showing when the last batch was said. */
 static int page_now = 84, page_prev = 84, batch_page = 84;
+
+/* What a DJ mode field is, by where it sits. */
+enum { DJF_NONE, DJF_BPM, DJF_SYNC, DJF_SPEED, DJF_TIME, DJF_STATE, DJF_BUS, DJF_NAME };
+
+static int dj_kind(uint32_t site, int x, int y)
+{
+    int ch2 = x >= 64;
+
+    if (page_now != PAGE_DJ)
+        return DJF_NONE;
+    if (site == DJ_STATE_PLAY || site == DJ_STATE_PAUSE || site == DJ_STATE_STOP)
+        return DJF_STATE;
+    if (site == DJ_NAME || site == DJ_NAME_SHORT)
+        return DJF_NAME;
+    if (site != DJ_FIELD)
+        return DJF_NONE;
+    /* The top row, as LOG013 has it: CH1's BPM at 9 to 11 and its SYNC
+       slot at 38 or 39; CH2's slot at 85 or 86 and its BPM at 101 to 103.
+       A slot shows S for the channel following the other's tempo, M for
+       the one it follows, and a dash or nothing otherwise. */
+    if (y == 10)
+        return (ch2 ? x < 95 : x >= 30) ? DJF_SYNC : DJF_BPM;
+    if (y == 45)
+        return DJF_BUS;
+    if (y == 18)
+        return DJF_SPEED;
+    if (y == 26)
+        return DJF_TIME;
+    return DJF_NONE;
+}
+
+/* Nothing but dashes, colons and spaces: a channel with no sample. */
+static int dashes(const char *t)
+{
+    int any = 0;
+
+    for (; *t; t++) {
+        if (*t == '-')
+            any = 1;
+        else if (*t != ':' && *t != ' ')
+            return 0;
+    }
+    return any;
+}
+
+static int blank(const char *t)
+{
+    while (*t == ' ')
+        t++;
+    return *t == 0;
+}
+
+/* A pad on DJ mode, 0 to 15 for pads 1 to 16. A bend pad starts a
+   channel's bend, keeping the BPM it showed; its nudge or sync pad, 2, 6
+   or 10 for CH1, 4, 8 or 12 for CH2, ends it. */
+static void dj_pad(int pad, uint32_t tick)
+{
+    int ch = (pad == 0 || pad == 4) ? 0 : (pad == 2 || pad == 6) ? 1 : -1, i;
+
+    if (ch >= 0) {
+        dj_bending[ch] = 1;
+        dj_bend_at[ch] = tick;
+        dj_bend_bpm[ch][0] = 0;
+        for (i = 0; i < ITEMS; i++)
+            if (items[i].used && dj_kind(items[i].site, items[i].x, items[i].y) == DJF_BPM
+                && (items[i].x >= 64) == (ch == 1))
+                memcpy(dj_bend_bpm[ch], items[i].text, ITEM_TEXT);
+        return;
+    }
+    if (pad == 1 || pad == 5 || pad == 9)
+        dj_bending[0] = 0;
+    if (pad == 3 || pad == 7 || pad == 11)
+        dj_bending[1] = 0;
+}
+
 
 /* Screens where the pads play, as they do on the main screen, and choose
    nothing: START/END, CHOP and PITCH/SPEED select the sample to edit by
@@ -1392,6 +1765,18 @@ static int live(const struct item *it)
     while (*t == ' ')
         t++;
     return *t != 0;
+}
+
+/* FAVORITE: on SURF, at Y and left of X, when the FAVORITE tab is showing. */
+static const struct item *fav_label(uint32_t surf, int x, int y)
+{
+    int i;
+
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].site == FAV_LABEL && items[i].surf == surf
+            && items[i].y == y && items[i].x < x)
+            return &items[i];
+    return NULL;
 }
 
 /* The item a draw belongs to: the one at its surface and position, or a new
@@ -1688,6 +2073,48 @@ static int same_but_star(const char *a, const char *b)
     return nb == na + 3 && strncmp(a, b, na) == 0 && strcmp(b + na, "(*)") == 0;
 }
 
+/* A dialog closing. The page is sent message 10 whenever one closes, by
+   OK or by CANCEL: once for each of the six dialogs closed in the log of
+   14 November 2026, INIT PARAM, Protect and START/END's DEL among them,
+   and never anywhere else. The dialog's layer is neither cleared nor
+   wiped, and its buttons are not pop-up text, so without this they would
+   stay on the model, and the next dialog shown on that layer, finding
+   them there, would not be new: Protect, opened where INIT PARAM had
+   been, said nothing at all. So the dialog goes from the model, its
+   message box lines, its buttons and what else it put on their layer, and
+   the next batch says where it has left you. */
+#define MSG_DIALOG_CLOSED 10
+#define DIALOG_BUTTON 0x800907B1u                /* a dialog's OK and CANCEL */
+static int dialog_closed;
+
+static void close_dialog(uint32_t tick)
+{
+    uint32_t surf[8];
+    int nsurf = 0, i, k, n = 0;
+
+    for (i = 0; i < ITEMS; i++)
+        if (items[i].used && items[i].site == DIALOG_BUTTON) {
+            for (k = 0; k < nsurf && surf[k] != items[i].surf; k++)
+                ;
+            if (k == nsurf && nsurf < (int)(sizeof surf / sizeof surf[0]))
+                surf[nsurf++] = items[i].surf;
+        }
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        int on_layer = 0;
+        if (!it->used)
+            continue;
+        for (k = 0; k < nsurf && !on_layer; k++)
+            on_layer = it->surf == surf[k] && it->mark == -1 && it->role != ROLE_TOAST;
+        if (it->role == ROLE_MESSAGE || it->site == DIALOG_BUTTON || on_layer) {
+            it->used = 0;
+            n++;
+        }
+    }
+    log_line("%lu dialog closed, %d items gone\n", (unsigned long)tick, n);
+    dialog_closed = 1;
+}
+
 static int take(const struct draw *d)
 {
     struct item *it;
@@ -1717,12 +2144,16 @@ static int take(const struct draw *d)
                      (unsigned long)d->tick, d->y, (long)((int32_t)d->site >> 8),
                      step_mask((int32_t)d->site >> 8), (long)STEP_COUNT, (long)STEP_SLOTS,
                      (long)STEP_LAST);
+        /* A pad on REMAIN's page means it is held: no "REMAIN", the pad's
+           bus says enough. */
+        if (d->y1 == PICK_BUS)
+            remain_padded = 1;
         if (npicks < (int)(sizeof picks / sizeof picks[0])) {
             picks[npicks].kind = d->y1;
             picks[npicks].index = (int32_t)d->site;
             picks[npicks].before = d->ink;
             picks[npicks].tick = d->tick;
-            picks[npicks].resolved = d->y1 != PICK_STEP;
+            picks[npicks].resolved = d->y1 != PICK_STEP && d->y1 != PICK_BUS;
             npicks++;
         }
         last_pick = d->tick;
@@ -1742,13 +2173,64 @@ static int take(const struct draw *d)
         return 0;
     }
     if (d->kind == EV_PAGE && d->x >= 5 && d->x <= 7) {
+        /* SHIFT as the pages had it, in step with the keys around it:
+           shift_down is the interface task's, ahead of the model. */
+        if (d->y == KEY_SHIFT && (d->x == 5 || d->x == 6))
+            shift_held = d->x == 5;
+        if (d->x == 5 && d->mark == PAGE_DJ && d->y >= 0 && d->y < 16 && !shift_held)
+            dj_pad(d->y, d->tick);
+        /* REMAIN down starts the wait; up before it is over is a tap, and
+           the page's lines, still on the model, are kept to be said. */
+        if (d->y == KEY_REMAIN && d->x == 5 && !remain_held) {
+            /* REMAIN also closes a held effect screen, onto its own page. */
+            freeze_active = 0;
+            remain_swapped = 0;
+            remain_held = 1;
+            remain_spoke = 0;
+            remain_padded = 0;
+            remain_at = d->tick;
+        }
+        /* A bank key or EXT SOURCE on REMAIN's page, its buses kept: watched
+           until one changes. Like a pad, it means REMAIN is held. */
+        if (d->x == 5 && d->y1 == 4) {
+            bus_ext = d->y == KEY_EXT_SOURCE;
+            bus_key = 1;
+            bus_key_at = d->tick;
+            remain_padded = 1;
+        }
+        if (d->x == 5 && d->y1 == 5) {
+            swap_key = 1;
+            swap_key_at = d->tick;
+            remain_padded = 1;
+            remain_swapped = 1;
+        }
+        /* An effect's button with REMAIN held keeps its edit screen up
+           once let go: said as "held" after the screen. */
+        if (d->x == 5 && remain_held && d->y >= 0x2B && d->y <= 0x30) {
+            freeze_key = 1;
+            freeze_key_at = d->tick;
+            remain_padded = 1;
+        }
+        if (d->y == KEY_REMAIN && d->x == 6 && remain_held) {
+            remain_held = 0;
+            remain_swapped = 0;
+            if (page_now == PAGE_REMAIN && !remain_spoke && !remain_padded
+                && d->tick - remain_at < REMAIN_HOLD)
+                remain_keep();
+        }
         if (d->x == 5) {
             last_press = d->tick;
             press_seen = 1;
             last_key = d->y;
             /* Keys 0 to 15 are the pads, 1 to 16; with an effect's button
-               held they choose an effect, which is said, and play nothing. */
-            if (d->y >= 0 && d->y < 16 && !fx_held) {
+               held they choose an effect, which is said, and play nothing.
+               With SHIFT held they play nothing either: they open what is
+               printed above them, INIT PARAM on pad 6, CHROMATIC on pad 4,
+               which is said. Counted as played, a dialog they open would
+               be silent, and its buttons with it for as long as they stay
+               on the model, since whether text came of a pad is only
+               judged again when the text changes. */
+            if (d->y >= 0 && d->y < 16 && !fx_held && !shift_held) {
                 last_pad = d->tick;
                 pad_seen = 1;
                 pad_page = (int)d->mark;
@@ -1822,14 +2304,31 @@ static int take(const struct draw *d)
             log_line("%lu page %ld message %d\n", (unsigned long)d->tick, (long)d->mark, d->x);
         if (d->x >= 0 && d->x < 32)
             msg_at[d->x] = d->tick;
+        if (d->x == MSG_DIALOG_CLOSED) {
+            close_dialog(d->tick);
+            return 1;
+        }
         if (d->x != 1)
             return 0;
-        if ((int)d->mark != page_now)
-            page_prev = page_now;
-        page_now = (int)d->mark;
-        page_pending = 1;
-        page_seq = draw_seq;
-        efx_showing = 0;
+        {
+            int again = (int)d->mark == page_now;
+            if (!again)
+                page_prev = page_now;
+            page_now = (int)d->mark;
+            page_pending = 1;
+            page_seq = draw_seq;
+            efx_showing = 0;
+            if (page_now == PAGE_CUE)
+                cue_entered = 1;
+            /* DJ mode built again where it is, as START/END switching
+               CTRL 3 does: what CTRL 3 now sets, not the whole page. */
+            if (page_now == PAGE_DJ && again)
+                dj_switched = 1;
+            else if (page_now == PAGE_DJ)
+                dj_entered = 1;
+            if (page_now == PAGE_DJ)
+                dj_at = d->tick;
+        }
         return 1;
     }
     if (d->kind == EV_TAB) {
@@ -1838,6 +2337,13 @@ static int take(const struct draw *d)
             return 0;
         memcpy(tab_now, d->text, ITEM_TEXT);
         tab_changed = 1;
+        /* A new tab is a new screen, though no page is built for it: EFX
+           SET's BUS 3 and BUS 4 tabs draw EFX Type: as INPUT FX Setting
+           does, and left as it was, its way of speaking stayed on for
+           SIDE CHAIN, DIRECT and the rest, which said nothing. The new
+           tab's EFX Type:, if it has one, turns it back on. */
+        efx_showing = 0;
+        efx_was_showing = 0;
         log_line("%lu tab %ld |%s|\n", (unsigned long)d->tick, (long)d->mark, d->text);
         return 1;
     }
@@ -1927,6 +2433,19 @@ static int take(const struct draw *d)
        changes. */
     if (page_now == PAGE_PATTERN && d->site == BIG_TEXT && it->role == ROLE_NONE)
         it->role = d->y >= 50 ? ROLE_IGNORE : padlike(d->text) ? ROLE_QUIET : ROLE_NONE;
+    if (page_now == PAGE_CHROMATIC && (d->site == CHROM_CELL || d->site == CHROM_CELL_LIT))
+        it->role = ROLE_IGNORE;
+    if (page_now == PAGE_CUE
+        && (d->site == CUE_BAR_C || (d->x == 117 && d->y == 9 && strcmp(d->text, "M") == 0)))
+        it->role = ROLE_IGNORE;
+    /* DJ mode's CUE MIX bar's ends, C and M, and the channel numbers 1 and
+       2 at the bottom: marks, which read-all said bare in LOG012. */
+    if (page_now == PAGE_DJ
+        && (d->site == CUE_BAR_C || (d->y == 2 && strcmp(d->text, "M") == 0)
+            || (d->y == 54 && (strcmp(d->text, "1") == 0 || strcmp(d->text, "2") == 0))))
+        it->role = ROLE_IGNORE;
+    if (d->site == BIG_TEXT && fav_label(d->surf, d->x, d->y) != NULL)
+        it->role = ROLE_FAV;
     it->title = it->role == ROLE_TITLE;
     if (d->site == EFX_TYPE_LABEL) {
         if (!efx_showing || efx_surf != d->surf)
@@ -1960,15 +2479,29 @@ static int take(const struct draw *d)
     it->mark = d->mark;
     it->ink = d->ink;
     now_lit = is_lit(it);
+    /* A bent channel's BPM back where it was: the bend is over. */
+    if (text_changed && dj_kind(d->site, d->x, d->y) == DJF_BPM) {
+        int ch = d->x >= 64;
+        if (dj_bending[ch] && strcmp(d->text, dj_bend_bpm[ch]) == 0)
+            dj_bending[ch] = 0;
+    }
+    /* SYNC turned off on DJ mode: the channel's S taken away. */
+    if (text_changed && dj_kind(d->site, d->x, d->y) == DJF_SYNC && strcmp(it->text, "S") == 0
+        && (blank(d->text) || dashes(d->text)))
+        dj_sync_off |= d->x >= 64 ? 2 : 1;
     if (text_changed) {
         int turned = just_after(last_turn, turn_seen, d->tick);
 
         it->prompted = (uint8_t)(turned || just_after(last_press, press_seen, d->tick));
         /* What a pad or a bank key changes where the pads play, and the
            tempo a bank key brings on the pattern screen in every mode, is
-           not said; what a pad chooses is. */
+           not said; what a pad chooses is. Chromatic mode's pads play too:
+           recording there, each note played counts on its UNDO: 1/16,
+           which is said when a key takes one back, not as the notes go
+           in. */
         it->by_pad = (uint8_t)(it->role != ROLE_STATE && it->role != ROLE_ANSWER
-                               && ((pads_play() && played_just_before(last_pad, pad_seen, d->tick))
+                               && (((pads_play() || page_now == PAGE_CHROMATIC)
+                                    && played_just_before(last_pad, pad_seen, d->tick))
                                    || ((pads_play() || page_now == PAGE_PATTERN)
                                        && played_just_before(last_bank_key, bank_key_seen,
                                                              d->tick))));
@@ -1991,7 +2524,7 @@ static int take(const struct draw *d)
             it->own = 1;
         /* A first change is said at once. One that follows another within
            STEADY neither interrupts nor is said until the item has held still
-           that long: a meter or a clock that never stops is not heard at all,
+           for the knob wait, STEADY itself for text changing on its own: a meter or a clock that never stops is not heard at all,
            and an effect being played is heard where it stops. A value just
            turned or changed by a key is said at every step, as the focus is,
            the pop-ups a key brings among them, COUNT-IN 2MEAS, COUNT-IN WAIT.
@@ -2147,11 +2680,124 @@ static const char *const effect_names[] = {
    the screen, as the title over the effects grid, else the one effect whose
    name it begins, since a grid page showing none selected has no title.
    "DJFX .." begins two and stays as it is. */
+/* A pad colour, 1 to 127, as its pad lights it. FUN_800C06F0 makes the
+   light from the number: no table, a turn of the colour wheel at full
+   strength, number 1 blue and on through cyan, green, yellow, red and
+   magenta back to blue at 127. The hue in the usual sense, red at 0, is
+   240 less that turn, named in 24 steps of 15 degrees, about five numbers
+   a name, so that someone who cannot see the pad knows what it will be;
+   chosen on 17 November 2026. 0 is Default and 128 White, which
+   the screen names itself. */
+static const char *colour_name(int n)
+{
+    static const char *const names[24] = {
+        "red", "orange-red", "orange", "amber", "yellow", "yellow-green",
+        "lime", "leaf green", "green", "emerald", "mint", "turquoise",
+        "cyan", "sky blue", "azure", "cornflower blue", "blue", "royal blue",
+        "violet", "purple", "magenta", "hot pink", "pink", "rose",
+    };
+    int turn = (255 * (n - 1) / 127) * 360 / 255;
+    int hue = ((240 - turn) % 360 + 360) % 360;
+
+    return names[((hue * 2 + 15) / 30) % 24];
+}
+
+/* A colour's number, on a line whose name is a colour's, BUS1 Color,
+   PAD-3, the sample's Color, with the colour it makes: "12 sky blue". */
+static const char *with_colour(const struct item *it)
+{
+    static char said[2][ITEM_TEXT + 16];
+    static int which;
+    const char *t = it->text, *l;
+    int n = 0, i, digits = 0;
+
+    while (*t == ' ')
+        t++;
+    for (; t[digits] >= '0' && t[digits] <= '9'; digits++)
+        n = n * 10 + (t[digits] - '0');
+    if (digits == 0 || digits > 3 || (t[digits] != 0 && t[digits] != ' ') || n < 1 || n > 127)
+        return NULL;
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *o = &items[i];
+        if (!live(o) || o == it || o->surf != it->surf || o->x >= it->x
+            || o->y - it->y > 2 || it->y - o->y > 2)
+            continue;
+        for (l = o->text; *l == ' '; l++)
+            ;
+        if (strstr(l, "Color") != NULL || strncmp(l, "PAD-", 4) == 0) {
+            which ^= 1;
+            snprintf(said[which], sizeof said[which], "%d %s", n, colour_name(n));
+            return said[which];
+        }
+    }
+    return NULL;
+}
+
+/* A DJ mode field as it is said: with its channel, "channel 1 BPM 80.0",
+   "channel 2 sync on", "channel 1 master", "channel 1 speed +1%", "channel 2 DRY", "channel 1
+   sample On Time", "channel 1 PLAY", "channel 2 reverse"; the time only
+   while the whole screen is read, "channel 1 time -00:03", "channel 1
+   PLAY"; an empty channel's dashes never. NULL for any other text. */
+static const char *dj_text(const struct item *it)
+{
+    static char t[ITEM_TEXT + 24];
+    const char *v = it->text;
+    int kind = dj_kind(it->site, it->x, it->y), ch = it->x >= 64 ? 2 : 1;
+
+    if (kind == DJF_NONE)
+        return NULL;
+    while (*v == ' ')
+        v++;
+    if (dashes(v) || (kind == DJF_TIME && !reading_all && screen_mode != SCREEN_ALL))
+        return "";
+    if ((kind == DJF_BPM || kind == DJF_SPEED) && !reading_all && screen_mode != SCREEN_ALL
+        && dj_bending[ch - 1]) {
+        if (device_ticks() - dj_bend_at[ch - 1] < DJ_BEND_LIFE)
+            return "";
+        dj_bending[ch - 1] = 0;
+    }
+    switch (kind) {
+    case DJF_BPM:
+        snprintf(t, sizeof t, "channel %d BPM %s", ch, v);
+        break;
+    case DJF_SYNC:
+        if (strcmp(v, "S") == 0)
+            snprintf(t, sizeof t, "channel %d sync on", ch);
+        else if (strcmp(v, "M") == 0)
+            snprintf(t, sizeof t, "channel %d master", ch);
+        else
+            snprintf(t, sizeof t, "channel %d %s", ch, v);
+        break;
+    case DJF_SPEED:
+        snprintf(t, sizeof t, "channel %d speed %s", ch, v);
+        break;
+    case DJF_TIME:
+        snprintf(t, sizeof t, "channel %d time %s", ch, v);
+        break;
+    case DJF_NAME:
+        snprintf(t, sizeof t, "channel %d sample %s", ch, v);
+        break;
+    case DJF_STATE:
+        /* REVERS is cut short to fit; said in full. */
+        snprintf(t, sizeof t, "channel %d %s", ch, strncmp(v, "REVERS", 6) == 0 ? "reverse" : v);
+        break;
+    default:
+        snprintf(t, sizeof t, "channel %d %s", ch, v);
+        break;
+    }
+    return t;
+}
+
 static const char *full_text(const struct item *it)
 {
     size_t n = strlen(it->text), k;
     const char *found = NULL;
     int i;
+
+    if ((found = with_colour(it)) != NULL)
+        return found;
+    if ((found = dj_text(it)) != NULL)
+        return found;
 
     /* The chain's heading without the (*) a change adds, which OpenEVV
        reads as "asterisk". */
@@ -2505,7 +3151,7 @@ static int say_focus(const struct item *it)
         const struct item *v = &items[i];
         if (v != it && live(v) && v->row_sel && row_label(v) == it) {
             last_label = it;
-            return say3(it->text, v->text, NULL);
+            return say3(it->text, full_text(v), NULL);
         }
     }
     return say(it);
@@ -2779,12 +3425,18 @@ static const struct item *label_of(const struct item *v)
 
     if (fixed_label(v, &fixed))
         return NULL;
+    /* DJ mode's fields name themselves, and are no other's label: LOG012
+       heard the time left as the label of the STOP under it. */
+    if (dj_kind(v->site, v->x, v->y) != DJF_NONE)
+        return NULL;
     best = row_label(v);
 
     if (best == NULL)
         best = column_label(v, 20, 0);
     if (best == NULL)
         best = column_label(v, 32, 1);
+    if (best != NULL && dj_kind(best->site, best->x, best->y) != DJF_NONE)
+        return NULL;
     return best;
 }
 
@@ -3080,14 +3732,39 @@ static int trrec_showing(void)
 }
 
 /* The REMAIN page, a line at a time, each name with its value. */
+/* REMAIN's page shares the screen: with an effect's edit screen frozen
+   over it, held there by REMAIN, and with the top screen's status bar
+   beneath. LOG011 heard all three read as one. Only one layer's lines are
+   read: the effect's while one is being held, else the page's own, known
+   by its first line, STORAGE AVAILABLE. */
+#define REMAIN_FIRST 0x80194097u
+static uint32_t rows_surf;
+
+static uint32_t remain_layer(void)
+{
+    int i;
+
+    if (freeze_key || freeze_active)
+        for (i = 0; i < ITEMS; i++)
+            if (live(&items[i]) && items[i].role == ROLE_EFFECT)
+                return items[i].surf;
+    for (i = 0; i < ITEMS; i++)
+        if (live(&items[i]) && items[i].site == REMAIN_FIRST)
+            return items[i].surf;
+    return 0;
+}
+
 static int want_drawn(const struct item *it)
 {
-    return drawn_now(it) && !is_popup(it);
+    return drawn_now(it) && !is_popup(it) && (rows_surf == 0 || it->surf == rows_surf);
 }
 
 static void say_rows(struct item **order)
 {
-    int n = in_order(order, ITEMS, want_drawn), i, k;
+    int n, i, k;
+
+    rows_surf = remain_layer();
+    n = in_order(order, ITEMS, want_drawn);
 
     for (i = 0; i < n; i = k) {
         const char *part[3] = { NULL, NULL, NULL };
@@ -3097,6 +3774,55 @@ static void say_rows(struct item **order)
                 part[m++] = order[k]->text;
         say3(part[0], part[1], part[2]);
     }
+    rows_surf = 0;
+}
+
+/* A tap of REMAIN: its page's lines, as say_rows makes them, kept here at
+   the moment it is let go, while they are still on the model, and said in
+   the batch that follows, after the page has gone. say_rows writes to the
+   batch, so it is pointed here for the while. */
+static char remain_said[24 * WIDE];
+static size_t remain_used;
+static int remain_count;
+
+static void remain_keep(void)
+{
+    static struct item *order[ITEMS];
+    char *out = b_out;
+    size_t cap = b_cap, used = b_used;
+    int count = b_count;
+
+    b_out = remain_said;
+    b_cap = sizeof remain_said;
+    b_used = 0;
+    b_count = 0;
+    say_rows(order);
+    remain_used = b_used;
+    remain_count = b_count;
+    b_out = out;
+    b_cap = cap;
+    b_used = used;
+    b_count = count;
+    remain_spoke = 1;
+}
+
+/* What remain_keep kept, into the batch, each phrase as it was made. */
+static void remain_say(void)
+{
+    size_t at = 0;
+
+    while (remain_count > 0 && at < remain_used) {
+        size_t n = strlen(remain_said + at);
+        if (b_used + n + 1 < b_cap && b_count < 24 && !in_batch(remain_said + at)) {
+            memcpy(b_out + b_used, remain_said + at, n + 1);
+            b_used += n + 1;
+            b_count++;
+        }
+        at += n + 1;
+        remain_count--;
+    }
+    remain_count = 0;
+    remain_used = 0;
 }
 
 /* INPUT FX Setting's strings: EFX Type's value beside its name, in the
@@ -3204,15 +3930,116 @@ static void efx_same(void)
             items[i].changed = 0;
 }
 
+/* The FAVORITE tab's favourite, the number beside FAVORITE:, if showing. */
+static const struct item *fav_number(void)
+{
+    const struct item *n = NULL;
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *it = &items[i];
+        if (live(it) && it->role == ROLE_FAV && it->site == BIG_TEXT
+            && fav_label(it->surf, it->x, it->y) != NULL
+            && (n == NULL || (int32_t)(it->last_drawn - n->last_drawn) > 0))
+            n = it;
+    }
+    return n;
+}
+
+/* The favourite, then what it puts on BUS 3 and BUS 4 by their full names,
+   the left one BUS 3's. Bypass puts nothing on either. */
+static void fav_say(const struct item *num)
+{
+    const struct item *fx[2] = { NULL, NULL };
+    int i;
+
+    say3(num->text, NULL, NULL);
+    if (reads(num->text, "Bypass"))
+        return;
+    for (i = 0; i < ITEMS; i++) {
+        const struct item *it = &items[i];
+        if (!live(it) || it->site != FAV_EFFECT || it->surf != num->surf)
+            continue;
+        if (fx[0] == NULL || it->x < fx[0]->x) {
+            fx[1] = fx[0];
+            fx[0] = it;
+        } else if (fx[1] == NULL || it->x < fx[1]->x) {
+            fx[1] = it;
+        }
+    }
+    if (fx[0] != NULL)
+        say3("BUS 3", full_text(fx[0]), NULL);
+    if (fx[1] != NULL)
+        say3("BUS 4", full_text(fx[1]), NULL);
+}
+
+/* BUS 3-4's ON or OFF in BUS SELECT, said with its name when it is not
+   what it was the last time the box showed, and the first time if OFF. */
+static void bus34_same(void)
+{
+    static char last[ITEM_TEXT];
+    struct item *state = NULL;
+    int i;
+
+    for (i = 0; i < ITEMS; i++) {
+        struct item *it = &items[i];
+        if (!live(it) || (it->site != BUS34_ON && it->site != BUS34_OFF))
+            continue;
+        it->changed = 0;
+        if (state == NULL || (int32_t)(it->last_drawn - state->last_drawn) > 0)
+            state = it;
+    }
+    if (state == NULL)
+        return;
+    if (last[0] != 0 ? strcmp(last, state->text) != 0 : !reads(state->text, "ON"))
+        say3("BUS 3 and 4", state->text, NULL);
+    memcpy(last, state->text, ITEM_TEXT);
+}
+
+/* VALUE turned on the FAVORITE tab redraws the favourite and both effects
+   at once, three strings changing together, which would otherwise be taken
+   for a new screen saying only its focus, FAVORITE:; and turned quickly,
+   the steps between were not said at all. Each favourite VALUE lands on is
+   said here with its effects, and its strings nowhere else. */
+static void fav_same(void)
+{
+    const struct item *num = fav_number();
+    int i, any = 0;
+
+    for (i = 0; i < ITEMS; i++)
+        if (items[i].role == ROLE_FAV && items[i].changed == 1 && live(&items[i]))
+            any = 1;
+    if (any && num != NULL)
+        fav_say(num);
+    for (i = 0; i < ITEMS; i++)
+        if (items[i].role == ROLE_FAV)
+            items[i].changed = 0;
+}
+
 /* What to say about a new screen. A dialog that has just opened is all
    there is: its text, then its own focused button. Otherwise the title, the
    tab a tabbed page is on when it has changed, then the focus: the focused
    item, else a settings list's top row, else on the main screen the bank
    and pad; then any pop-up; and on a screen with none of those, what it
    shows. */
-static void new_screen(struct item **order)
+/* The tab a tabbed page is on, when it has changed. */
+static void say_tab(void)
 {
     const struct item *tab;
+
+    if (tab_known()) {
+        if (strcmp(tab_now, last_tab) != 0) {
+            memcpy(last_tab, tab_now, ITEM_TEXT);
+            say3(tab_now, NULL, NULL);
+        }
+    } else if ((tab = current_tab()) != NULL && strcmp(tab->text, last_tab) != 0) {
+        memcpy(last_tab, tab->text, ITEM_TEXT);
+        say(tab);
+    }
+}
+
+static void new_screen(struct item **order)
+{
     int n, i, k, focus, popups, effect = 0, top = 0;
 
     last_label = NULL;
@@ -3230,6 +4057,14 @@ static void new_screen(struct item **order)
     /* REMAIN's page, shown while the key is held on the top screen, is
        all information. */
     if (page_now == PAGE_REMAIN) {
+        /* Held past the wait: its name alone, once. After that, what
+           changes on it, as VALUE moves to PROJECT or NAME, line by line. */
+        if (remain_held && !remain_spoke) {
+            remain_spoke = 1;
+            if (!remain_padded)
+                say3("REMAIN", NULL, NULL);
+            return;
+        }
         say_rows(order);
         return;
     }
@@ -3244,6 +4079,9 @@ static void new_screen(struct item **order)
         if (!title_said(order[i]))
             say(order[i]);
     if (efx_showing) {
+        /* EFX SET's BUS 3 and BUS 4 tabs, named before their EFX Type. */
+        if (tab_known())
+            say_tab();
         efx_focus();
         return;
     }
@@ -3282,20 +4120,23 @@ static void new_screen(struct item **order)
                 if (batch_page != page_now)
                     say3(page_names[i].name, NULL, NULL);
             }
-    if (tab_known()) {
-        if (strcmp(tab_now, last_tab) != 0) {
-            memcpy(last_tab, tab_now, ITEM_TEXT);
-            say3(tab_now, NULL, NULL);
-        }
-    } else if ((tab = current_tab()) != NULL && strcmp(tab->text, last_tab) != 0) {
-        memcpy(last_tab, tab->text, ITEM_TEXT);
-        say(tab);
-    }
+    say_tab();
     /* The focus counts when it is there, even when the title has already
        said its words, as a grid's title names the focused cell. */
     focus = in_order(order, ITEMS, want_lit);
     for (i = 0; i < focus; i++)
         say_focus(order[i]);
+    bus34_same();
+    /* The FAVORITE tab's focus, FAVORITE:, with the favourite it is on. */
+    {
+        const struct item *num = fav_number();
+        if (num != NULL) {
+            fav_say(num);
+            for (i = 0; i < ITEMS; i++)
+                if (items[i].role == ROLE_FAV)
+                    items[i].changed = 0;
+        }
+    }
     if (copy_bank((uint32_t)page_now))
         say3(copy_side((uint32_t)page_now) ? "destination" : "source", NULL, NULL);
     /* The main screen, the manual's top screen, is named so on arrival,
@@ -3331,6 +4172,35 @@ static void new_screen(struct item **order)
         n = in_order(order, ITEMS, want_fresh);
         say_contents(order, n);
     }
+}
+
+/* Where a dialog closing leaves you, though the screen under it draws
+   nothing new: the top screen by that name, a screen named by its button
+   by its name, as arriving there says them, else the screen's title and
+   its focus. The dialog itself is already off the model. */
+static int want_any_title(const struct item *it) { return is_title(it); }
+static int want_any_lit(const struct item *it) { return is_lit(it); }
+
+static void landed(struct item **order)
+{
+    int n, i;
+
+    if (page_now == 84) {
+        say3("top screen", NULL, NULL);
+        return;
+    }
+    for (i = 0; i < (int)(sizeof page_names / sizeof page_names[0]); i++)
+        if (page_names[i].page == page_now) {
+            say3(page_names[i].name, NULL, NULL);
+            if (page_names[i].alone)
+                return;
+        }
+    n = in_order(order, ITEMS, want_any_title);
+    for (i = 0; i < n; i++)
+        say(order[i]);
+    n = in_order(order, ITEMS, want_any_lit);
+    for (i = 0; i < n; i++)
+        say_focus(order[i]);
 }
 
 /* A pop-up layer that has only just been drawn: nothing on it older than
@@ -3398,6 +4268,23 @@ static void say_picks(void)
             say3(t, NULL, NULL);
             continue;
         }
+        /* A pad's bus, once the page has flipped it: "A 13 BUS 1", "A 13
+           DRY". */
+        if (kind == PICK_BUS) {
+            if (!picks[i].resolved) {
+                picks[kept++] = picks[i];
+                continue;
+            }
+            if (picks[i].resolved == 2 || now == before)
+                continue;
+            {
+                char what[8];
+                snprintf(what, sizeof what, "%c %d", 'A' + index / 16, index % 16 + 1);
+                bus_words(t, sizeof t, what, now);
+            }
+            say3(t, NULL, NULL);
+            continue;
+        }
         if (kind == PICK_PATTERN) {
             if (now == before || now < 0 || now >= 160)
                 continue;
@@ -3413,6 +4300,206 @@ static void say_picks(void)
         say3(t, NULL, NULL);
     }
     npicks = kept;
+}
+
+/* The name editor, read from its memory: none of its name reaches the
+   screen's text. Its state as last said, and as last seen. */
+struct rename_state {
+    char text[33];
+    int32_t len, cursor;
+    uint8_t mode;
+};
+static struct rename_state rn_said, rn_seen;
+static uint8_t rn_open;
+
+static uint32_t rename_editor(void)
+{
+    uint32_t page = RENAME_PAGE, ed;
+
+    if (page_now != PAGE_RENAME || page < 0x80000000u || page >= 0x84000000u)
+        return 0;
+    ed = *(volatile uint32_t *)(page + 0x1A80u);
+    return ed >= 0x80000000u && ed < 0x84000000u ? ed : 0;
+}
+
+static int rename_read(struct rename_state *st)
+{
+    uint32_t ed = rename_editor();
+    int i, n;
+
+    if (ed == 0)
+        return 0;
+    memset(st, 0, sizeof *st);
+    n = *(volatile int32_t *)(ed + 0x4A4u);
+    if (n < 0 || n > 32)
+        return 0;
+    for (i = 0; i < n; i++)
+        st->text[i] = *(volatile char *)(ed + 0x9Cu + (uint32_t)i);
+    st->text[n] = 0;
+    st->len = n;
+    st->cursor = *(volatile int32_t *)(ed + 0x4A0u);
+    st->mode = *(volatile uint8_t *)(ed + 0x4BDu);
+    return 1;
+}
+
+/* A character as it should be heard: capitals marked, and every mark the
+   picker offers by name, as a screen reader names them. Said bare, most of
+   them were dropped before they reached the voice: LOG019 heard nothing
+   for ! to /, : to @, [ ] \\ and { | } ` ^. */
+static void rename_char(char *t, size_t cap, char c)
+{
+    static const struct { char c; const char *name; } marks[] = {
+        { ' ', "space" }, { '!', "exclamation" }, { '"', "quote" }, { '#', "number" },
+        { '$', "dollar" }, { '%', "percent" }, { '&', "and" }, { '\'', "apostrophe" },
+        { '(', "left paren" }, { ')', "right paren" }, { '*', "star" }, { '+', "plus" },
+        { ',', "comma" }, { '-', "dash" }, { '.', "dot" }, { '/', "slash" },
+        { ':', "colon" }, { ';', "semicolon" }, { '<', "less than" }, { '=', "equals" },
+        { '>', "greater than" }, { '?', "question" }, { '@', "at" },
+        { '[', "left bracket" }, { '\\', "backslash" }, { ']', "right bracket" },
+        { '^', "caret" }, { '_', "underscore" }, { '`', "grave" },
+        { '{', "left brace" }, { '|', "bar" }, { '}', "right brace" }, { '~', "tilde" },
+    };
+    unsigned i;
+
+    if (c >= 'A' && c <= 'Z') {
+        snprintf(t, cap, "cap %c", c);
+        return;
+    }
+    if (c == 0) {
+        snprintf(t, cap, "end");
+        return;
+    }
+    for (i = 0; i < sizeof marks / sizeof marks[0]; i++)
+        if (marks[i].c == c) {
+            snprintf(t, cap, "%s", marks[i].name);
+            return;
+        }
+    snprintf(t, cap, "%c", c);
+}
+
+/* Watched every poll: a change makes a batch, as a change on screen does. */
+static void rename_watch(uint32_t now)
+{
+    struct rename_state st;
+
+    if (!rename_read(&st)) {
+        rn_open = 0;
+        return;
+    }
+    if (memcmp(&st, &rn_seen, sizeof st) != 0) {
+        log_line("%lu rename cursor %ld len %ld mode %d |%s|\n", (unsigned long)now,
+                 (long)st.cursor, (long)st.len, st.mode, st.text);
+        rn_seen = st;
+        if (!pending)
+            first_pending = now;
+        pending = 1;
+        last_change = now;
+    }
+}
+
+/* The editor has two modes, as LOG017 found its byte at +0x4BD: 1, the
+   name, where VALUE moves the cursor along its 31 places and past them to
+   OK; 0, picking, where VALUE turns the character at the cursor through
+   the ones it may be, written into the name as it turns, and pressing
+   VALUE goes back. Opened: the title and the name, then the cursor. In the
+   name, a move says its place and the character there, "4, cap J", or OK;
+   picking says the character alone, "pick, cap P" as it begins. */
+static void rename_place(const struct rename_state *st)
+{
+    char c[16], t[48];
+
+    if (st->cursor >= st->len) {
+        say3("OK", NULL, NULL);
+        return;
+    }
+    if (st->cursor < 0)
+        return;
+    rename_char(c, sizeof c, st->text[st->cursor]);
+    snprintf(t, sizeof t, "%ld, %s", (long)st->cursor + 1, c);
+    say3(t, NULL, NULL);
+}
+
+static void rename_say(void)
+{
+    struct rename_state st;
+    char c[16];
+    int i, blank = 1;
+
+    if (!rename_read(&st))
+        return;
+    if (!rn_open) {
+        rn_open = 1;
+        /* The title as the page chooses it, FUN_8011CB58: RENAME SAMPLE
+           when its word at +0x1A88 is set, else RENAME PROJECT. Read from
+           the page, as LOG018 found the title's text gone from the screen
+           by the time the name was said. */
+        say3(*(volatile uint32_t *)(RENAME_PAGE + 0x1A88u) ? "RENAME SAMPLE" : "RENAME PROJECT",
+             NULL, NULL);
+        for (i = 0; i < st.len; i++)
+            blank &= st.text[i] == ' ';
+        say3(blank ? "empty" : st.text, NULL, NULL);
+        rn_said = st;
+        rename_place(&st);
+        return;
+    }
+    if (memcmp(&st, &rn_said, sizeof st) == 0)
+        return;
+    if (st.mode == 0 && st.cursor >= 0 && st.cursor < st.len
+        && (rn_said.mode != 0 || st.text[st.cursor] != rn_said.text[st.cursor])) {
+        rename_char(c, sizeof c, st.text[st.cursor]);
+        say3(rn_said.mode != 0 ? "pick," : c, rn_said.mode != 0 ? c : NULL, NULL);
+    } else if (st.mode != 0 && (st.cursor != rn_said.cursor || rn_said.mode == 0
+                                || strcmp(st.text, rn_said.text) != 0)) {
+        rename_place(&st);
+    }
+    rn_said = st;
+}
+
+/* An effect by its number, Bypass to Cloud Delay and DJFX Delay. */
+static const char *fx_name(int16_t n)
+{
+    return n >= 0 && n < 49 ? FX_NAME(n) : NULL;
+}
+
+/* BUS FX's swap, with what each bus now has: "swapped, BUS 1 Delay, BUS 2
+   Filter+Drive". */
+static void swap_say(void)
+{
+    if (swap_key != 2)
+        return;
+    swap_key = 0;
+    say3("swapped,", "BUS 1", fx_name(fx_shown(1)));
+    say3("BUS 2", fx_name(fx_shown(2)), NULL);
+}
+
+/* What a bank key or EXT SOURCE changed with REMAIN held: "BANK B BUS 1",
+   "EXT SOURCE DRY". A bank is said by the bus its pads now share, the
+   first changed pad's. */
+static void bus_say(void)
+{
+    char t[32], what[16];
+    int b, i;
+
+    if (bus_key != 2)
+        return;
+    bus_key = 0;
+    if (bus_ext) {
+        if (EXT_BUS != bus_before[160]) {
+            bus_words(t, sizeof t, "EXT SOURCE", EXT_BUS);
+            say3(t, NULL, NULL);
+        }
+        return;
+    }
+    for (b = 0; b < 10; b++)
+        for (i = b * 16; i < b * 16 + 16; i++) {
+            int32_t now = pick_state(PICK_BUS, i);
+            if (now != bus_before[i]) {
+                snprintf(what, sizeof what, "BANK %c", 'A' + b);
+                bus_words(t, sizeof t, what, now);
+                say3(t, NULL, NULL);
+                break;
+            }
+        }
 }
 
 /* The playback buttons pressed, each as its name and what it now is, in the
@@ -3468,6 +4555,8 @@ static void same_screen(struct item **order)
 
     if (efx_showing)
         efx_same();
+    fav_same();
+    bus34_same();
     /* A choice newly made says what the screen now shows for it, changed or
        not: the BPM screen's tempo, when PROJECT gives way to the bank. */
     for (i = 0; i < ITEMS; i++)
@@ -3513,9 +4602,10 @@ static void same_screen(struct item **order)
             it->changed = 0;
             continue;
         }
-        /* A value turned on the selected row says the value alone. */
+        /* A value turned on the selected row says the value alone, a
+           colour's with its name. */
         if (it->changed == 1 && (l = row_label(it)) != NULL && l->row_sel) {
-            if (say3(it->text, NULL, NULL))
+            if (say3(full_text(it), NULL, NULL))
                 it->changed = 0;
         } else if (say_focus(it)) {
             it->changed = 0;
@@ -3575,7 +4665,7 @@ static void same_screen(struct item **order)
             it->changed = 0;
             continue;
         }
-        if (it->rapid > 0 && b_now - it->last_change < STEADY)
+        if (it->rapid > 0 && b_now - it->last_change < rest_of(it))
             continue;
         /* A key's legend is heard when what you just did changed it, as
            turning VALUE changes the zoom, not as a screen sets it arriving. */
@@ -3622,6 +4712,31 @@ static void same_screen(struct item **order)
 int screen_say_text(const char *text)
 {
     return say3(text, NULL, NULL);
+}
+
+/* Everything showing, asked for: the screen, then any pop-up over it, top
+   to bottom, each value with its label as a screen without a title is
+   read. A pop-up not drawn again lately has gone, though its layer still
+   holds it. */
+static int want_shown(const struct item *it)
+{
+    return it->role != ROLE_HINT
+        && (!is_popup(it) || b_now - it->last_drawn < STEADY
+            || dj_kind(it->site, it->x, it->y) != DJF_NONE);
+}
+
+static void say_all(void)
+{
+    static struct item *order[ITEMS];
+    int n = in_order(order, ITEMS, want_shown);
+
+    if (n == 0) {
+        say3("nothing on screen", NULL, NULL);
+        return;
+    }
+    reading_all = 1;
+    say_contents(order, n);
+    reading_all = 0;
 }
 
 /* What is showing, when nothing has just been drawn to say so: after the
@@ -3673,6 +4788,9 @@ static int screen_changed(void)
             continue;
         if (is_title(it) && it->changed == 1)
             return 1;
+        /* The FAVORITE tab's favourite and effects, changing together. */
+        if (it->role == ROLE_FAV)
+            continue;
         alive++;
         if (it->fresh || (it->changed == 1 && !is_status(it)))
             fresh++;
@@ -3727,6 +4845,88 @@ static const struct item *sample_focus(void)
    changing quickly has held still, fills phrases with what to say and
    answers 1. Answers 1 with no phrases when what is being said should
    stop. */
+/* A balance between two sides, v from 0, all left, to max, all right:
+   the side's name alone at either end, "centre" between, else how far
+   towards a side, 1 to 99, "cue 40", "main 12". CUE MIX's sides are cue
+   and main, not C and M, which before a number would be read as CTRL. */
+static void balance_words(char *t, size_t cap, int v, int max, const char *left,
+                          const char *right)
+{
+    int d;
+
+    if (v < 0)
+        v = 0;
+    if (v > max)
+        v = max;
+    d = (v * 200 - max * 100) / max;
+    if (d <= -100)
+        snprintf(t, cap, "%s", left);
+    else if (d >= 100)
+        snprintf(t, cap, "%s", right);
+    else if (d == 0)
+        snprintf(t, cap, "centre");
+    else
+        snprintf(t, cap, "%s %d", d < 0 ? left : right, d < 0 ? -d : d);
+}
+
+static int watch_value(int k)
+{
+    switch (k) {
+    case W_CUE:
+        return CUE_MIX;
+    case W_CH1:
+        return DJ_CH1;
+    case W_CH2:
+        return DJ_CH2;
+    case W_PTN:
+        return DJ_PTN_LEVEL;
+    default:
+        return DJ_FADE;
+    }
+}
+
+/* Whether CTRL 3 in DJ mode is on the cross-fader: START/END has put it
+   there, and no pattern is playing, which keeps it on CUE MIX. */
+static int dj_c3_fade(void)
+{
+    return DJ_C3_FADE != 0 && DJ_PTN == 0;
+}
+
+/* What a watched value is said as, with its name or not: "channel 1 level
+   80", a percent of the knob's 127; "fade channel 2 30"; "cue mix main 30",
+   or after a turn of CTRL 3 just "main 30", as CUE mode's knob alone. */
+static void watch_words(char *t, size_t cap, int k, int named)
+{
+    char side[24];
+    int v = watch_value(k);
+
+    switch (k) {
+    case W_CUE:
+        balance_words(side, sizeof side, v, 255, "cue", "main");
+        snprintf(t, cap, "%s%s", named ? "cue mix " : "", side);
+        break;
+    case W_CH1:
+    case W_CH2:
+        if (v < 0)
+            v = 0;
+        if (v > 127)
+            v = 127;
+        snprintf(t, cap, "channel %d level %d", k == W_CH1 ? 1 : 2, (v * 100 + 63) / 127);
+        break;
+    case W_PTN:
+        if (v < 0)
+            v = 0;
+        if (v > 127)
+            v = 127;
+        snprintf(t, cap, "pattern level %d", (v * 100 + 63) / 127);
+        break;
+    default:
+        balance_words(side, sizeof side, v, 127, "channel 1", "channel 2");
+        snprintf(t, cap, "fade %s", side);
+        break;
+    }
+}
+
 int screen_poll(char *phrases, size_t cap, int *count)
 {
     static struct item *order[ITEMS];
@@ -3772,8 +4972,8 @@ int screen_poll(char *phrases, size_t cap, int *count)
     /* A TR-REC step changes a moment after its pad, as the sequencer takes
        the note: watched until it does, or a quarter of a second passes. */
     for (i = 0; i < npicks; i++)
-        if (picks[i].kind == PICK_STEP && !picks[i].resolved) {
-            if (pick_state(PICK_STEP, picks[i].index) != picks[i].before) {
+        if ((picks[i].kind == PICK_STEP || picks[i].kind == PICK_BUS) && !picks[i].resolved) {
+            if (pick_state(picks[i].kind, picks[i].index) != picks[i].before) {
                 picks[i].resolved = 1;
             } else if (now - picks[i].tick > STEP_WAIT) {
                 picks[i].resolved = 2;
@@ -3785,6 +4985,53 @@ int screen_poll(char *phrases, size_t cap, int *count)
             pending = 1;
             last_change = now;
         }
+    /* A bank key's or EXT SOURCE's buses, watched as a TR-REC step is. */
+    if (bus_key == 1) {
+        int changed = 0;
+        if (bus_ext)
+            changed = EXT_BUS != bus_before[160];
+        for (i = 0; i < 160 && !changed && !bus_ext; i++)
+            changed = pick_state(PICK_BUS, i) != bus_before[i];
+        if (changed) {
+            bus_key = 2;
+            if (!pending)
+                first_pending = now;
+            pending = 1;
+            last_change = now;
+        } else if (now - bus_key_at > STEP_WAIT) {
+            bus_key = 0;
+        }
+    }
+    rename_watch(now);
+    /* A watched value moved by a knob, CTRL 3 in CUE mode or any CTRL
+       knob in DJ mode: said once it has held still for the knob wait, as a
+       value on screen is. A change with no knob turned just before, a
+       project loading, is not said. */
+    for (i = 0; i < WATCHES; i++) {
+        int v = watch_value(i);
+        if (v != w_seen[i]) {
+            if (w_seen[i] >= 0 && turn_seen && now - last_turn < STEADY) {
+                w_moved[i] = 1;
+                w_moved_at[i] = now;
+                log_line("%lu watch %d at %d\n", (unsigned long)now, i, v);
+            }
+            w_seen[i] = v;
+        }
+    }
+    /* BUS FX's swap: done when either effect has moved, or, the two the
+       same so that nothing can, once the wait is over. */
+    if (swap_key == 1) {
+        if (fx_shown(1) != fx_before[0] || fx_shown(2) != fx_before[1]
+            || (now - swap_key_at > STEP_WAIT && fx_before[0] == fx_before[1])) {
+            swap_key = 2;
+            if (!pending)
+                first_pending = now;
+            pending = 1;
+            last_change = now;
+        } else if (now - swap_key_at > STEP_WAIT) {
+            swap_key = 0;
+        }
+    }
     /* The settings menu answers at once, and nothing else speaks while it
        is open, or while screen reading is off. */
     if (menu_n > 0) {
@@ -3798,7 +5045,9 @@ int screen_poll(char *phrases, size_t cap, int *count)
             closed = menu_action(menu_q[i].action, menu_q[i].step);
         }
         menu_n = 0;
-        if (closed && !muted)
+        if (closed == 2)
+            say_all();
+        else if (closed && !muted)
             reannounce();
         for (i = 0; i < ITEMS; i++)
             items[i].changed = items[i].fresh = 0;
@@ -3827,6 +5076,10 @@ int screen_poll(char *phrases, size_t cap, int *count)
         pending = 0;
         page_pending = 0;
         tab_changed = 0;
+        memset(w_moved, 0, sizeof w_moved);
+        cue_entered = 0;
+        dj_entered = 0;
+        dj_switched = 0;
         return 0;
     }
     sample = sample_focus();
@@ -3857,8 +5110,18 @@ int screen_poll(char *phrases, size_t cap, int *count)
        otherwise make every poll a batch once it held still. */
     for (i = 0; i < ITEMS && !due; i++)
         if (live(&items[i]) && items[i].changed == 1 && items[i].rapid > 0
-            && now - items[i].last_change >= STEADY)
+            && now - items[i].last_change >= rest_of(&items[i]))
             due = 1;
+    for (i = 0; i < WATCHES && !due; i++)
+        if (w_moved[i] && now - w_moved_at[i] >= knob_rest)
+            due = 1;
+    /* REMAIN's page waits while the key is down and the wait is not over:
+       a tap or a hold is not known yet. */
+    if (due && page_now == PAGE_REMAIN && remain_held && !remain_spoke && !remain_padded
+        && now - remain_at < REMAIN_HOLD)
+        due = 0;
+    if (due && page_now == PAGE_DJ && (dj_entered || dj_switched) && now - dj_at < DJ_WAIT)
+        due = 0;
     if (!due)
         return 0;
     /* What was erased and not drawn back within a frame is gone, and so is a
@@ -3903,10 +5166,13 @@ int screen_poll(char *phrases, size_t cap, int *count)
                 && (!page_pending || (int32_t)(items[i].drawn_seq - page_seq) > 0);
     }
     /* A bank change is its letter alone, on every screen but the tempo
-       screen, whose choice of PROJECT or BANK A reads it already. */
+       screen, whose choice of PROJECT or BANK A reads it already, and the
+       bank volume pop-up, whose heading names the bank: LOG010 heard "D,
+       BANK D VOLUME". */
     if (working) {
         ;
-    } else if (bank_moved && page_now != 81 && page_now != PAGE_PROJECT) {
+    } else if (bank_moved && page_now != 81 && page_now != PAGE_PROJECT && page_now != PAGE_DJ
+               && page_now != PAGE_BANK_VOLUME) {
         char t[2] = { (char)('A' + bank_seen), 0 };
         say3(t, NULL, NULL);
     } else if (pat_pending && page_now != 81) {
@@ -3924,8 +5190,61 @@ int screen_poll(char *phrases, size_t cap, int *count)
     }
     bank_moved = 0;
     pat_pending = 0;
+    /* DJ mode, which has no title: arriving, "DJ mode" and the four values
+       its bars show, the pattern's level for channel 1's while a pattern
+       plays, CTRL 1 setting that instead; built again, by START/END or by
+       PATTERN EDIT, only what has changed: "pattern on" with its level, or
+       "pattern off", and what CTRL 3 now sets if that has moved. First,
+       before what the page draws. */
+    if (page_now != PAGE_DJ)
+        dj_entered = dj_switched = 0;
+    if (dj_entered || dj_switched) {
+        char t[40], v[32];
+        int ptn = DJ_PTN != 0, c3 = dj_c3_fade();
+        if (dj_entered) {
+            say3("DJ mode", NULL, NULL);
+            for (i = W_CH1; i <= W_FADE; i++) {
+                watch_words(t, sizeof t, i == W_CH1 && ptn ? W_PTN : i, 1);
+                say3(t, NULL, NULL);
+            }
+            watch_words(t, sizeof t, W_CUE, 1);
+            say3(t, NULL, NULL);
+        } else {
+            if (dj_ptn_said >= 0 && ptn != dj_ptn_said) {
+                if (ptn) {
+                    watch_words(v, sizeof v, W_PTN, 1);
+                    say3("pattern on", NULL, NULL);
+                    say3(v, NULL, NULL);
+                } else {
+                    say3("pattern off", NULL, NULL);
+                }
+            }
+            if (dj_c3_said < 0 || c3 != dj_c3_said) {
+                watch_words(v, sizeof v, c3 ? W_FADE : W_CUE, 1);
+                snprintf(t, sizeof t, "control 3 %s", v);
+                say3(t, NULL, NULL);
+            }
+        }
+        dj_ptn_said = ptn;
+        dj_c3_said = c3;
+        memset(w_moved, 0, sizeof w_moved);
+        memset(w_said, 0, sizeof w_said);
+        dj_entered = dj_switched = 0;
+    }
+    if (page_now != PAGE_DJ)
+        dj_sync_off = 0;
+    for (i = 0; i < 2; i++)
+        if (dj_sync_off & (1 << i)) {
+            char t[24];
+            snprintf(t, sizeof t, "channel %d sync off", i + 1);
+            say3(t, NULL, NULL);
+        }
+    dj_sync_off = 0;
     say_picks();
     say_presses();
+    remain_say();
+    bus_say();
+    swap_say();
     if (chain_removed[0] && page_now == PAGE_CHAIN)
         say3("delete,", chain_removed, NULL);
     chain_removed[0] = 0;
@@ -3933,12 +5252,28 @@ int screen_poll(char *phrases, size_t cap, int *count)
         for (i = 0; i < ITEMS; i++)
             if (items[i].role != ROLE_MESSAGE)
                 items[i].changed = 0;
+    } else if (page_now == PAGE_RENAME && rename_editor() != 0 && screen_mode != SCREEN_ALL) {
+        /* The name editor is said from its memory, by rename_say below: its
+           OK, redrawn each time the mode changes, and its rows of
+           characters are not read from the screen. */
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = 0;
+        page_pending = 0;
+    } else if (remain_swapped && remain_held && screen_mode != SCREEN_ALL) {
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = 0;
+        page_pending = 0;
     } else if (screen_mode == SCREEN_ALL) {
         for (i = 0; i < nburst; i++)
             say(&items[burst[i]]);
         nburst = 0;
         for (i = 0; i < ITEMS; i++)
             items[i].changed = 0;
+    } else if (dialog_closed && !page_pending && !tab_changed && !screen_changed()) {
+        /* A dialog has closed on the screen it was opened over. */
+        landed(order);
+        for (i = 0; i < ITEMS; i++)
+            items[i].changed = items[i].own = 0;
     } else if ((kind = screen_changed()) != 0) {
         screen_epoch = first_pending - 2u;
         /* A page just built has drawn all it shows; what it has not drawn
@@ -3982,6 +5317,55 @@ int screen_poll(char *phrases, size_t cap, int *count)
             if (items[i].changed == 2 || !live(&items[i]))
                 items[i].changed = 0;
     }
+    /* The name editor's name and cursor, after its title and OK. */
+    rename_say();
+    /* The watched values: as CUE mode opens, after its title, "cue mix
+       centre"; and wherever a knob has left one, it alone. DJ mode's are
+       said above, first. */
+    if (page_now != PAGE_CUE)
+        cue_entered = 0;
+    {
+        char t[40];
+        if (cue_entered) {
+            watch_words(t, sizeof t, W_CUE, 1);
+            say3(t, NULL, NULL);
+            w_moved[W_CUE] = 0;
+            memset(w_said, 0, sizeof w_said);
+        }
+        for (i = 0; i < WATCHES; i++)
+            if (w_moved[i] && now - w_moved_at[i] >= knob_rest) {
+                watch_words(t, sizeof t, i, i != W_CUE);
+                if (strcmp(t, w_said[i]) != 0) {
+                    say3(t, NULL, NULL);
+                    memcpy(w_said[i], t, sizeof w_said[i]);
+                }
+                w_moved[i] = 0;
+            }
+        cue_entered = 0;
+        dj_entered = 0;
+        dj_switched = 0;
+    }
+    /* An effect's edit screen kept up by REMAIN: "held" once the screen
+       has been said; given up after a second. */
+    if (freeze_key || freeze_active) {
+        int shown = 0;
+        for (i = 0; i < ITEMS && !shown; i++)
+            shown = live(&items[i]) && items[i].role == ROLE_EFFECT;
+        if (freeze_key && shown) {
+            say3("held", NULL, NULL);
+            freeze_key = 0;
+            freeze_active = 1;
+        } else if (freeze_key && now - freeze_key_at > 1500u) {
+            freeze_key = 0;
+        } else if (freeze_active && !shown && page_now == 84) {
+            /* EXIT closing the held screen: the top screen, which leaving an
+               effect's display otherwise never says, as it comes and goes
+               with every touch of a knob. */
+            say3("top screen", NULL, NULL);
+            freeze_active = 0;
+        }
+    }
+    dialog_closed = 0;
     efx_was_showing = efx_showing;
     effect_shown = 0;
     for (i = 0; i < ITEMS && !effect_shown; i++)

@@ -1,0 +1,19 @@
+top screen
+Speech settings | Speed 50
+Knob wait 1200 milliseconds
+1200 milliseconds
+1100 milliseconds
+1000 milliseconds
+900 milliseconds
+800 milliseconds
+700 milliseconds
+600 milliseconds
+500 milliseconds
+400 milliseconds
+300 milliseconds
+Knob wait
+Settings saved | top screen
+Filter+Drive
+CUTOFF 827 hertz
+8308
+707

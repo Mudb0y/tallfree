@@ -64,11 +64,12 @@ void *screen_log_spare(size_t *len);
 void screen_report(void);
 
 /* menu.c */
-enum { MENU_OPEN, MENU_CLOSE, MENU_PRESS, MENU_TURN };
+enum { MENU_OPEN, MENU_CLOSE, MENU_PRESS, MENU_TURN, MENU_TOGGLE, MENU_SAY_ALL };
 void settings_load(int volume, int abbreviations);
 int  menu_is_open(void);
 int  menu_action(int action, int step);
 void screen_mute(int mute);
+void screen_knob_wait(int ms);
 
 #define TICKS_TO_MS(t) ((uint32_t)(t) * 4u / 3u)
 #define MS_TO_TICKS(m) ((uint32_t)(m) * 3u / 4u)

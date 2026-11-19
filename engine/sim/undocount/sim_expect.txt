@@ -1,0 +1,4 @@
+top screen
+CHROMATIC MODE | SCALE: chromatic | UNDO: 0/16 | BANK-PAD A-1
+UNDO: 2/16
+top screen

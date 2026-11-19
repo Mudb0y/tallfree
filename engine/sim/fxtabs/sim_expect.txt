@@ -1,0 +1,6 @@
+top screen
+FAVORITE | FAVORITE: | Bypass
+BUS 4 | effects Type: Bypass
+SIDE CHAIN | SOURCE DRY
+DIRECT | Direct FX1 Filter+Drive
+BUS 4 | effects Type: Bypass

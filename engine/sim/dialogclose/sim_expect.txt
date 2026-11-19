@@ -1,0 +1,6 @@
+top screen
+START/END
+Initialize Points. All PAD Stops. | Are you sure? | CANCEL
+OK
+CANCEL
+START/END

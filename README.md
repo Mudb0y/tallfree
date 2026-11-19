@@ -18,27 +18,57 @@ but you can always go back to Roland's firmware; see below.
 - Moving through a menu reads the item you land on. Turning a value reads the
   new value, and a setting is read with its name.
 - Tabbed pages announce the tab. A dialog is read on its own, then its
-  selected button.
+  selected button, and when it closes you hear where it left you.
 - On the main screen, which Roland calls the top screen, you hear "top screen"
   when you get there, and a bank change is its letter, on every screen. Pads
   are silent wherever they play a sound, and named on screens where you pick
-  one, such as sampling, export or delete.
+  one, such as sampling, export or delete. In chromatic mode the grid of
+  semitone offsets isn't read.
+- Holding SHIFT and pressing a pad opens what's printed above it, such as
+  INIT PARAM on pad 6, and that's read like any other screen.
 - GATE, LOOP, REVERSE, BPM SYNC and EXT SOURCE say whether they're on or off,
   and turning an effect on says its name.
 - In the file lists, a sample's name is read once you've stayed on it for two
   seconds, so you can scroll through a folder hearing the previews. Folders
   are read straight away, and the entry that goes back up is "parent folder".
 - In TR-REC, each pad you press says the step it sets, such as "step 5 on".
+- CUE MIX, the headphones' balance that CTRL 3 sets in CUE mode (SHIFT and
+  pad 3) and DJ mode, is read like a pan knob: "cue" all the way to C,
+  "main" all the way to M, "centre" in the middle, and in between how far
+  towards a side, such as "main 30". CUE mode says it when it opens.
+- DJ mode (bank D/I and E/J together) says "DJ mode" as it opens, with both
+  channel levels, the cross-fader and CUE MIX. Turning CTRL 1 or CTRL 2 reads
+  that channel's level as a percent, "channel 1 level 80", and the
+  cross-fader reads like CUE MIX, "fade channel 2 30".
 
-Speech plays through the main outputs over whatever the SP is playing, and it
+Speech plays through the main outputs over whatever the SP is playing, or
+through the headphones only if you choose that in the speech settings, and it
 isn't recorded when you sample or resample.
 
 ## Speech settings
 
 Hold SHIFT and press EXIT on any screen. Turn VALUE to choose Speed, Pitch,
-Voice, Volume, Abbreviations or Screen reading, press VALUE to edit it, turn
-to change it, and press again when you're done. EXIT saves and closes. The
-settings are kept on the SP.
+Voice, Volume, Speech to, Abbreviations, Screen reading or Knob wait, press
+VALUE to edit it, turn to change it, and press again when you're done. EXIT
+saves and closes. The settings are kept on the SP.
+
+Speech to is mains plus headphones or headphones. On mains plus headphones,
+speech comes out of LINE OUT and PHONES with everything else. On headphones,
+it only comes out of PHONES, so whoever's listening to the line outs doesn't
+hear it. Headphones only works with something plugged into PHONES, so plug in
+before you switch to it.
+
+Knob wait is how long a value you're turning, such as an effect's CUTOFF on
+CTRL 1, has to stay still before it's read. It goes from 0 to 2000
+milliseconds in steps of 100, and starts at 1200. At 0, every step is read as
+you turn.
+
+Two more things work with SHIFT and EXIT from any screen:
+
+- Hold SHIFT and hold EXIT for a second to turn speech off or on. It says
+  which, and doesn't save, so restarting the SP brings back whatever the
+  settings menu last saved.
+- Hold SHIFT and tap EXIT twice to read everything on the screen.
 
 ## What's different
 

@@ -225,7 +225,9 @@ def system():
             out += [f'{t} s0 ROW {y} {int(k == sel)}',
                     f'{t} s0 6 {y} _{ROWLABEL}{name}', f'{t} s0 {x} {y} {value}']
         return out
-    d += ['3000 PAGE 11', '3000 s0 CLEAR'] + page(3000, rows, 0)
+    # Page 12 stands in for the SYSTEM page here: 11, which this used to
+    # borrow, is DJ mode on the unit (LOG004), and now says so as it opens.
+    d += ['3000 PAGE 12', '3000 s0 CLEAR'] + page(3000, rows, 0)
     d += ['3000 s0 103 2  1/ 5']
     for k, t in enumerate(['GENERAL', 'CLICK', 'MIDI', 'GAIN', 'VERSION']):
         d.append(f'3000 s0 {5 + 25 * k} 2 {TABS}{t}')
@@ -1177,9 +1179,10 @@ def chain():
                        'PATTERN CHAIN [1] | REPEAT All', 'G.1', 'G.1', 'G.1', 'G.2',
                        'delete, G.2', 'Current', 'Off'])
 
-# REMAIN held on the top screen, as runs/68 drew it: page 49, a list of
-# names and values, one on white; let go, the top screen again. Each line
-# is said, name and value together; letting go says nothing.
+# REMAIN tapped on the top screen, as runs/68 drew it: page 49, a list of
+# names and values, one on white; let go within half a second, the top
+# screen again. Each line is said, name and value together, as it closes;
+# letting go says nothing more.
 def remain():
     L = '=8008C665:'
     d = main_screen(0, 0, 'A-13')
@@ -1190,8 +1193,8 @@ def remain():
           f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
           f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
           f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
-    d += ['3500 KEY UP 24', '3500 PAGE 84'] + main_screen(3500, 0, 'A-13')
-    d += ['5000 VALUE']
+    d += ['2300 KEY UP 24', '2300 PAGE 84'] + main_screen(2300, 0, 'A-13')
+    d += ['4000 VALUE']
     write('remain', d, ['top screen',
                         'STORAGE AVAILABLE 14.36GB | PROJECT 1 PROJECT_01 | NAME New Sample | '
                         'Color White | Remaining Time -00:05 | STEREO/MONO STEREO'])
@@ -1410,6 +1413,82 @@ def importprogress():
                                 'destination: PAD B14', 'Import sample | WAIT: IMPORTING',
                                 'Operation Completed!', 'destination: PRESS PAD'])
 
+# REMAIN held, as for giving pads their buses: the same page, but held
+# past half a second it is "REMAIN" alone. The pads pressed meanwhile draw
+# nothing, as LOG009 recorded, and letting go says nothing.
+def remainhold():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['3000 KEY DOWN 0c', '3000 PAD 13', '3120 KEY UP 0c',
+          '3500 KEY DOWN 08', '3500 PAD 9', '3620 KEY UP 08',
+          '4000 KEY DOWN 0c', '4000 PAD 13', '4120 KEY UP 0c']
+    d += ['4500 KEY UP 24', '4500 PAGE 84'] + main_screen(4500, 0, 'A-13')
+    d += ['6000 VALUE']
+    write('remainhold', d, ['top screen', 'REMAIN', 'A 13 BUS 1', 'A 9 BUS 1', 'A 13 DRY'])
+
+# REMAIN held and a pad hit at once, before the half second is up: that is
+# a hold too, and the pad's bus is all that is said, no "REMAIN".
+def remainfast():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['2150 KEY DOWN 0c', '2150 PAD 13', '2270 KEY UP 0c']
+    d += ['3500 KEY UP 24', '3500 PAGE 84'] + main_screen(3500, 0, 'A-13')
+    d += ['5000 VALUE']
+    write('remainfast', d, ['top screen', 'A 13 BUS 1'])
+
+# REMAIN held, then a bank key and EXT SOURCE, neither drawing anything:
+# the bank's sixteen pads given BUS 1 together, then DRY; the input flipped
+# to BUS 1. Each is said by what it set, EXT as Roland's abbreviations
+# have it said, external.
+def remainbank():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['3000 KEY DOWN 26', '3120 KEY UP 26', '3600 KEY DOWN 26', '3720 KEY UP 26',
+          '4200 KEY DOWN 12', '4320 KEY UP 12']
+    d += ['5000 KEY UP 24', '5000 PAGE 84'] + main_screen(5000, 0, 'A-13')
+    d += ['6500 VALUE']
+    write('remainbank', d, ['top screen', 'REMAIN', 'BANK B BUS 1', 'BANK B DRY',
+                            'external SOURCE BUS 1'])
+
+# REMAIN held and BUS FX pressed: BUS 1's and BUS 2's effects swapped, the
+# sim's Filter+Drive and Reverb, nothing drawn; then swapped back.
+def remainswap():
+    L = '=8008C665:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['2000 KEY DOWN 24', '2000 PAGE 49', '2000 s1 CLEAR', '2000 s1 5 2 _^',
+          '2000 s1 3 9 _=80194097:STORAGE AVAILABLE', f'2000 s1 93 9 _{PBIG} 14.36GB',
+          f'2000 s1 1 18 !{L} PROJECT  1', f'2000 s1 81 18 !{PBIG}PROJECT_01',
+          f'2000 s1 1 27 _{L} NAME', f'2000 s1 76 27 _{PBIG}New Sample',
+          f'2000 s1 1 36 _{L} Color', f'2000 s1 99 36 _{PBIG}White',
+          f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
+          f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
+    d += ['3000 KEY DOWN 10', '3120 KEY UP 10', '3800 KEY DOWN 10', '3920 KEY UP 10']
+    d += ['4600 KEY UP 24', '4600 PAGE 84'] + main_screen(4600, 0, 'A-13')
+    d += ['6000 VALUE']
+    write('remainswap', d, ['top screen', 'REMAIN', 'swapped, BUS 1 Reverb | BUS 2 Filter+Drive',
+                            'swapped, BUS 1 Filter+Drive | BUS 2 Reverb'])
+
 # REMAIN with a sample's name too long for its line: FUN_8008C4A0 draws it
 # from x 56, not right-aligned, a character further every draw and whole
 # again once the rest fits, the line wiped and drawn every 50 ms. The line
@@ -1425,12 +1504,12 @@ def remainname():
           f'2000 s1 1 45 _{L} Remaining Time', f'2000 s1 99 45 _{PBIG}-00:05',
           f'2000 s1 1 54 _{L} STEREO/MONO', f'2000 s1 97 54 _{PBIG}STEREO']
     k = 0
-    for t in range(2000, 7000, 50):
+    for t in range(2000, 2300, 50):
         d += [f'{t} s1 FILL 0 27 127 35', f'{t} s1 1 27 _{L} NAME',
               f'{t} s1 SCROLL {k} 56 27 _{NAME}{name}']
         k = k + 1 if 5 * len(name[k:]) > 0x79 - 0x3C else 0
-    d += ['7000 KEY UP 24', '7000 PAGE 84'] + main_screen(7000, 0, 'A-13')
-    d += ['8500 VALUE']
+    d += ['2300 KEY UP 24', '2300 PAGE 84'] + main_screen(2300, 0, 'A-13')
+    d += ['4000 VALUE']
     write('remainname', d, ['top screen',
                             'STORAGE AVAILABLE 14.36GB | PROJECT 1 PROJECT_01 | '
                             'NAME file_name_example_140bpm_gmaj_whow | Color White | '
@@ -1649,6 +1728,416 @@ def recinput():
                           'LEVEL 90', 'RECORD SETTING', 'ROUTING ExtIn', 'REC'])
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# Chromatic mode, page 8, as LOG001 drew it on 14 November 2026: SHIFT and
+# pad 4 from the main screen; the scale on the main screen's surface, and on
+# a surface of its own the title, a grid of the sixteen pads' semitone
+# offsets, -8 to 7, and the bank and pad it plays. Each pad lights its cell
+# on white and lets it go. Arriving says the title, the scale and the pad,
+# never the grid; playing says nothing; EXIT is the top screen again.
+CHROM_CELL, CHROM_LIT = '=8008D349:', '=8008D30D:'
+CHROM_CELLS = [(16, 21, '4'), (35, 21, '5'), (54, 21, '6'), (73, 21, '7'),
+               (16, 32, '0'), (35, 32, '1'), (54, 32, '2'), (73, 32, '3'),
+               (14, 43, '-4'), (33, 43, '-3'), (52, 43, '-2'), (71, 43, '-1'),
+               (14, 54, '-8'), (33, 54, '-7'), (52, 54, '-6'), (71, 54, '-5')]
+def chromatic():
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 4', '1200 PAGE 8',
+          '1200 s0 8 12 _=801733B3:SCALE:Chrom']
+    d += [f'1200 s1 {x} {y} {CHROM_CELL}{t}' for x, y, t in CHROM_CELLS]
+    d += ['1200 s1 13 2 _=801120A1:CHROMATIC MODE', '1200 s1 91 20 =801119F5:BANK-PAD',
+          '1200 s1 100 28 =80111A79:A - 1', '1350 KEY UP 03', '1400 KEY UP 2a']
+    # Pads 9, 5 and 1, the cells for -4, 0 and 4, then 1 and 2 overlapping.
+    for t, pad in [(3000, 9), (4000, 5), (5000, 1)]:
+        x, y, text = CHROM_CELLS[{9: 8, 5: 4, 1: 0}[pad]]
+        d += [f'{t} PAD {pad}', f'{t} s1 {x} {y} !{CHROM_LIT}{text}',
+              f'{t + 400} KEY UP {pad - 1:02x}', f'{t + 400} s1 {x} {y} {CHROM_CELL}{text}']
+    d += ['6000 PAD 1', '6000 s1 16 21 !=8008D30D:4', '6200 PAD 2', '6200 s1 35 21 !=8008D30D:5',
+          '6210 KEY UP 00', '6210 s1 16 21 =8008D349:4',
+          '6500 KEY UP 01', '6500 s1 35 21 =8008D349:5']
+    d += ['8000 KEY DOWN 22', '8000 PAGE 84', '8000 s1 CLEAR'] + main_screen(8000, 0, 'A-1')
+    d += ['8100 KEY UP 22', '9000 VALUE']
+    write('chromatic', d, ['top screen', 'CHROMATIC MODE | SCALE: chromatic | BANK-PAD A-1',
+                           'top screen'])
+
+# A dialog's question in the message box, on a pop-up layer, and its buttons,
+# CANCEL focused, as INIT PARAM, Protect and START/END's DEL drew them.
+def message_dialog(t, surf, lines, focus='CANCEL'):
+    ys = [10, 32] if len(lines) == 2 else [10, 21, 32]
+    sites = ['=8001F4BD:', '=8001F6B5:'] if len(lines) == 2 else \
+        ['=8001F4BD:', '=8001F677:', '=8001F6B5:']
+    out = [f'{t} s{surf} 13 {y} ~{site}{line}' for y, site, line in zip(ys, sites, lines)]
+    return out + dialog_buttons(t, surf, focus)
+
+def dialog_buttons(t, surf, focus):
+    return [f'{t} s{surf} 86 47 {"!" if focus == "OK" else ""}=800907B1:OK',
+            f'{t} s{surf} 16 47 {"!" if focus == "CANCEL" else ""}=800907B1:CANCEL']
+
+INIT_PARAM = ['Current Sample\\nParameter Init', 'Are you sure?']
+INIT_SAID = 'Current Sample Parameter initialize | Are you sure? | CANCEL'
+
+# SHIFT and pad 6, INIT PARAM, as LOG001 drew it: the dialog with CANCEL
+# focused, VALUE moving the focus to OK and back, EXIT closing it, which
+# the page is sent as message 10; then shown again. A pad pressed with SHIFT
+# held is not played, so the dialog and its buttons are said, and closing it
+# says where it leaves you.
+def shiftpad():
+    d = main_screen(0, 0, 'A-1')
+    for t in (1000, 7000):
+        d += [f'{t} KEY DOWN 2a', f'{t + 200} PAD 6'] + message_dialog(t + 200, 3, INIT_PARAM)
+        d += [f'{t + 300} KEY UP 05', f'{t + 600} KEY UP 2a']
+        d += dialog_buttons(t + 1500, 3, 'OK') + dialog_buttons(t + 2500, 3, 'CANCEL')
+        d += [f'{t + 4000} MSG 10', f'{t + 4100} KEY UP 22']
+    d += ['13000 VALUE']
+    write('shiftpad', d, ['top screen', INIT_SAID, 'OK', 'CANCEL', 'top screen',
+                          INIT_SAID, 'OK', 'CANCEL', 'top screen'])
+
+# Protect, SHIFT and COPY, opened after INIT PARAM on the layer it used, as
+# LOG001 drew them: the box's three lines new, its buttons drawn again just
+# as INIT PARAM left them. Before message 10 cleared the dialog away, the
+# buttons were still on the model, so the layer was not new and Protect was
+# no new dialog: its three lines, more than the two a key's answer may be,
+# said nothing, and the buttons, put on the model by the SHIFT and pad that
+# opened INIT PARAM, were still taken as played.
+def protect():
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 6'] + message_dialog(1200, 3, INIT_PARAM)
+    d += ['1300 KEY UP 05', '1600 KEY UP 2a']
+    d += dialog_buttons(2500, 3, 'OK') + dialog_buttons(3500, 3, 'CANCEL')
+    d += ['5000 MSG 10', '5100 KEY UP 22']
+    d += ['7000 KEY DOWN 2a', '7200 KEY DOWN 23'] + \
+        message_dialog(7200, 3, ['Protect', 'BANK A', 'Are you sure?'])
+    d += ['7300 KEY UP 23', '7700 KEY UP 2a']
+    d += dialog_buttons(8500, 3, 'OK') + dialog_buttons(9500, 3, 'CANCEL')
+    d += ['11000 MSG 10', '11100 KEY UP 22', '12000 VALUE']
+    write('protect', d, ['top screen', INIT_SAID, 'OK', 'CANCEL', 'top screen',
+                         'Protect | BANK A | Are you sure? | CANCEL', 'OK', 'CANCEL',
+                         'top screen'])
+
+# START/END's DEL, "Initialize Points. All PAD Stops.", as LOG001 drew it:
+# the page's legends and markers, the dialog over them, the focus moved and
+# back, and CANCEL: closing it names the screen it leaves you on.
+def dialogclose():
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 17', '1000 PAGE 90',
+          '1000 s1 8 2 _=80107AA5:C1:START', '1000 s1 95 2 _=80107AC7:C3:END',
+          '1000 s2 53 2 _=80107C07:C2:OFF', '1000 s2 58 53 _=80107C83:A-1',
+          '1000 s2 76 53 _=80107CF5:M:[S]', '1000 s2 103 53 !=80107D6D:MENU',
+          '1000 s2 4 53 !=801078A9:ENC:ZOOM(1x)',
+          '1000 s1 2 42 _=8014BBB3:S', '1000 s1 122 42 _=8014BCA5:E', '1150 KEY UP 17']
+    d += ['3000 KEY DOWN 1a'] + \
+        message_dialog(3000, 3, ['Initialize Points.\\nAll PAD Stops.', 'Are you sure?'])
+    d += ['3200 KEY UP 1a'] + dialog_buttons(4500, 3, 'OK') + dialog_buttons(5500, 3, 'CANCEL')
+    d += ['7000 MSG 10', '7100 KEY UP 22', '8000 VALUE']
+    write('dialogclose', d, ['top screen', 'START/END',
+                             'Initialize Points. All PAD Stops. | Are you sure? | CANCEL',
+                             'OK', 'CANCEL', 'START/END'])
+
+# The speech menu's Speech to, four settings on from Speed, changed from
+# mains plus headphones to headphones and back to choosing, then saved with
+# EXIT. The simulator has no outputs; what is said is the test.
+def speechout():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 2a', '1050 KEY DOWN 22', '1150 KEY UP 22', '1200 KEY UP 2a',
+          '2500 KNOB 0 1', '4000 KNOB 0 1', '5500 KNOB 0 1', '7000 KNOB 0 1',
+          '8500 KEY DOWN 31', '8600 KEY UP 31',
+          '9500 KNOB 0 1',
+          '10500 KEY DOWN 31', '10600 KEY UP 31',
+          '11500 KEY DOWN 22', '11600 KEY UP 22',
+          '13500 VALUE']
+    write('speechout', d, ['top screen', 'Speech settings | Speed 50', 'Pitch 65',
+                           'Voice Adult Male 1', 'Volume 50',
+                           'Speech to mains plus headphones', 'mains plus headphones',
+                           'headphones', 'Speech to', 'Settings saved | top screen'])
+
+# CUE mode, SHIFT and pad 3, page 9, as LOG002 drew it: its title twice,
+# shadow and face, a C and an M either side of the balance bar, and NAME.
+# The C and M are not said; the balance is, from CUE_MIX, centred to start.
+# CTRL 3 then turned to each end and back towards M, each said once it has
+# held still for the knob wait: 0 is cue, 127 main, 96 is 192 of 255,
+# 50 towards main.
+def cuemix():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 2a', '1000 PAGE 9',
+          '1000 s0 4 33 ~=8013FE3D:Cue (Phones Monitor)',
+          '1000 s0 3 32 ~=80195269:Cue (Phones Monitor)',
+          '1000 s0 89 9 !=80172B77:C', '1000 s0 117 9 !=800EE779:M',
+          '1000 s0 15 56 _=801611BF:NAME: ---                   ',
+          '1100 KEY UP 2a']
+    d += ['3000 CTRL 3 10', '3050 CTRL 3 0',
+          '6000 CTRL 3 127',
+          '9000 CTRL 3 96',
+          '12000 VALUE']
+    write('cuemix', d, ['top screen', 'Cue (Phones Monitor) | NAME: --- | cue mix centre',
+                        'cue', 'main', 'main 50'])
+
+# DJ mode, bank D/I and E/J together, page 11, which has no title: arriving
+# says so, with both levels, the cross-fader and CUE MIX from memory, the
+# levels as percents of the knob's 127. Then CTRL 1, CTRL 2 and CTRL 3 each
+# turned, said once it has held still: CTRL 3 sets CUE MIX, as START/END
+# first leaves it. START/END then builds the page again with CTRL 3 on
+# X-FADE, which says just that, and CTRL 3 turned moves the cross-fader.
+def djmode():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 11',
+          '3000 CTRL 1 64', '6000 CTRL 2 0', '9000 CTRL 3 0',
+          '11000 KEY DOWN 17', '11000 PAGE 11', '11100 KEY UP 17',
+          '13000 CTRL 3 127',
+          '16000 VALUE']
+    write('djmode', d, ['top screen',
+                        'DJ mode | channel 1 level 79 | channel 2 level 79 | fade centre | '
+                        'cue mix centre',
+                        'channel 1 level 50', 'channel 2 level 0', 'cue',
+                        'control 3 fade centre', 'fade channel 2'])
+
+# DJ mode playing a pattern, as LOG009 found it: PATTERN EDIT, key 0x15,
+# switches it on, and the page builds itself again, which says just that,
+# with the pattern's level, and nothing of CTRL 3, which has not moved.
+# CTRL 1 then sets the pattern's level, not channel 1's, and CTRL 3 CUE
+# MIX. PATTERN EDIT again switches it off, and CTRL 1 is channel 1's again.
+def djpattern():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 11',
+          '3000 KEY DOWN 15', '3000 PAGE 11', '3100 KEY UP 15',
+          '5000 CTRL 1 64', '8000 CTRL 3 0',
+          '10000 KEY DOWN 15', '10000 PAGE 11', '10100 KEY UP 15',
+          '12000 CTRL 1 0',
+          '15000 VALUE']
+    write('djpattern', d, ['top screen',
+                           'DJ mode | channel 1 level 79 | channel 2 level 79 | fade centre | '
+                           'cue mix centre',
+                           'pattern on | pattern level 79', 'pattern level 50', 'cue',
+                           'pattern off', 'channel 1 level 0'])
+
+# DJ mode's own fields, as LOG010 and LOG012 drew them, on no background:
+# each channel's BPM, CH2's at 103, and SYNC's S, CH1's at 39; the speed;
+# the time left; EXIT and MENU at the bottom. Arriving says each with its
+# channel after EXIT, and nothing of the time. Pad 10 taking the S away
+# says sync off; the time running says nothing; a BPM pad's new BPM is
+# said with its channel; pad 10 again, sync on; CH2's BPM moving too. Pad
+# 12 has CH2 follow CH1: CH2's slot shows S, CH1's M, as LOG013 drew
+# them, and pad 12 again takes both away, which says sync off. Pad 15,
+# CH2's play, draws STOP under its time: the state is said, with its
+# channel, and the time is not, where LOG012 heard the time as the STOP's
+# label. Pad 7 bends CH2 down: let go, its
+# BPM glides back a step at a time, said only once it is back.
+def djfields():
+    F = '=80156ABD:'
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 11',
+          f'1100 s0 11 10 ~{F}80.0', f'1100 s0 39 10 ~{F}S', f'1100 s0 103 10 ~{F}72.0',
+          f'1100 s0 7 18 ~{F}100.0%', f'1100 s0 99 18 ~{F}100.0%',
+          f'1100 s0 9 26 ~{F}--:--', f'1100 s0 99 26 ~{F}-00:03',
+          '1100 s1 9 56 !=8013B3A5:EXIT', '1100 s1 103 56 !=8013B371:MENU',
+          '4000 PAD 10', f'4050 s0 39 10 ~{F} ',
+          f'6000 s0 99 26 ~{F}-00:02', f'7000 s0 99 26 ~{F}-00:01',
+          '9000 PAD 2', f'9050 s0 11 10 ~{F}81.2',
+          '11000 PAD 10', f'11050 s0 39 10 ~{F}S',
+          '13000 PAD 4', f'13050 s0 103 10 ~{F}72.4',
+          '14000 PAD 12', f'14040 s0 103 10 ~{F}80.0', f'14040 s0 86 10 ~{F}S',
+          f'14040 s0 38 10 ~{F}M',
+          '14600 PAD 12', f'14640 s0 103 10 ~{F}72.4', f'14640 s0 86 10 ~{F}-',
+          f'14640 s0 38 10 ~{F}-',
+          '15000 KEY DOWN 0e', '15040 s0 108 35 =801614B3:STOP', '15100 KEY UP 0e',
+          '16000 KEY DOWN 06', '16900 KEY UP 06',
+          f'17900 s0 103 10 ~{F}71.8', f'19400 s0 103 10 ~{F}72.1',
+          f'20900 s0 103 10 ~{F}72.4',
+          '23000 VALUE']
+    write('djfields', d, ['top screen',
+                          'DJ mode | channel 1 level 79 | channel 2 level 79 | fade centre | '
+                          'cue mix centre | EXIT | channel 1 BPM 80.0 | channel 1 sync on | '
+                          'channel 2 BPM 72.0 | channel 1 speed 100.0% | channel 2 speed 100.0%',
+                          'channel 1 sync off', 'channel 1 BPM 81.2', 'channel 1 sync on',
+                          'channel 2 BPM 72.4',
+                          'channel 1 master | channel 2 sync on | channel 2 BPM 80.0',
+                          'channel 2 sync off | channel 2 BPM 72.4',
+                          'channel 2 STOP', 'channel 2 BPM 72.4'])
+
+# SHIFT and a bank key's pop-up, page 2: BANK A VOLUME over the bank's
+# volume on white, as LOG008 drew it, where only the 127 was heard; the
+# heading is said first. VALUE turns the volume; another bank key moves it
+# to bank D, which its heading names, so the bank's letter is not said
+# before it, as LOG010 heard.
+def bankvolume():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 PAGE 2',
+          '1000 s1 31 23 _=80126D93:BANK A VOLUME', '1000 s1 58 42 !=80126DDF:127',
+          '3000 KNOB 0 -1', '3000 s1 58 42 !=80126DDF:126',
+          '5000 BANK 3',
+          '5000 s1 31 23 _=80126D93:BANK D VOLUME', '5000 s1 58 42 !=80126DDF:100',
+          '7000 VALUE']
+    write('bankvolume', d, ['top screen', 'BANK A VOLUME | 127', '126',
+                            'BANK D VOLUME | 100'])
+
+# The speech menu's Knob wait taken from its 1200 ms down to 300, then
+# Filter+Drive's CUTOFF swept with CTRL 1 in two bursts 600 ms apart, as
+# params sweeps it. The first step is said at once, as always; the value
+# the first burst stops on once it has held still 300 ms, which at 1200 it
+# never would, the second burst coming first; and the last.
+def knobwait():
+    d = main_screen(0, 0, 'A-13')
+    d += ['1000 KEY DOWN 2a', '1050 KEY DOWN 22', '1150 KEY UP 22', '1200 KEY UP 2a',
+          '1600 KNOB 0 -1', '2000 KEY DOWN 31', '2100 KEY UP 31']
+    d += [f'{2500 + 150 * k} KNOB 0 -1' for k in range(9)]
+    d += ['4500 KEY DOWN 31', '4600 KEY UP 31', '5000 KEY DOWN 22', '5100 KEY UP 22']
+    d += ['6000 s0 CLEAR',
+          f'6000 s0 9 3 _{LABEL}CUTOFF', '6000 s0 23 33 _Hz ', f'6000 s0 11 18 _{FXVALUE}637',
+          f'6000 s0 44 3 _{LABEL}RESONANCE', '6000 s0 73 33 _ ',
+          f'6000 s0 54 18 _{FXVALUE}   1',
+          f'6000 s0 95 3 _{LABEL}DRIVE', '6000 s0 115 33 _ ', f'6000 s0 96 18 _{FXVALUE}   0',
+          '6000 s0 53 47 _Filter+Drive']
+    steps = [('827', 11), ('1914', 7), ('4202', 7), ('8308', 7),
+             ('14035', 4), ('5183', 7), ('1194', 7), ('707', 11)]
+    for k, (v, x) in enumerate(steps):
+        t = 8000 + 50 * k + (600 if k >= 4 else 0)
+        d += [f'{t} CTRL 1 {40 + 10 * k}', f'{t} s0 FILL 0 18 40 30', f'{t} s0 {x} 18 _{FXVALUE}{v}']
+    d += ['11000 VALUE']
+    write('knobwait', d, ['top screen', 'Speech settings | Speed 50',
+                          'Knob wait 1200 milliseconds', '1200 milliseconds'] +
+          [f'{1200 - 100 * k} milliseconds' for k in range(1, 10)] +
+          ['Knob wait',
+                          'Settings saved | top screen', 'Filter+Drive', 'CUTOFF 827 hertz',
+                          '8308', '707'])
+
+# Recording a pattern in chromatic mode, as LOG005 drew it: UNDO:0/16 beside
+# SCALE, counting each note played, 1/16, 2/16, 3/16, a moment after its
+# pad; then a key with SHIFT held taking one back, 2/16. The notes say
+# nothing; the one taken back is said.
+UNDO = '=80170723:'
+def undocount():
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 4', '1200 PAGE 8',
+          '1200 s0 8 12 _=801733B3:SCALE:Chrom', f'1200 s0 86 12 _{UNDO}UNDO:0/16']
+    d += [f'1200 s1 {x} {y} {CHROM_CELL}{t}' for x, y, t in CHROM_CELLS]
+    d += ['1200 s1 13 2 _=801120A1:CHROMATIC MODE', '1200 s1 91 20 =801119F5:BANK-PAD',
+          '1200 s1 100 28 =80111A79:A - 1', '1350 KEY UP 03', '1400 KEY UP 2a']
+    for k, (t, pad) in enumerate([(3000, 9), (3600, 5), (4200, 1)]):
+        x, y, text = CHROM_CELLS[{9: 8, 5: 4, 1: 0}[pad]]
+        d += [f'{t} PAD {pad}', f'{t} s1 {x} {y} !{CHROM_LIT}{text}',
+              f'{t + 50} s0 86 12 _{UNDO}UNDO:{k + 1}/16',
+              f'{t + 200} KEY UP {pad - 1:02x}', f'{t + 200} s1 {x} {y} {CHROM_CELL}{text}']
+    d += ['6000 KEY DOWN 2a', '6200 KEY DOWN 14', f'6280 s0 86 12 _{UNDO}UNDO:2/16',
+          '6400 KEY UP 14', '6600 KEY UP 2a']
+    d += ['8000 KEY DOWN 22', '8000 PAGE 84', '8000 s1 CLEAR', '8000 s0 CLEAR'] + \
+        main_screen(8000, 0, 'A-1')
+    d += ['8100 KEY UP 22', '9000 VALUE']
+    write('undocount', d, ['top screen',
+                           'CHROMATIC MODE | SCALE: chromatic | UNDO: 0/16 | BANK-PAD A-1',
+                           'UNDO: 2/16', 'top screen'])
+
+# EFX SET's FAVORITE tab, SHIFT and pad 16, as LOG005 drew it: FAVORITE: on
+# white with Bypass beside it, then VALUE turned through the favourites,
+# each drawing the effects it puts on BUS 3 and BUS 4, cut short, with the
+# routing's BUS 3 and BUS 4 where its "---" were. Three strings changing at
+# once used to be taken for a new screen, saying FAVORITE: alone, and the
+# steps between were lost. Each favourite is said with its effects in full;
+# one whose effects are the last one's says them again; Bypass alone.
+FAV = '=80136645:'
+FAVFX = '=80136399:'
+def favorite():
+    tabs = ['FAVORITE', 'BUS 3', 'BUS 4', 'SIDE CHAIN', 'DIRECT', 'OTHER']
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 16', '1200 PAGE 6', '1200 s0 CLEAR',
+          '1200 s0 103 2 =800EE779: 1/ 6']
+    d += [f'1200 s0 {x} 2 =80121751:{n}' for x, n in zip([5, 51, 79, 107, 156, 188], tabs)]
+    d += ['1200 s0 TAB 0 ' + ','.join(tabs),
+          '1200 s0 9 16 =801367A3:BUS 1', '1200 s0 39 16 =801367E1:BUS 2',
+          '1200 s0 72 16 =8013689F:---', '1200 s0 100 16 =801368D5:---',
+          f'1200 s0 63 54 !{FAV}FAVORITE:', '1200 s0 98 54 =800EE779:Bypass',
+          '1200 s0 5 54 =801366AD:ENTER: TYPE A', '1350 KEY UP 0f', '1400 KEY UP 2a']
+    def fav(t, n, fx=None, step=1):
+        out = [f'{t} KNOB 0 {step}']
+        if n == 'Bypass':
+            out += [f'{t} s0 FILL 0 36 128 50', f'{t} s0 FILL 66 12 128 22',
+                    f'{t} s0 72 16 =8013689F:---', f'{t} s0 100 16 =801368D5:---',
+                    f'{t} s0 98 54 =800EE779:Bypass']
+            return out
+        if fx is not None:
+            out += [f'{t} s0 68 16 =8013682F:BUS 3', f'{t} s0 96 16 =8013686D:BUS 4',
+                    f'{t} s0 25 40 {FAVFX}{fx[0]}', f'{t} s0 76 40 {FAVFX}{fx[1]}']
+        return out + [f'{t} s0 {118 if len(n) == 1 else 114} 54 =800EE779:{n}']
+    d += fav(3000, '1', ('Equalizer', '303 Viny..'))
+    d += fav(4000, '2', ('WrmSatur..', '303 Viny..'))
+    d += fav(5000, '3', ('Reverb', '303 Viny..'))
+    d += fav(5400, '4', ('Downer', 'Lo-fi'))
+    d += fav(5800, '5', ('To-Gu-Ro', 'Zan-Zou'))
+    d += fav(7000, '13', ('Bypass', 'Bypass'))
+    d += fav(8000, '14')
+    d += fav(9500, 'Bypass', step=-14)
+    d += ['11000 VALUE']
+    write('favorite', d, ['top screen', 'FAVORITE | FAVORITE: | Bypass',
+                          '1 | BUS 3 Equalizer | BUS 4 303 Vinyl Sim',
+                          '2 | BUS 3 warm saturator | BUS 4 303 Vinyl Sim',
+                          '3 | BUS 3 Reverb | BUS 4 303 Vinyl Sim',
+                          '4 | BUS 3 Downer | BUS 4 Lo-fi',
+                          '5 | BUS 3 To-Gu-Ro | BUS 4 Zan-Zou',
+                          '13 | BUS 3 Bypass | BUS 4 Bypass',
+                          '14 | BUS 3 Bypass | BUS 4 Bypass', 'Bypass'])
+
+# EFX SET's tabs turned with CTRL 3, as LOG005 drew them: FAVORITE, then
+# BUS 4, whose EFX Type: is drawn as INPUT FX Setting's is, then SIDE CHAIN
+# and DIRECT, then BUS 4 again. INPUT FX Setting's way of speaking, turned on
+# by EFX Type:, stayed on once BUS 4 had shown it, and every tab after said
+# nothing. Each tab is said with its focus.
+def fxtabs():
+    tabs = ['FAVORITE', 'BUS 3', 'BUS 4', 'SIDE CHAIN', 'DIRECT', 'OTHER']
+    def strip(t, cur, first, xs):
+        out = [f'{t} s0 FILL 0 0 200 8', f'{t} s0 103 2 =800EE779: {cur + 1}/ 6']
+        out += [f'{t} s0 {x} 2 {TABS}{tabs[first + k]}' for k, x in enumerate(xs)]
+        return out + [f'{t} s0 TAB {cur} ' + ','.join(tabs)]
+    def rows(t, rows, sel):
+        out = [f'{t} s0 FILL 0 9 127 63']
+        for k, (name, x, value) in enumerate(rows):
+            y = 13 + 8 * k
+            out += [f'{t} s0 ROW {y} {int(k == sel)}',
+                    f'{t} s0 5 {y} _{ROWLABEL}{name}', f'{t} s0 {x} {y} =800EE779:{value}']
+        return out
+    def bus(t, cur):
+        return [f'{t} CTRL 3 {40 + 10 * cur}'] + strip(t, cur, 0, [5, 51, 79, 107, 156, 188]) + \
+            [f'{t} s0 FILL 0 9 127 63', f'{t} EFX 0 0', f'{t} s0 93 14 _=800EE779:Bypass',
+             f'{t} s0 4 14 _=80147EBF:EFX Type:']
+    d = main_screen(0, 0, 'A-1')
+    d += ['1000 KEY DOWN 2a', '1200 PAD 16', '1200 PAGE 6', '1200 s0 CLEAR']
+    d += strip(1200, 0, 0, [5, 51, 79, 107, 156, 188])
+    d += ['1200 s0 9 16 =801367A3:BUS 1', '1200 s0 39 16 =801367E1:BUS 2',
+          '1200 s0 72 16 =8013689F:---', '1200 s0 100 16 =801368D5:---',
+          f'1200 s0 63 54 !{FAV}FAVORITE:', '1200 s0 98 54 =800EE779:Bypass',
+          '1200 s0 5 54 =801366AD:ENTER: TYPE A', '1350 KEY UP 0f', '1400 KEY UP 2a']
+    d += bus(3000, 2)
+    d += ['5000 CTRL 3 70'] + strip(5000, 3, 2, [15, 43, 98, 130])
+    d += rows(5000, [('SOURCE', 106, 'DRY'), ('TARGET', 105, 'OFF'),
+                     ('THRESHOLD', 101, ' 100')], 0)
+    d += ['7000 CTRL 3 90'] + strip(7000, 4, 2, [15, 43, 98, 130])
+    d += rows(7000, [('Direct FX1', 69, 'Filter+Drive'), ('Direct FX2', 76, 'Resonator')], 0)
+    d += bus(9000, 2)
+    d += ['11000 VALUE']
+    write('fxtabs', d, ['top screen', 'FAVORITE | FAVORITE: | Bypass',
+                        'BUS 4 | effects Type: Bypass', 'SIDE CHAIN | SOURCE DRY',
+                        'DIRECT | Direct FX1 Filter+Drive', 'BUS 4 | effects Type: Bypass'])
+
+# BUS SELECT, the box BUS FX brings up, as LOG006 and LOG007 drew it: BUS 1
+# and BUS 2 over their effects, the selected one on white, and BUS 3-4 ON in
+# its corner, on white too, or OFF from other code. Each press says the bus
+# chosen and its effect, not the ON, which once came with it as "BUS 2 |
+# Bypass | ON"; VALUE held with BUS FX turning BUS 3-4 off says so, the next
+# press says the bus alone, and turning it back on says ON.
+def busselect():
+    BOX = [('=8016C211:', 'BUS 1', 17, 24), ('=8016C35B:', 'Bypass', 19, 41),
+           ('=8016C211:', 'BUS 2', 81, 24), ('=8016C35B:', 'Bypass', 83, 41)]
+    def buses(t, sel):
+        return [f'{t} s1 {x} {y} {"!" if (k // 2 == sel) else "_"}{site}{text}'
+                for k, (site, text, x, y) in enumerate(BOX)]
+    d = main_screen(0, 0, 'A-2')
+    d += ['1000 KEY DOWN 10', '1000 s1 29 2 _=8016C0CD:BUS SELECT',
+          '1000 s1 110 56 !=8016C3EF:ON', '1000 s1 69 56 _=800EE779:BUS 3-4'] + buses(1000, 1)
+    d += ['1150 KEY UP 10', '2500 KEY DOWN 10'] + buses(2500, 0) + ['2650 KEY UP 10']
+    d += ['4000 KEY DOWN 31', '4200 KEY DOWN 10', '4200 s1 FILL 100 54 128 64', '4200 s1 108 56 _=8016C3BB:OFF',
+          '4350 KEY UP 10', '4500 KEY UP 31']
+    d += ['6000 KEY DOWN 10'] + buses(6000, 1) + ['6150 KEY UP 10']
+    d += ['7500 KEY DOWN 31', '7700 KEY DOWN 10', '7700 s1 FILL 100 54 128 64', '7700 s1 110 56 !=8016C3EF:ON',
+          '7850 KEY UP 10', '8000 KEY UP 31', '9000 VALUE']
+    write('busselect', d, ['top screen', 'BUS 2 | Bypass', 'BUS 1 | Bypass', 'BUS 3 and 4 OFF',
+                           'BUS 2 | Bypass', 'BUS 3 and 4 ON'])
+
 menu()
 params()
 popup()
@@ -1698,6 +2187,10 @@ remain()
 project()
 importlist()
 remainname()
+remainhold()
+remainfast()
+remainbank()
+remainswap()
 importfolder()
 importscroll()
 importprogress()
@@ -1707,3 +2200,18 @@ cardcut()
 cardback()
 cardleft()
 recinput()
+chromatic()
+dialogclose()
+shiftpad()
+protect()
+knobwait()
+speechout()
+cuemix()
+djmode()
+djpattern()
+djfields()
+bankvolume()
+undocount()
+favorite()
+fxtabs()
+busselect()

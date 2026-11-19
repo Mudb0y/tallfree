@@ -19,7 +19,8 @@
      #rxprobe    the receive probe instead: which output slots come back in
                  from the hardware, to A:/TALLFREE/RXPROBE.TXT
      #out N      speech into line 3 words 14 and 15 (the default), word 12,
-                 the metronome's, or 0, words 0 and 1, which recordings
+                 the metronome's, 8, words 8 and 9, which reach the
+                 headphones only, or 0, words 0 and 1, which recordings
                  catch; among the script's lines, from the next line on, and
                  after the last, once the script is said
    and any other line is said.
@@ -642,7 +643,8 @@ int target_main(void)
     if (speech_open(frame))
         return 1;
     /* The saved speech settings over TALLFREE.DEBUG's: speed, pitch, voice,
-       volume, the abbreviation dictionary and screen reading. */
+       volume, the abbreviation dictionary, screen reading, and the output
+       when it is headphones. */
     settings_load(volume, dictionary);
     batch_one("ready");
 

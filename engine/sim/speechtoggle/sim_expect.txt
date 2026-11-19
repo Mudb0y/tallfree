@@ -1,0 +1,5 @@
+top screen
+Speech off
+Speech on | top screen
+Speech settings | Speed 50
+Settings saved | top screen

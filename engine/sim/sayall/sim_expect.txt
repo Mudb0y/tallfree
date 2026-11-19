@@ -1,0 +1,6 @@
+top screen
+IMPORT/EXPORT MENU | EXPORT to SD-CARD
+Speech settings | Speed 50
+IMPORT/EXPORT MENU | IMPORT from SD-CARD | EXPORT to SD-CARD | FORMAT SD-CARD | CANCEL
+Speech settings | Speed 50
+Settings saved | IMPORT/EXPORT MENU | EXPORT to SD-CARD

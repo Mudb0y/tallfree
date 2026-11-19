@@ -20,12 +20,15 @@ byte the image changes and why.
 **It is a working screen reader.** Image 32 starts OpenEVV at boot, from the
 card or the eMMC, and it reads the screen as a screen reader should: on
 entering a screen its title and the focused item, then only what changes;
-settings rows with their values, tabs, dialogs on their own, the main
-screen as "top screen", the manual's name, a bank change by its letter, never
-a pad played, pads in the modes that pick them. SHIFT + EXIT opens a spoken
-speech settings menu, saved on the eMMC. Speech mixes into the main and
-headphone outputs, and with compiled rules the median time from a change on
-the screen to its sound is under 50 ms, with no stalls at speed 135.
+settings rows with their values, tabs, dialogs on their own and, as they
+close, where they leave you, the main screen as "top screen", the manual's
+name, a bank change by its letter, never a pad played, nor chromatic mode's
+grid, pads in the modes that pick them. SHIFT + EXIT opens a spoken speech
+settings menu, saved on the eMMC; held a second it turns screen reading off
+or on, saving nothing, and tapped twice it reads the whole screen. Speech
+mixes into the main and headphone outputs, and with compiled rules the
+median time from a change on the screen to its sound is under 50 ms, with no
+stalls at speed 135.
 
 How the screen is read: hooks, all data writes, on the seven surface
 vtables' DrawString, clear, fill and rectangle outline; the 76 icon menus'
@@ -33,9 +36,6 @@ icon draw; the SYSTEM page's row draw; the tab strip's draw, which names
 the current tab; and the 94 page handlers, which also carry every key and
 knob. Read the kernel's and the firmware's own code
 before trusting any record layout or vtable slot.
-
-Not solved: say-all and speech off, which the key hook makes easy; dialogs
-closing, if they are not pages; which pad deletion mode points at.
 
 ## The hardware, in one paragraph
 
@@ -53,9 +53,12 @@ Everything happens through the SD card. Nothing needs the SP on USB.
 
 Every command here runs inside `nix develop` at the top of the repo: the ARM
 compiler, QEMU, make, and a python3 with capstone and numpy, from the nixpkgs
-revision in `flake.lock`. `nix develop -c CMD` runs one. Each run after an
-edit copies the tree into the Nix store, which is why the Ghidra scripts fetch
-Ghidra by revision instead of through the flake.
+revision in `flake.lock`. `nix develop -c CMD` runs one. The shell is defined
+for x86_64-linux and aarch64-darwin. On an Apple Silicon Mac `make sims` runs
+and passes, but `make check` cannot: OpenEVV's desktop engine keeps addresses
+in 32 bits and has to load below 4 GB, which macOS does not allow. Each run
+after an edit copies the tree into the Nix store, which is why the Ghidra
+scripts fetch Ghidra by revision instead of through the flake.
 
 Roland's firmware is not in the repo. Building the image or the Ghidra project
 needs Roland's SP-404MKII system program 5.52, from Roland's download page,
@@ -244,7 +247,32 @@ Writing all sixteen summed six copies per side, which is why early speech was
 so loud. The firmware's mixer (ITCM 0x1C2D0) fills words 0 to 11, 14 and 15
 with its fourteen bus channels, word 12 with a mono stream of its own, the
 metronome, and word 13 with a bitmask of the buses in use, not audio.
-Words 8 to 11 and 13 do not reach the main outputs.
+Words 8 to 11 and 13 do not reach the main outputs. PHONES carries
+everything the main outputs do plus words 8 to 11 (8 and 10 left, 9 and 11
+right; the slot probe recorded from PHONES), so words 8 and 9 are a
+headphones-only pair. CUE MIX, the phones' C to M balance, is the halfword
+at 0x82DFEF2C (store 0x82DFEED0, setting 0x57), 0 to 255, and does not touch
+words 8 to 11: speech there stays at both ends.
+DJ mode's CH1 LEVEL, CH2 LEVEL and X-FADE are words at 0x82E00A38,
+0x82E00A3C and 0x82E01018 (store 0x82E009D0, settings 0xE3, 0xE4, 0xFF),
+the knob's 0 to 127, as FUN_80139EC0 hands them to the DJ page's pick-up
+knobs. Setting 0xD6, the word at 0x82E00A1C (+0x4C), is DJ mode playing
+a pattern: choosing one from DJ mode's PATTERN SELECT turns it on
+(FUN_801350B8), and PATTERN EDIT on the DJ page, key 0x15, flips it
+(FUN_8013B4F0, its key switch's case 5) and builds the page again, as
+START/END, key 0x17, does. While it is on, CTRL 1 sets 0xE5, the
+pattern's level, the word at 0x82E00A50 (+0x80), 0 to 127
+(FUN_8013A4D0), and CTRL 3 sets CUE MIX whatever START/END chose
+(FUN_80139EC0). LOG009 has PATTERN EDIT pressed with a pattern chosen,
+each press flipping it. The DJ page's per-channel fields come from the
+text widget at site 0x80156ABD, CH1 left of x 64: BPM and SYNC's S (x 39
+and 108; CH2's BPM at 103) at y 10, the speed at y 18, the time left at
+y 26, the bus at y 45; the sample names from 0x8013FA65 and 0x8013FA81 at
+y 48; PLAY, PAUSE,
+STOP and REVERS below from sites 0x80161619, 0x8016141D and 0x801614B3.
+Pad 10 and pad 12 put the S on and off (LOG010). Tallfree names each with
+its channel, says the state when it changes, and the time only on a
+read of the whole screen, as he chose on 19 November 2026.
 
 **What the recorder hears.** Sampling and resampling both take audio only
 from the receive side (eDMA channel 4, 0x20008000), and the hardware sends
@@ -252,7 +280,8 @@ back on receive words 0 and 1, digitally, the sum of line 3 words 0 to 7,
 and never words 12, 14 or 15 (`#rxprobe` measures it). So speech is added to
 **words 14 and 15**, clamped to +/-2^19, where recordings cannot catch it;
 in words 0 and 1 it was sampled. Word 12 is no better: the click's Output
-Assign silences it. `#out` chooses among them, `#vol N` sets the level, 50
+Assign silences it. `#out 8` puts speech in words 8 and 9 instead, heard on
+headphones only. `#out` chooses among them, `#vol N` sets the level, 50
 by default. `TALLFREE.DEBUG` beginning `#slots` runs the 64-tone probe, and
 `engine/slotmap.py` reads a recording of it, taking the two loudest channels
 as the SP's outputs unless told which.
